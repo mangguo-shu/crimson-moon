@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#000000" />
+  <title>赤月猎场 · Crimson Moon Hunt</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- 游戏画布：整屏铺满，逻辑坐标见 game.js 的 view 计算 -->
+  <canvas id="game"></canvas>
+
+  <!-- HUD（桌面端与安卓端共用，由 ui.js 控制显隐与内容） -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="hp-wrap">
+          <div id="hp-fill" class="hp-fill"></div>
+          <div id="hp-text" class="bar-text">100/100</div>
+        </div>
+        <div class="shield-wrap" id="shield-wrap" style="display:none">
+          <div id="shield-fill" class="shield-fill"></div>
+        </div>
+      </div>
+      <div class="hud-center">
+        <div class="hud-wave" id="hud-wave">波次 1</div>
+        <div class="hud-timer" id="hud-timer">00:00</div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-material">◈ <span id="hud-material">0</span></div>
+      </div>
+    </div>
+    <div class="hud-bottom">
+      <div class="xp-wrap">
+        <div id="xp-fill" class="xp-fill"></div>
+      </div>
+      <div class="hud-level" id="hud-level">Lv.1</div>
+      <div class="weapon-slot" id="weapon-slots"></div>
+    </div>
+  </div>
+
+  <!-- 各面板（由 ui.js 填充与显隐） -->
+  <div id="overlay" class="overlay hidden"></div>
+  <div id="menu" class="panel hidden"></div>
+  <div id="levelup" class="panel hidden"></div>
+  <div id="shop" class="panel hidden"></div>
+  <div id="pause" class="panel hidden"></div>
+  <div id="gameover" class="panel hidden"></div>
+  <div id="victory" class="panel hidden"></div>
+  <div id="settings" class="panel hidden"></div>
+  <div id="debug" class="debug-panel hidden"></div>
+
+  <!-- 安卓端触摸暂停按钮 -->
+  <button id="btn-pause-touch" class="touch-btn hidden" aria-label="暂停">⏸</button>
+
+  <!-- 自动存档提示 -->
+  <div id="save-toast" class="save-toast hidden">✓ 已保存</div>
+
+  <!-- 脚本按依赖顺序加载：普通 script（非 ES Module），保证 file:// 双击可跑 -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/nativeBridge.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/weapons.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/systems.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

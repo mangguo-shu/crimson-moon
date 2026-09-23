@@ -1,0 +1,15 @@
+{
+  "appId": "com.yourname.crimsonmoon",
+  "appName": "赤月猎场",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#000000",
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true,
+    "screenOrientation": "landscape",
+    "fullscreen": true
+  }
+}

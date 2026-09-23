@@ -1,0 +1,279 @@
+/* 赤月猎场 —— 全局样式
+ * 目标：横屏、全屏、无黑边、适配刘海屏/挖孔屏（safe-area）
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  --color-blood: #e23b3b;
+  --color-blood-dim: #7a1f1f;
+  --color-gold: #ffcf5e;
+  --color-epic: #b06bff;
+  --color-rare: #4fa3ff;
+  --color-common: #d8d8d8;
+  --color-bg: #140a0a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  /* 禁止双击缩放 / 长按选择 / 页面滚动 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  display: block;
+  /* 由 game.js 精确控制尺寸，这里占满视口 */
+  width: 100vw;
+  height: 100vh;
+  cursor: default;
+}
+
+.hidden { display: none !important; }
+
+/* ===== HUD ===== */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none; /* HUD 不挡输入 */
+  z-index: 10;
+}
+.hud-top {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  left: calc(12px + var(--safe-left));
+  right: calc(12px + var(--safe-right));
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.hud-left { width: 220px; }
+.hp-wrap, .shield-wrap {
+  position: relative;
+  height: 18px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.hp-fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 100%;
+  background: linear-gradient(90deg, #c22, #ff5e5e);
+  transition: width 0.15s ease;
+}
+.shield-fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 100%;
+  background: linear-gradient(90deg, #2a7ad8, #6fb7ff);
+  transition: width 0.15s ease;
+}
+.bar-text {
+  position: absolute; inset: 0;
+  font-size: 11px; line-height: 18px; text-align: center;
+  color: #fff; text-shadow: 0 1px 2px #000;
+}
+.hud-center { text-align: center; }
+.hud-wave {
+  font-size: 20px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 8px var(--color-blood);
+}
+.hud-timer { font-size: 13px; color: #ffd9d9; }
+.hud-right { text-align: right; }
+.hud-material {
+  font-size: 16px; font-weight: 700; color: var(--color-gold);
+  text-shadow: 0 1px 3px #000;
+}
+.hud-bottom {
+  position: absolute;
+  bottom: calc(10px + var(--safe-bottom));
+  left: calc(12px + var(--safe-left));
+  right: calc(12px + var(--safe-right));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.xp-wrap {
+  flex: 1;
+  height: 8px;
+  background: rgba(0,0,0,0.55);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.xp-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #2fd55a, #b7ff7a);
+  transition: width 0.15s ease;
+}
+.hud-level {
+  font-size: 14px; font-weight: 700; color: #b7ff7a;
+  min-width: 40px; text-align: center;
+}
+.weapon-slot {
+  display: flex; gap: 4px;
+}
+.weapon-slot .ws {
+  width: 30px; height: 30px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 4px;
+  font-size: 16px; line-height: 30px; text-align: center;
+  color: #fff;
+}
+
+/* ===== 面板通用 ===== */
+.panel {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 4, 4, 0.88);
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right))
+           calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+  overflow-y: auto;
+}
+.panel h1 {
+  font-size: 46px; color: var(--color-blood);
+  letter-spacing: 6px;
+  text-shadow: 0 0 20px rgba(226,59,59,0.7), 0 2px 0 #000;
+  margin-bottom: 6px;
+}
+.panel h2 { font-size: 24px; color: #fff; margin-bottom: 16px; }
+.panel .subtitle { color: #bbb; font-size: 14px; margin-bottom: 24px; }
+
+.btn {
+  display: inline-block;
+  min-width: 200px;
+  padding: 14px 22px;
+  margin: 6px;
+  font-size: 18px;
+  color: #fff;
+  background: linear-gradient(180deg, #5a1414, #3a0c0c);
+  border: 1px solid #a33;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.06s ease, background 0.1s ease;
+  touch-action: manipulation;
+}
+.btn:hover { background: linear-gradient(180deg, #7a1c1c, #4a1010); }
+.btn:active { transform: scale(0.96); }
+.btn.primary {
+  background: linear-gradient(180deg, #a02020, #5a0f0f);
+  border-color: #ff7a7a;
+}
+.btn.ghost { background: transparent; border-color: #555; color: #ccc; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== 升级三选一卡片 ===== */
+.card-row { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.card {
+  width: 220px; min-height: 200px;
+  padding: 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(30,12,12,0.9);
+  border: 2px solid var(--color-common);
+  color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+  transition: transform 0.08s ease, box-shadow 0.1s ease;
+  touch-action: manipulation;
+}
+.card:active { transform: scale(0.95); }
+.card .card-name { font-size: 20px; font-weight: 700; margin: 6px 0; }
+.card .card-desc { font-size: 13px; color: #ddd; line-height: 1.4; }
+.card .card-rarity { font-size: 12px; margin-bottom: 4px; letter-spacing: 2px; }
+.card.r-common { border-color: var(--color-common); box-shadow: 0 0 10px rgba(216,216,216,0.2); }
+.card.r-rare   { border-color: var(--color-rare);   box-shadow: 0 0 14px rgba(79,163,255,0.4); }
+.card.r-epic   { border-color: var(--color-epic);   box-shadow: 0 0 16px rgba(176,107,255,0.5); }
+.card.r-legend { border-color: var(--color-gold);   box-shadow: 0 0 20px rgba(255,207,94,0.6); }
+
+/* ===== 商店 ===== */
+.shop-grid { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.shop-item {
+  width: 160px; min-height: 150px;
+  padding: 12px; border-radius: 10px;
+  background: rgba(30,12,12,0.9);
+  border: 2px solid var(--color-common);
+  color: #fff; text-align: center; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: space-between;
+  transition: transform 0.08s ease;
+  touch-action: manipulation;
+}
+.shop-item:active { transform: scale(0.95); }
+.shop-item.locked { opacity: 0.55; }
+.shop-item .price { color: var(--color-gold); font-weight: 700; margin-top: 6px; }
+.shop-bar { margin-top: 18px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
+
+/* ===== 纪录/结算 ===== */
+.stat-line { font-size: 15px; color: #eee; margin: 4px 0; }
+.stat-line b { color: var(--color-gold); }
+
+/* ===== 调试面板 ===== */
+.debug-panel {
+  position: fixed;
+  top: calc(8px + var(--safe-top));
+  right: calc(8px + var(--safe-right));
+  z-index: 50;
+  width: 300px;
+  background: rgba(0,0,0,0.8);
+  border: 1px solid #4a4;
+  border-radius: 8px;
+  color: #8f8;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  padding: 10px;
+}
+.debug-panel .db-title { font-weight: 700; color: #4f4; margin-bottom: 6px; }
+.debug-panel .db-row { display: flex; justify-content: space-between; margin: 2px 0; }
+.debug-panel button {
+  font-size: 11px; padding: 3px 6px; margin: 2px 2px 0 0;
+  background: #222; color: #8f8; border: 1px solid #4a4; border-radius: 3px; cursor: pointer;
+}
+
+/* ===== 触摸按钮 ===== */
+.touch-btn {
+  position: fixed;
+  right: calc(24px + var(--safe-right));
+  bottom: calc(40px + var(--safe-bottom));
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: rgba(80,20,20,0.65);
+  border: 2px solid rgba(255,255,255,0.4);
+  color: #fff; font-size: 28px;
+  z-index: 15;
+  touch-action: manipulation;
+}
+.touch-btn:active { background: rgba(160,40,40,0.85); transform: scale(0.92); }
+
+/* ===== 存档提示 ===== */
+.save-toast {
+  position: fixed;
+  top: calc(50px + var(--safe-top));
+  right: calc(20px + var(--safe-right));
+  z-index: 60;
+  padding: 8px 14px;
+  background: rgba(20,60,20,0.85);
+  border: 1px solid #5a5;
+  border-radius: 6px;
+  color: #bfb;
+  font-size: 14px;
+  transition: opacity 0.4s ease;
+}

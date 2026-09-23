@@ -1,0 +1,17 @@
+# 依赖
+node_modules/
+
+# 打包产物与生成目录
+www/
+android/
+dist/
+build/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# 系统
+.DS_Store
+Thumbs.db
+npm-debug.log*
