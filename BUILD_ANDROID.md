@@ -211,5 +211,8 @@ cd android
 - **不申请网络权限**：`patch-android.js` 会移除 Capacitor 默认生成的 `INTERNET` 权限（纯单机游戏）。
 - **屏幕常亮**：`patch-android.js` 在 `MainActivity.java` 的 `onCreate` 注入
   `getWindow().addFlags(FLAG_KEEP_SCREEN_ON)`。
-- **appId**：`capacitor.config.json` 里 `com.yourname.crimsonmoon` 的 `yourname` 是占位符，
-  发布前请改为你自己的反向域名（如 `com.you.crimsonmoon`）。
+- **appId**：`capacitor.config.json` 里为 `com.mangguoshu.crimsonmoon`，这是 APK 的应用包名，
+  决定手机上的应用标识。**一旦发布就不要再改**——改了等于换一个 App，老用户无法覆盖升级。
+  Android 包名不允许连字符，所以账号名 `mangguo-shu` 写作 `mangguoshu`。
+- **启动背景色**：`android.backgroundColor` 为 `#2e2820`（暖褐），与游戏内世界外背景一致，
+  避免 WebView 加载/切换瞬间闪黑。
