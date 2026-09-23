@@ -2,7 +2,8 @@
  * scripts/build-apk.js —— 一键构建 debug APK
  * 流程：build:web → cap add android（如需） → cap sync android
  *      → patch-android → gradlew assembleDebug
- * 本地运行需已安装 Android SDK 与 JDK 17（或直接用 Android Studio）。
+ * 本地运行需已安装 Android SDK 与 JDK 21（或直接用 Android Studio）。
+ * JDK 21 是硬性要求：Capacitor 7 的 android 库模块声明了 VERSION_21 源码级别。
  * 也可走 GitHub Actions 云构建（推荐，见 BUILD_ANDROID.md）。
  * ============================================================ */
 'use strict';

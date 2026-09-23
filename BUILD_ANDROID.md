@@ -75,7 +75,7 @@ git push -u origin main
 | 软件 | 版本要求 |
 |------|----------|
 | Node.js | ≥ 18（推荐 20+） |
-| JDK | 17 |
+| JDK | 21 |
 | Android SDK | API 34 及以上（含 Build-Tools） |
 | Android Studio | 最新稳定版（自带 SDK 与 JDK，最省心） |
 
@@ -174,9 +174,15 @@ cd android
   `distributionUrl` 指向镜像（如腾讯/阿里镜像），或配置全局代理。
 
 ### 5.2 JDK 版本不匹配
-- 现象：`Unsupported class file major version 6x` 或 `Could not determine java version`。
-- 解决：确认使用 **JDK 17**。`java -version` 查看；Android Studio 可在
-  `File → Project Structure → SDK Location → Gradle Settings` 里指定 JDK 17。
+- 现象：`error: invalid source release: 21`，或 `Unsupported class file major version 6x`，
+  或 `Could not determine java version`。
+- 解决：确认使用 **JDK 21**。`java -version` 查看；Android Studio 可在
+  `File → Project Structure → SDK Location → Gradle Settings` 里指定 JDK 21。
+
+  > 为什么必须是 21：Capacitor 7 的 android 库模块（`capacitor-android` 及官方插件）
+  > 在 `build.gradle` 里声明了 `sourceCompatibility JavaVersion.VERSION_21`，
+  > 用 JDK 17 编译会直接报 `invalid source release: 21`。JDK 21 向下兼容，
+  > 也能编译 target 17 的模块，所以统一用 21 即可。
 
 ### 5.3 SDK 路径 / 未安装平台
 - 现象：`SDK location not found` 或 `Failed to find target with hash string 'android-34'`。
