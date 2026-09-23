@@ -29,15 +29,22 @@ crimson-moon/
 
 ### 1.1 推送到 GitHub
 
+本仓库地址：<https://github.com/mangguo-shu/crimson-moon>
+
+首次推送：
+
 ```bash
 cd crimson-moon
 git init
 git add .
 git commit -m "赤月猎场 MVP"
 git branch -M main
-git remote add origin https://github.com/你的用户名/crimson-moon.git
+git remote add origin git@github.com:mangguo-shu/crimson-moon.git
 git push -u origin main
 ```
+
+> 用 HTTPS 克隆的话地址是 `https://github.com/mangguo-shu/crimson-moon.git`。
+> 换机器/换仓库时用 `git remote set-url origin <新地址>` 更新。
 
 推送后，GitHub 会自动运行 `.github/workflows/build-apk.yml` 开始构建。
 
