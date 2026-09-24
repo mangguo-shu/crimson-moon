@@ -93,7 +93,7 @@
           '<div class="card-rarity">' + c.category + '</div>' +
           '<div class="card-name">' + c.name + '</div>' +
           '<div class="card-desc">' + c.desc + '</div>' +
-          '<div class="card-desc" style="color:#ffcf5e;margin-top:6px">被动：' + c.passive + '</div>' +
+          '<div class="card-desc" style="color:#ffcf5e;margin-top:6px">被动：' + (c.passive ? (c.passive.name + ' — ' + c.passive.desc) : '无') + '</div>' +
           '</div>';
       }
       html += '</div><button class="btn ghost" onclick="Game.Game.toMenu()">返回</button>';

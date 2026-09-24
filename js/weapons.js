@@ -69,6 +69,9 @@
   WeaponInstance.prototype._applyHit = function (owner, state, enemy, baseDmg) {
     var crit = this._rollCrit(owner);
     var dmg = baseDmg * (crit ? owner.stats.critMult : 1);
+    // 角色被动：连击等按目标叠加伤害
+    var dealt = Game.invokePassive(owner, 'onHit', { enemy: enemy, dmg: dmg, crit: crit, weapon: this });
+    if (typeof dealt === 'number') dmg = dealt;
     owner.damageDealt += dmg;
     // 吸血：按造成伤害百分比回血
     if (owner.stats.lifesteal > 0) {

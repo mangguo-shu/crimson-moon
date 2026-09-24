@@ -59,7 +59,11 @@
       name: '流浪剑客',
       category: '敏捷近战',
       desc: '在赤月下流浪的剑客，手中铁剑永不生锈。',
-      passive: '连击：连续命中同一目标叠加伤害，最高 +30%。',
+      passive: {
+        id: 'combo',
+        name: '连击',
+        desc: '连续命中同一目标伤害 +5%，叠满 6 层共 +30%。',
+      },
       // 基础属性
       baseHp: 100,
       speed: 220,
@@ -73,6 +77,48 @@
       colors: { skin: '#f2d3ac', cloth: '#3f6b8a', cloth2: '#e6e0cf', hair: '#241d2e', accent: '#c8352f' },
     },
   ];
+
+  /* ---------------- 角色被动 ----------------
+   * 被动 = 声明式配置 + 挂点回调。
+   * 之前 passive 只是显示用字符串，进游戏后没有任何逻辑读取它 —— 角色选择界面
+   * 写着「连击 +30%」但实际完全无效。现在按下面两步给新角色加被动：
+   * 1. CHARACTERS 里写 passive: { id, name, desc }
+   * 2. 在下面注册同名 id 的挂点（用不到就少写几个）
+   *
+   * 可用挂点（player 恒为首参，返回值按挂点约定）：
+   *   onHit(player, info)        → 返回最终伤害。info = { enemy, dmg, crit, weapon }
+   *   onDamageTaken(player, raw) → 返回减免后的伤害
+   *   onKill(player, enemy)      → 击杀结算时（可用于吸血/叠 buff）
+   *   onWaveStart(player, state) → 每波开始时（可用于开局护盾）
+   *   perTick(player, state, dt) → 每帧（可用于缓慢回血）
+   */
+  Game.PASSIVES = {
+    // 连击：连续命中同一目标每层 +5%，最高 6 层。
+    // 换个目标就清零 —— 换怪频繁所以叠不满，但追杀同一只时收益明显。
+    combo: {
+      name: '连击',
+      desc: '连续命中同一目标伤害 +5%，叠满 6 层共 +30%。',
+      onHit: function (player, info) {
+        var st = player.passiveState, MAX = 6;
+        if (!st.lastUid || st.lastUid !== info.enemy.uid) {
+          st.lastUid = info.enemy.uid;
+          st.stacks = 0;
+        }
+        var mult = 1 + Math.min(MAX, st.stacks) * 0.05;
+        st.stacks = Math.min(MAX, st.stacks + 1);
+        return info.dmg * mult;
+      },
+    },
+  };
+
+  /** 派发角色被动挂点。无被动或该被动没定义此挂点时返回 undefined。 */
+  Game.invokePassive = function (player, hook, a, b) {
+    var def = player && player.passive;
+    if (!def || !def.id) return undefined;
+    var reg = Game.PASSIVES[def.id];
+    if (!reg || !reg[hook]) return undefined;
+    return reg[hook](player, a, b);
+  };
 
   /* ---------------- 武器 ---------------- */
   // type: melee(近战挥砍) / ranged(远程投射物)

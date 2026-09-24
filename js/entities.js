@@ -49,7 +49,8 @@
 
     this.weapons = [];         // WeaponInstance 列表
     this.items = {};           // itemId -> 堆叠数
-    this.passive = c.passive;
+    this.passive = c.passive;  // { id, name, desc }
+    this.passiveState = {};    // 被动内部状态（连击层数等），随存档持久化
 
     this.facing = -Math.PI / 2;      // 视觉朝向（移动优先，其次瞄准）
     this.aimFacing = -Math.PI / 2;   // 攻击瞄准方向
@@ -145,6 +146,9 @@
     var s = this.stats;
     if (!this.alive || this.invincibleTimer > 0) return 0;
     if (Game.debugGod) return 0; // 调试无敌
+    // 角色被动：承伤减免
+    var dealt = Game.invokePassive(this, 'onDamageTaken', raw);
+    if (typeof dealt === 'number') raw = dealt;
     this.damageTaken += raw;
     // 护甲减伤：减伤 = 护甲 / (护甲 + 30)，上限 80%
     var reduction = s.armor / (s.armor + 30);
@@ -186,11 +190,14 @@
   /* ============================================================
    * Enemy
    * ============================================================ */
+  Enemy._uid = 0;  // 全局自增，给 Enemy 构造函数用
+
   function Enemy(type, x, y, wave, opts) {
     opts = opts || {};
     var def = Game.ENEMIES[type];
     this.type = type;
     this.def = def;
+    this.uid = ++Enemy._uid;  // 唯一编号，被动用它区分「同一目标」（同类型怪 uid 不同）
     this.x = x; this.y = y;
     this.radius = def.radius;
     this.isBoss = type === 'boss';
@@ -366,6 +373,8 @@
     if (this.isBoss && fx()) fx().shake(18);
     // Boss 阵亡先给奖励面板，再结算波次（见 G._triggerBossReward）
     if (this.isBoss) state.bossRewardPending = true;
+    // 角色被动：onKill（吸血、叠 buff 等）
+    if (state.player) Game.invokePassive(state.player, 'onKill', this, state);
     state.stats.kills++;
   };
 

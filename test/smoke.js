@@ -697,6 +697,137 @@ try {
   assert(false, '节奏/Boss奖励/触控异常: ' + e.stack);
 }
 
+/* ---------------- 角色被动 ---------------- */
+console.log('\n== 角色被动（挂点派发 / 连击叠层 / 存档往返）==');
+try {
+  var S26 = Game.Systems;
+
+  // ① 每个角色的被动 id 都必须在注册表里有实现，否则界面上写着、进游戏没效果
+  var reg26 = true;
+  for (var ci = 0; ci < Game.CHARACTERS.length; ci++) {
+    var cp = Game.CHARACTERS[ci].passive;
+    if (!cp || !cp.id || !Game.PASSIVES[cp.id]) reg26 = false;
+  }
+  assert(reg26, '所有角色的被动 id 都在 Game.PASSIVES 里注册');
+
+  // ② 角色卡渲染出被动名与描述，不能是 [object Object]
+  Game.UI.renderCharSelect();
+  var cs26 = document.getElementById('menu').innerHTML;
+  assert(cs26.indexOf('[object Object]') < 0, '角色选择界面不出现 [object Object]');
+  assert(cs26.indexOf('连击 — 连续命中同一目标伤害 +5%') >= 0, '角色卡渲染出被动名与描述');
+
+  // ③ 连击叠层：同一目标每层 +5%，6 层封顶 +30%，换目标清零
+  var pl26 = new Game.Player('swordsman');
+  var tgt26 = new Game.Enemy('zombie', 200, 200, 1);
+  var hits26 = [];
+  for (var h26 = 1; h26 <= 8; h26++) {
+    hits26.push(Game.invokePassive(pl26, 'onHit', { enemy: tgt26, dmg: 100, crit: false, weapon: null }) / 100);
+  }
+  assert(hits26[0] === 1 && hits26[1] === 1.05 && hits26[2] === 1.1,
+    '连击按目标逐层 +5%（首击 1.00 → ' + hits26[1].toFixed(2) + ' → ' + hits26[2].toFixed(2) + '）');
+  assert(hits26[6] === 1.3 && hits26[7] === 1.3,
+    '连击封顶 6 层 +30%（第 7/8 击都是 ' + hits26[6].toFixed(2) + '）');
+  var other26 = new Game.Enemy('bat', 300, 300, 1);
+  assert(tgt26.uid !== other26.uid, '同类型怪也有各自 uid（被动靠它区分「同一目标」）');
+  var reset26 = Game.invokePassive(pl26, 'onHit', { enemy: other26, dmg: 100, crit: false, weapon: null }) / 100;
+  assert(reset26 === 1, '换成另一只怪立即清零重算（' + reset26.toFixed(2) + '）');
+
+  // ④ 派发器必须无副作用：没被动 / 没这个挂点 / id 不存在 → 一律返回 undefined
+  assert(Game.invokePassive(null, 'onHit', {}) === undefined, '没有 player 时不派发');
+  var nop26 = new Game.Player('swordsman');
+  nop26.passive = null;
+  assert(Game.invokePassive(nop26, 'onHit', { dmg: 10 }) === undefined, 'passive 为空时不派发');
+  assert(Game.invokePassive(pl26, 'perTick', {}, 0.016) === undefined,
+    '被动未实现该挂点时不派发（连击不实现 perTick）');
+  var ghost26 = new Game.Player('swordsman');
+  ghost26.passive = { id: '不存在的被动' };
+  assert(Game.invokePassive(ghost26, 'onHit', { dmg: 10 }) === undefined, '注册表里没有的 id 不派发');
+
+  // ⑤ 挂点全链路：注册一个测试被动，逐个挂点验证「真的被调用、真的生效」
+  Game.PASSIVES._test2x = {
+    name: '测试翻倍', desc: '',
+    onHit: function (player, info) { return info.dmg * 2; },
+    onDamageTaken: function (player, raw) { return raw * 0.5; },
+    onKill: function (player, enemy, state) { player.passiveState.kills = (player.passiveState.kills || 0) + 1; },
+    onWaveStart: function (player, state, wave) { player.passiveState.waveStart = wave; },
+    perTick: function (player, state, dt) { player.passiveState.regen = (player.passiveState.regen || 0) + dt; },
+  };
+
+  // ⑤a 近战武器命中 → onHit 生效，且记账伤害与敌人实扣一致
+  var st26 = S26.createState('campaign', 'swordsman', 41);
+  var tp26 = new Game.Player('swordsman');
+  tp26.passive = { id: '_test2x', name: '测试翻倍', desc: '' };
+  tp26.stats.critChance = 0;
+  tp26.weapons = st26.player.weapons;   // 接回起始武器（Player 构造不带武器）
+  st26.player = tp26; st26.enemies = []; st26.projectiles = []; st26.pickups = [];
+  var me26 = new Game.Enemy('zombie', tp26.x + 40, tp26.y, 1);
+  var hp026 = me26.hp;
+  st26.enemies.push(me26);
+  var w26 = tp26.weapons[0];
+  w26.cooldownRemaining = 0;
+  w26.update(0.016, tp26, st26);
+  assert(me26.dead === true, 'onHit 生效：铁剑 14 翻成 28，一刀打死 20 血的跳尸');
+  assert(tp26.damageDealt === 28, '记账伤害 = 28（被动加成后，不是原始 14）');
+  assert(hp026 - me26.hp === 28, '敌人实扣 = 28（记账与实扣一致，没漏算）');
+  assert(tp26.passiveState.stacks === undefined, '测试被动不污染连击内部状态');
+  assert(tp26.passiveState.kills === 1, 'onKill 挂点被调用');
+
+  // ⑤b 远程投射物命中 → onHit 同样生效
+  var st27 = S26.createState('campaign', 'swordsman', 42);
+  var tp27 = new Game.Player('swordsman');
+  tp27.passive = { id: '_test2x', name: '测试翻倍', desc: '' };
+  tp27.stats.critChance = 0;
+  st27.player = tp27; st27.enemies = []; st27.projectiles = []; st27.pickups = [];
+  st27.enemies.push(new Game.Enemy('bat', tp27.x + 30, tp27.y, 1));
+  st27.projectiles.push(new Game.Projectile({
+    x: tp27.x + 30, y: tp27.y, vx: 0, vy: 0, radius: 6, damage: 10, crit: false,
+    fromPlayer: true, pierce: 0, life: 2, type: 'bullet', knockback: 0, owner: tp27,
+  }));
+  S26.updateProjectiles(st27, 0.016);
+  assert(tp27.damageDealt === 20, '远程命中也走被动（10 → 20）');
+
+  // ⑤c 承伤减免，且无敌帧仍然优先
+  var hp27 = tp27.stats.hp;
+  tp27.takeDamage(20);
+  assert(tp27.stats.hp === hp27 - 10, 'onDamageTaken 生效：20 伤害减半为 10（剩 ' + tp27.stats.hp + '）');
+  assert(tp27.takeDamage(20) === 0, '无敌帧仍然优先于被动（第二次不吃伤害）');
+
+  // ⑤d 每帧挂点
+  var st28 = S26.createState('campaign', 'swordsman', 43);
+  var tp28 = new Game.Player('swordsman');
+  tp28.passive = { id: '_test2x', name: '测试翻倍', desc: '' };
+  st28.player = tp28; st28.enemies = []; st28.projectiles = []; st28.pickups = [];
+  S26.updatePlayer(st28, 0.5);
+  S26.updatePlayer(st28, 0.25);
+  assert(Math.abs(tp28.passiveState.regen - 0.75) < 1e-9,
+    'perTick 每帧被调用并累加（累计 ' + tp28.passiveState.regen.toFixed(2) + ' 秒）');
+
+  // ⑤e 波次开始挂点
+  Game.state = st28;
+  S26.startWave(st28, 3);
+  assert(tp28.passiveState.waveStart === 3, 'onWaveStart 挂点被调用并收到波号');
+
+  // ⑥ passiveState 必须随存档往返，读档不能悄悄清零叠层
+  var st29 = S26.createState('campaign', 'swordsman', 44);
+  st29.player.passiveState = { lastUid: 999, stacks: 4 };
+  var sv26 = S26.serialize(st29);
+  assert(sv26.player.passiveState.stacks === 4, '序列化写入了 passiveState');
+  var ld26 = S26.deserialize(sv26);
+  assert(ld26.player.passiveState.stacks === 4, '读档后连击层数保留（stacks=4）');
+  assert(ld26.player.passiveState.lastUid === 999, '读档后 lastUid 保留');
+  assert(ld26.player.passive && ld26.player.passive.id === 'combo', '读档后被动定义仍绑定该角色');
+  // 旧档没有这个字段也不能崩
+  var legacy26 = JSON.parse(JSON.stringify(sv26));
+  delete legacy26.player.passiveState;
+  var ld27 = S26.deserialize(legacy26);
+  assert(ld27.player.passiveState && typeof ld27.player.passiveState === 'object',
+    '旧档缺 passiveState 时回落到空对象');
+
+  delete Game.PASSIVES._test2x;
+} catch (e) {
+  assert(false, '角色被动异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

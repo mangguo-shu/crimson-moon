@@ -137,6 +137,9 @@
       if (Game.FX) Game.FX.flash('#ff3a3a', 0.4);
       if (Game.Audio) Game.Audio.boss();
     }
+
+    // 角色被动：波次开始（开局护盾、重置叠层等）
+    if (state.player) Game.invokePassive(state.player, 'onWaveStart', state, wave);
   };
 
   /** 每帧更新波次；返回 'ended' 表示本波结束 */
@@ -246,6 +249,9 @@
     for (var i = 0; i < p.weapons.length; i++) {
       p.weapons[i].update(dt, p, state);
     }
+
+    // 角色被动：每帧挂点（缓慢回血、光环刷新等）
+    Game.invokePassive(p, 'perTick', state, dt);
   };
 
   S.updateEnemies = function (state, dt) {
@@ -274,12 +280,16 @@
           if (d <= p.radius + e.radius) {
             var dx = e.x - player.x, dy = e.y - player.y;
             var dd = Math.sqrt(dx * dx + dy * dy) || 1;
-            var dead = e.takeDamage(p.damage, p.crit, dx / dd * (p.knockback || 0), dy / dd * (p.knockback || 0));
+            // 角色被动：远程命中同样计入连击
+            var dealt = Game.invokePassive(player, 'onHit',
+              { enemy: e, dmg: p.damage, crit: p.crit, weapon: p.owner });
+            var pdmg = (typeof dealt === 'number') ? dealt : p.damage;
+            var dead = e.takeDamage(pdmg, p.crit, dx / dd * (p.knockback || 0), dy / dd * (p.knockback || 0));
             // 吸血 / 命中回血 / 击杀回血
             if (p.owner) {
-              if (p.owner.stats.lifesteal > 0) p.owner.heal(p.damage * p.owner.stats.lifesteal);
+              if (p.owner.stats.lifesteal > 0) p.owner.heal(pdmg * p.owner.stats.lifesteal);
               if (p.owner.stats.lifeOnHit > 0) p.owner.heal(p.owner.stats.lifeOnHit);
-              p.owner.damageDealt += p.damage;
+              p.owner.damageDealt += pdmg;
               if (dead && p.owner.stats.lifeOnKill > 0) p.owner.heal(p.owner.stats.lifeOnKill);
             }
             if (dead) e.die(state);
@@ -585,6 +595,7 @@
         weapons: p.weapons.map(function (w) { return { defId: w.defId, level: w.level, cd: w.cooldownRemaining }; }),
         facing: p.facing, aimFacing: p.aimFacing, walkTime: p.walkTime,
         damageTaken: p.damageTaken, healedTotal: p.healedTotal, damageDealt: p.damageDealt,
+        passiveState: p.passiveState,
       },
       enemies: state.enemies.map(function (e) {
         return { type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, damage: e.damage,
@@ -649,6 +660,8 @@
     p.damageTaken = obj.player.damageTaken || 0;
     p.healedTotal = obj.player.healedTotal || 0;
     p.damageDealt = obj.player.damageDealt || 0;
+    // 被动内部状态（连击层数等）必须随存档往返，否则读档后叠层静默清零
+    p.passiveState = obj.player.passiveState || {};
 
     // 敌人 / 投射物 / 掉落
     state.enemies = (obj.enemies || []).map(function (e) {
