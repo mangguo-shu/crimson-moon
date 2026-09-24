@@ -44,6 +44,8 @@
     // 初始武器
     var w = state.player.char.startWeapon;
     state.player.weapons.push(Game.createWeapon(w, 1));
+    // 回指：拾取物只拿到 player，但吸铁石要遍历整个 state.pickups
+    state.player.state = state;
     return state;
   };
 
@@ -64,7 +66,9 @@
   S.buildSpawnSchedule = function (state, wave) {
     var schedule = [];
     var waveRng = Game.mulberry32(Game.hashSeed(state.seed + ':' + wave));
-    var budget = 8 + wave * 6;
+    // 刷新量。注意 dur 是硬上限：高波次区间密度（见下）会先把 t 顶穿 dur，
+    // budget 只在低波次是瓶颈 —— 那里怪太稀，就是「没爽感」的根源。
+    var budget = 16 + wave * 8;
     var dur = S.waveDuration(wave);
     var boss = S.isBossWave(wave);
 
@@ -109,8 +113,9 @@
     if (wave >= 21) tankChance = Math.min(0.14, 0.08 + (wave - 21) * 0.002);
     if (tankChance > 0 && r < tankChance) return S.pickTankType(rng, wave);
 
-    // 高波次增加巫师（远程）比例
-    var wizardChance = 0.15 + Math.min(0.2, wave * 0.01);
+    // 高波次增加巫师（远程）比例。巫师是唯一的远程怪，占比直接决定近战爽感：
+    // 1 波从 16% 压到 8%（近战 92%），20 波从 35% 压到 20%。
+    var wizardChance = 0.07 + Math.min(0.13, wave * 0.01);
     var batChance = 0.3;
     if (r < wizardChance) return 'wizard';
     if (r < wizardChance + batChance) return 'bat';
@@ -708,6 +713,7 @@
       return pi;
     });
 
+    state.player.state = state;   // 同 createState：拾取物需要回指整个 state
     return state;
   };
 })();

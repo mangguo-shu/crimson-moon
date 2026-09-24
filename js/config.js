@@ -573,6 +573,21 @@
     },
   };
 
+  /* ---------------- 掉落调参（2026-09-24 起集中在这里调） ----------------
+   * 各怪的 xp / material 本体数值冻结不动，倍数在这一处统一加：
+   * 改掉落手感只动这里，不用去翻 ENEMIES 表。 */
+  Game.DROP = {
+    xpMult: 2.0,        // 经验倍数
+    matMult: 2.5,       // 材料倍数
+    matChance: 0.6,     // 材料掉落概率
+    chestChance: 0.035, // 普通怪掉箱子的概率
+    chestHeal: 30,      // 回血箱回复量
+    chestMagnetChance: 0.35, // 掉箱子时其中是吸铁石的概率（否则是回血）
+    bossChests: ['heal', 'magnet'],  // Boss 固定给的箱子
+    bossChestHealMult: 2,  // Boss 回血箱是小怪的两倍 —— 打过 Boss 该有份补偿
+    pickupSpeed: 620,   // 被吸起后飞向玩家的初速（px/s）
+  };
+
   /* ---------------- 道具（被动，可叠加） ---------------- */
   // MVP 提供少量被动道具，用于商店与升级池。
   Game.ITEMS = {
@@ -582,6 +597,14 @@
     trigger:    { id: 'trigger',    name: '轻灵扳机', rarity: 'rare',   desc: '攻击速度 +12%',        stat: { attackSpeed: 0.12 } },
     armorplate: { id: 'armorplate', name: '铁甲片',   rarity: 'rare',   desc: '护甲 +2',             stat: { armor: 2 } },
     critical:   { id: 'critical',   name: '致命宝石', rarity: 'epic',   desc: '暴击率 +10%',         stat: { critChance: 0.10 } },
+    // 下面 6 件补的是此前根本买不到的数值 —— _applyStatDelta 早就支持这些键，
+    // 只是没有道具用过（暴击伤害 / 护盾 / 吸血 / 击杀回血 / 治疗强度全都没入口）。
+    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +25%',        stat: { healingPower: 0.25 } },
+    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 5% 化为生命', stat: { lifesteal: 0.05 } },
+    shieldcharm:{ id: 'shieldcharm', name: '玄武纹章', rarity: 'rare',   desc: '护盾上限 +25',          stat: { shieldMax: 25 } },
+    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复 2 点生命',  stat: { lifeOnHit: 2 } },
+    critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',         stat: { critMult: 0.15 } },
+    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复 5 点生命',  stat: { lifeOnKill: 5 } },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */

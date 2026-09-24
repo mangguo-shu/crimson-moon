@@ -143,7 +143,7 @@ assert(state.player.xpNext === 9, '升级经验公式 5+1*4=9');
 console.log('\n== 波次生成 ==');
 Game.Systems.startWave(state, 1);
 assert(state.wave === 1, '波次=1');
-assert(state.spawnSchedule.length === 14, '敌人预算 8+1*6=14，实际 ' + state.spawnSchedule.length);
+assert(state.spawnSchedule.length === 24, '敌人预算 16+1*8=24，实际 ' + state.spawnSchedule.length);
 assert(state.isBossWave === false, '第1波非Boss');
 const sch1 = Game.Systems.buildSpawnSchedule({ seed: 999, wave: 3 }, 3);
 const sch2 = Game.Systems.buildSpawnSchedule({ seed: 999, wave: 3 }, 3);
@@ -1157,12 +1157,14 @@ try {
   assert(g35.counterFlash < 0.35,
          '反伤环计时随时间衰减（0.35 → ' + g35.counterFlash.toFixed(3) + '）');
 
-  /* ⑪ 关键护栏：wave <= 20 的刷新构成必须与加入坦克前逐位一致。
-     把旧算法原样复刻一份当参照，逐波逐种子比对照刷序列 ——
-     只要新代码多消耗了一次 rng()，参照序列会在第 2 只怪就分叉。 */
-  function oldPick(rng, wave) {
+  /* ⑪ 关键护栏：刷新计划必须逐位可复现。
+     把当前算法原样复刻一份当参照，逐波逐种子比对照刷序列 ——
+     只要新代码多消耗了一次 rng()，参照序列会在第 2 只怪就分叉。
+     （这条 2026-09-24 起盯的是「管线没被扰动」，不再钉旧数值：
+       刷新量与巫师占比已按用户要求上调/下调，见下 ㉔。） */
+  function refPick(rng, wave) {
     var r = rng();
-    var wizardChance = 0.15 + Math.min(0.2, wave * 0.01);
+    var wizardChance = 0.07 + Math.min(0.13, wave * 0.01);
     var batChance = 0.3;
     if (r < wizardChance) return 'wizard';
     if (r < wizardChance + batChance) return 'bat';
@@ -1173,11 +1175,11 @@ try {
     for (var sd33 = 1; sd33 <= 30; sd33++) {
       var sch33 = Game.Systems.buildSpawnSchedule({ seed: sd33, wave: w33 }, w33);
       var rngRef = Game.mulberry32(Game.hashSeed(sd33 + ':' + w33));
-      var budget33 = 8 + w33 * 6;
+      var budget33 = 16 + w33 * 8;
       if (Game.Systems.isBossWave(w33)) budget33 = Math.max(10, Math.floor(budget33 * 0.6));
       var seq33 = [], t33 = 0.5, n33 = 0;
       while (n33 < budget33 && t33 < Game.Systems.waveDuration(w33)) {
-        seq33.push(oldPick(rngRef, w33));
+        seq33.push(refPick(rngRef, w33));
         n33++; t33 += 0.55 - Math.min(0.3, w33 * 0.01);
         if (t33 < 0.1) t33 = 0.1;
       }
@@ -1190,8 +1192,8 @@ try {
     }
   }
   assert(same33 === 600,
-         'wave 1~20 全部 600 组刷新计划与旧算法逐位一致（' + same33 +
-         '/600，共 ' + monsters33 + ' 只怪）—— 已验收基线未漂移');
+         'wave 1~20 全部 600 组刷新计划与参照算法逐位一致（' + same33 +
+         '/600，共 ' + monsters33 + ' 只怪）—— 管线未被扰动');
 
   var rngCnt = 0, baseRng33 = Game.mulberry32(7);
   Game.Systems.pickEnemyType(function () { rngCnt++; return baseRng33(); }, 20);
@@ -1843,6 +1845,249 @@ try {
   Game.Systems.updateProjectiles(st60, 0.016);
   assert(e60.hp < hp60, '贴脸射击仍命中（掉血 ' + (hp60 - e60.hp).toFixed(1) + '）');
   assert(st60.projectiles.length === 0, '无穿透的子弹命中后消失（pierce=0）');
+
+  /* ㉔ 道具扩容 / 回血箱 / 吸铁石 / 掉率上调 / 近战占比 —— 用户报的「没爽感」五项 */
+
+  var D61 = Game.DROP;
+  assert(!!D61 && typeof D61.xpMult === 'number' && typeof D61.matChance === 'number',
+         '掉落调参集中在 Game.DROP 一张表（xp×' + D61.xpMult + ' / 材料×' + D61.matMult +
+         ' / 材料率 ' + D61.matChance + '）');
+
+  // —— 道具 12 件，且每件声明的属性键都真实生效（此前有 6 个属性键根本没入口）——
+  var ids61 = Object.keys(Game.ITEMS);
+  assert(ids61.length === 12, '道具总数 12（实 ' + ids61.length + '）');
+  var newIds61 = ['herbal', 'vampiric', 'shieldcharm', 'lifeluck', 'critemerald', 'deathbell'];
+  var missing61 = newIds61.filter(function (n) { return !Game.ITEMS[n]; });
+  assert(missing61.length === 0, '新增 6 件道具齐全（缺: ' + missing61.join(',') + '）');
+  var dead61 = [];
+  for (var i61 = 0; i61 < ids61.length; i61++) {
+    var iid61 = ids61[i61];
+    var pl61 = new Game.Player('swordsman');
+    var keys61 = Object.keys(Game.ITEMS[iid61].stat);
+    if (keys61.length === 0) { dead61.push(iid61 + '(空stat)'); continue; }
+    var snap61 = {};
+    for (var k61 = 0; k61 < keys61.length; k61++) snap61[keys61[k61]] = pl61.stats[keys61[k61]];
+    for (var k62 = 0; k62 < keys61.length; k62++) {
+      if (snap61[keys61[k62]] === undefined) dead61.push(iid61 + ':' + keys61[k62]);
+    }
+    pl61.applyItem(iid61, 1);
+    var moved61 = false;
+    for (var k63 = 0; k63 < keys61.length; k63++) {
+      if (pl61.stats[keys61[k63]] !== snap61[keys61[k63]]) moved61 = true;
+    }
+    if (!moved61) dead61.push(iid61 + '(应用后无变化)');
+  }
+  assert(dead61.length === 0,
+         '12 件道具的属性键全部真实生效（坏: ' + JSON.stringify(dead61) + '）');
+
+  // 此前买不到的数值现在都有入口了
+  var used61 = {};
+  for (var i62 in Game.ITEMS) {
+    var st61 = Game.ITEMS[i62].stat;
+    for (var k64 in st61) used61[k64] = true;
+  }
+  var noEntry61 = ['healingPower', 'lifesteal', 'shieldMax', 'lifeOnHit', 'critMult',
+                   'lifeOnKill'].filter(function (k) { return !used61[k]; });
+  assert(noEntry61.length === 0,
+         '暴击伤害/护盾/吸血/击杀回血/治疗强度都有道具入口了（缺: ' + noEntry61.join(',') + '）');
+
+  // —— 拾取速度进了属性表，箱子拾取物能序列化回环 ——
+  var pl62 = new Game.Player('swordsman');
+  assert(pl62.stats.pickupSpeed === D61.pickupSpeed,
+         '拾取速度挂在属性表上（' + pl62.stats.pickupSpeed + '）');
+  var st63 = Game.Systems.createState('campaign', 'swordsman', 31337);
+  st63.pickups.push(new Game.Pickup('heal', D61.chestHeal, 111, 222));
+  st63.pickups.push(new Game.Pickup('magnet', 0, 333, 444));
+  st63.pickups[0].vx = 5; st63.pickups[0].life = 40;
+  var rt63 = Game.Systems.deserialize(Game.Systems.serialize(st63));
+  assert(rt63.pickups.length === 2, '箱子类拾取物能存档回环（' + rt63.pickups.length + ' 件）');
+  assert(rt63.pickups[0].type === 'heal' && rt63.pickups[0].value === D61.chestHeal,
+         '回血箱回环后类型与数值不变（' + rt63.pickups[0].type + '/' + rt63.pickups[0].value + '）');
+  assert(rt63.pickups[1].type === 'magnet', '吸铁石箱回环后类型不变');
+  assert(rt63.player.state === rt63, '读档后 player.state 回指重建（吸铁石依赖它）');
+
+  // —— 掉落量：本体数值冻结，倍数走 DROP 表 ——
+  function kindsOf(st64) {
+    var m = {};
+    st64.pickups.forEach(function (p) { m[p.type] = (m[p.type] || 0) + 1; });
+    return m;
+  }
+  var st65 = Game.Systems.createState('campaign', 'swordsman', 4242);
+  new Game.Enemy('zombie', 500, 500, 1).die(st65);
+  var kd65 = kindsOf(st65);
+  assert(kd65.xp === 1, '跳尸必掉经验（' + JSON.stringify(kd65) + '）');
+  var xp65 = st65.pickups.filter(function (p) { return p.type === 'xp'; })[0];
+  var mat65 = st65.pickups.filter(function (p) { return p.type === 'material'; })[0];
+  assert(xp65.value === Math.ceil(Game.ENEMIES.zombie.xp * D61.xpMult),
+         '跳尸经验 1×' + D61.xpMult + ' = ' + xp65.value);
+  assert(mat65 === undefined || mat65.value === Math.ceil(Game.ENEMIES.zombie.material * D61.matMult),
+         '材料按 ' + D61.matMult + ' 倍掉（值 ' + (mat65 ? mat65.value : '未掉') + '）');
+
+  // 同种子掉落逐位一致（读档可复现）
+  var dropSig = function (st66) {
+    return st66.pickups.map(function (p) { return p.type + ':' + p.value; }).join('|');
+  };
+  var A66 = Game.Systems.createState('campaign', 'swordsman', 9001);
+  var B66 = Game.Systems.createState('campaign', 'swordsman', 9001);
+  new Game.Enemy('zombie', 500, 500, 1).die(A66);
+  new Game.Enemy('zombie', 500, 500, 1).die(B66);
+  assert(dropSig(A66) === dropSig(B66), '同种子掉落一致（' + dropSig(A66) + '）');
+
+  // —— Boss 必给回血箱 + 吸铁石，且回血翻倍 ——
+  var st67 = Game.Systems.createState('campaign', 'swordsman', 77);
+  new Game.Enemy('boss', 500, 500, 10).die(st67);
+  var kd67 = kindsOf(st67);
+  assert(kd67.heal === 1 && kd67.magnet === 1,
+         'Boss 必给回血箱 + 吸铁石各一（' + JSON.stringify(kd67) + '）');
+  var bHeal67 = st67.pickups.filter(function (p) { return p.type === 'heal'; })[0];
+  assert(bHeal67.value === D61.chestHeal * D61.bossChestHealMult,
+         'Boss 回血箱翻倍（' + D61.chestHeal + '×' + D61.bossChestHealMult + ' = ' +
+         bHeal67.value + '）');
+
+  // —— 小怪掉箱概率与配置一致，两种箱子都会出 ——
+  var chestCnt68 = 0, killCnt68 = 0, healSeen68 = 0, magSeen68 = 0;
+  for (var s68 = 1; s68 <= 300; s68++) {
+    var st68 = Game.Systems.createState('campaign', 'swordsman', 50000 + s68);
+    for (var n68 = 0; n68 < 8; n68++) new Game.Enemy('zombie', 500, 500, 1).die(st68);
+    killCnt68 += 8;
+    st68.pickups.forEach(function (p) {
+      if (p.type === 'heal') { chestCnt68++; healSeen68++; }
+      if (p.type === 'magnet') { chestCnt68++; magSeen68++; }
+    });
+  }
+  var rate68 = chestCnt68 / killCnt68;
+  assert(chestCnt68 > 0 && Math.abs(rate68 - D61.chestChance) < 0.03,
+         '小怪掉箱概率 ≈ ' + (D61.chestChance * 100).toFixed(1) +
+         '%（' + killCnt68 + ' 只实出 ' + chestCnt68 + ' 个 = ' + (rate68 * 100).toFixed(1) + '%）');
+  assert(healSeen68 > 0 && magSeen68 > 0,
+         '回血箱与吸铁石箱都真的会掉（' + healSeen68 + ' / ' + magSeen68 + '）');
+
+  // —— 回血箱：真回血，且满血不溢出 ——
+  var st69 = Game.Systems.createState('campaign', 'swordsman', 101);
+  Game.state = st69;
+  var p69 = st69.player;
+  p69.stats.hp = 40;
+  new Game.Pickup('heal', D61.chestHeal, p69.x, p69.y).update(0.016, p69);
+  assert(p69.stats.hp === 70, '回血箱回 ' + D61.chestHeal + ' 点（40 → ' + p69.stats.hp.toFixed(0) + '）');
+
+  var st70 = Game.Systems.createState('campaign', 'swordsman', 102);
+  Game.state = st70;
+  var p70 = st70.player;
+  p70.stats.hp = p70.stats.maxHp;
+  new Game.Pickup('heal', D61.chestHeal, p70.x, p70.y).update(0.016, p70);
+  assert(p70.stats.hp === p70.stats.maxHp,
+         '满血吃回血箱不溢出（仍 ' + p70.stats.hp.toFixed(0) + '）');
+
+  // 治疗强度会放大回血箱（herbal +25% → 30 变 37.5）
+  var st71 = Game.Systems.createState('campaign', 'swordsman', 103);
+  Game.state = st71;
+  var p71 = st71.player;
+  p71.applyItem('herbal', 1);
+  p71.stats.hp = 40;
+  var hp71 = p71.stats.hp;
+  new Game.Pickup('heal', D61.chestHeal, p71.x, p71.y).update(0.016, p71);
+  var got71 = p71.stats.hp - hp71;
+  assert(Math.abs(got71 - D61.chestHeal * 1.25) < 0.01,
+         '回春药草放大回血箱（实回 ' + got71.toFixed(1) + '）');
+
+  // —— 吸铁石：一把把场上全部经验/材料吸回来 ——
+  var st72 = Game.Systems.createState('campaign', 'swordsman', 104);
+  Game.state = st72;
+  var p72 = st72.player;
+  st72.pickups = [];
+  var far72 = 900;
+  var xp72 = new Game.Pickup('xp', 2, p72.x + far72, p72.y);
+  var mt72 = new Game.Pickup('material', 3, p72.x - far72, p72.y);
+  st72.pickups.push(xp72, mt72);
+  var mag72 = new Game.Pickup('magnet', 0, p72.x, p72.y);
+  st72.pickups.push(mag72);
+  mag72.update(0.016, p72);
+  assert(mag72.dead, '吸铁石被拾取');
+  assert(xp72.magnet && xp72.vx !== 0,
+         '900px 外的经验被吸起来（vx=' + xp72.vx.toFixed(0) + '）');
+  assert(mt72.magnet && mt72.vx !== 0,
+         '900px 外的材料被吸起来（vx=' + mt72.vx.toFixed(0) + '）');
+  assert(xp72.vx < 0 && mt72.vx > 0,
+         '速度都指向玩家（经验在右所以向左 ' + xp72.vx.toFixed(0) +
+         ' / 材料在左所以向右 ' + mt72.vx.toFixed(0) + '）');
+  var matBefore72 = p72.materials, xpBefore72 = p72.xp;
+  for (var i72 = 0; i72 < 300 && (!xp72.dead || !mt72.dead); i72++) {
+    if (!xp72.dead) xp72.update(0.016, p72);
+    if (!mt72.dead) mt72.update(0.016, p72);
+  }
+  assert(xp72.dead && mt72.dead, '吸铁石之后全场掉落物都到玩家手上');
+  assert(p72.materials === matBefore72 + 3 && p72.xp === xpBefore72 + 2,
+         '吸来的经验/材料实际到账（材料 ' + (p72.materials - matBefore72) +
+         ' / 经验 ' + (p72.xp - xpBefore72) + '）');
+
+  // 箱子本身不被吸（吸完就没箱子了）
+  var st73 = Game.Systems.createState('campaign', 'swordsman', 105);
+  Game.state = st73;
+  var p73 = st73.player;
+  st73.pickups = [];
+  var xp73 = new Game.Pickup('xp', 2, p73.x + 900, p73.y);
+  var heal73 = new Game.Pickup('heal', D61.chestHeal, p73.x - 900, p73.y);
+  st73.pickups.push(xp73, heal73);
+  var mag73 = new Game.Pickup('magnet', 0, p73.x, p73.y);
+  st73.pickups.push(mag73);
+  mag73.update(0.016, p73);
+  assert(xp73.vx !== 0 && heal73.vx === 0,
+         '吸铁石吸经验但不动箱子（经验 vx=' + xp73.vx.toFixed(0) +
+         ' / 箱子 vx=' + heal73.vx.toFixed(0) + '）');
+
+  // —— 近战占比：巫师是唯一的远程怪，压它的权重就等于加近战 ——
+  var tally74 = { zombie: 0, bat: 0, wizard: 0, golem: 0, bruiser: 0, bulwark: 0 };
+  var total74 = 0;
+  for (var w74 = 1; w74 <= 5; w74++) {
+    for (var s74 = 1; s74 <= 200; s74++) {
+      var sch74 = Game.Systems.buildSpawnSchedule({ seed: s74, wave: w74 }, w74);
+      for (var i74 = 0; i74 < sch74.length; i74++) {
+        if (sch74[i74].boss) continue;
+        tally74[sch74[i74].type] = (tally74[sch74[i74].type] || 0) + 1;
+        total74++;
+      }
+    }
+  }
+  var melee74 = (tally74.zombie + tally74.bat) / total74;
+  var ranged74 = tally74.wizard / total74;
+  assert(melee74 >= 0.85,
+         '1~5 波近战占比 ' + (melee74 * 100).toFixed(1) + '%（≥85%，跳尸 ' +
+         (tally74.zombie / total74 * 100).toFixed(1) + '% / 蝠妖 ' +
+         (tally74.bat / total74 * 100).toFixed(1) + '%）');
+  assert(ranged74 <= 0.12,
+         '1~5 波远程巫师 ' + (ranged74 * 100).toFixed(1) + '%（旧配比同波段是 25.2%）');
+
+  // —— 刷新量：低波次原本被 budget 卡死，怪太稀 ——
+  // 注意 6 波以后波次时长本身就够长，预算不再是瓶颈（旧预算也已顶满时长），
+  // 所以增量集中在 1~5 波 —— 正好是「开局没人打」的爽感缺口所在。
+  function countMonsters(wave76) {
+    var sch76 = Game.Systems.buildSpawnSchedule({ seed: 13, wave: wave76 }, wave76);
+    var c76 = 0;
+    for (var i76 = 0; i76 < sch76.length; i76++) if (!sch76[i76].boss) c76++;
+    return c76;
+  }
+  function countOldMonsters(wave77) {
+    var dur77 = Game.Systems.waveDuration(wave77);
+    var bud77 = 8 + wave77 * 6, t77 = 0.5, c77 = 0;
+    while (c77 < bud77 && t77 < dur77) {
+      c77++; t77 += 0.55 - Math.min(0.3, wave77 * 0.01);
+      if (t77 < 0.1) t77 = 0.1;
+    }
+    return c77;
+  }
+  var earlyOld78 = 0, earlyNew78 = 0;
+  for (var w78 = 1; w78 <= 5; w78++) { earlyOld78 += countOldMonsters(w78); earlyNew78 += countMonsters(w78); }
+  assert(earlyNew78 >= earlyOld78 * 1.4,
+         '1~5 波总怪量 ' + earlyOld78 + ' → ' + earlyNew78 +
+         '（+' + ((earlyNew78 / earlyOld78 - 1) * 100).toFixed(0) + '%，至少 +40%）');
+  assert(countMonsters(1) >= countOldMonsters(1) * 1.7,
+         '第 1 波怪量 +70% 以上（' + countOldMonsters(1) + ' → ' + countMonsters(1) + '）');
+
+  // 6~10 波旧预算本就顶满时长：不许回落（防误改 budget 公式把高波次刷稀）
+  var lateOld79 = 0, lateNew79 = 0;
+  for (var w79 = 6; w79 <= 15; w79++) { lateOld79 += countOldMonsters(w79); lateNew79 += countMonsters(w79); }
+  assert(lateNew79 >= lateOld79,
+         '6~15 波怪量不低于旧值（旧 ' + lateOld79 + ' → 新 ' + lateNew79 + '）');
 
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);

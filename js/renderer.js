@@ -1402,24 +1402,36 @@
     ctx.restore();
   };
 
-  /* ---------------- 掉落物（灵气珠 / 铜钱） ---------------- */
+  /* ---------------- 掉落物（灵气珠 / 铜钱 / 回血箱 / 吸铁石） ---------------- */
   R._drawPickup = function (ctx, pk) {
     var bob = Math.sin(pk.bob) * 3;
     var y = pk.y + bob;
     var O = this.outline;
+
+    // 发光底盘颜色各不同：红箱、青磁铁在满屏绿珠金钱里一眼能认出。
+    var glow = pk.type === 'xp' ? 'rgba(110,240,170,0.35)'
+      : pk.type === 'material' ? 'rgba(232,182,74,0.30)'
+      : pk.type === 'heal' ? 'rgba(255,94,110,0.45)'
+      : 'rgba(143,208,232,0.45)';
+
     if (pk.type === 'xp') {
       // 灵气珠
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = 'rgba(110,240,170,0.35)';
+      ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(pk.x, y, 9, 0, TAU); ctx.fill();
       ctx.restore();
       ctx.beginPath(); ctx.arc(pk.x, y, 5, 0, TAU);
       fs(ctx, '#7eea9a', O, 1.4);
       ctx.beginPath(); ctx.arc(pk.x - 1.6, y - 1.6, 1.5, 0, TAU);
       ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
-    } else {
+    } else if (pk.type === 'material') {
       // 铜钱
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(pk.x, y, 8, 0, TAU); ctx.fill();
+      ctx.restore();
       ctx.save();
       ctx.translate(pk.x, y);
       ctx.rotate(pk.bob * 0.5);
@@ -1427,6 +1439,41 @@
       fs(ctx, '#e8b64a', O, 1.4);
       ctx.beginPath(); ctx.rect(-2, -2, 4, 4);
       fs(ctx, '#8a6a2a', O, 1);
+      ctx.restore();
+    } else if (pk.type === 'heal') {
+      // 回血箱：红箱 + 白十字，比珠子大一圈，满屏一扫就找到
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(pk.x, y, 13, 0, TAU); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.translate(pk.x, y);
+      ctx.beginPath(); ctx.rect(-6, -5, 12, 10);
+      fs(ctx, '#c8454f', O, 1.4);
+      ctx.fillStyle = '#fff6f0';
+      ctx.fillRect(-1.5, -3.5, 3, 7);
+      ctx.fillRect(-3.5, -1.5, 7, 3);
+      ctx.restore();
+    } else {
+      // 吸铁石：青色开口朝上的马蹄形，两极白色
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(pk.x, y, 13, 0, TAU); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.translate(pk.x, y);
+      ctx.lineWidth = 3.4;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#8fd0e8';
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, Math.PI, 0);   // 下半圆：开口朝上的 U
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(-5, 0, 1.8, 0, TAU);
+      ctx.fillStyle = '#eaf6ff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(5, 0, 1.8, 0, TAU);
+      ctx.fill();
       ctx.restore();
     }
   };

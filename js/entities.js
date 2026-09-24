@@ -40,6 +40,7 @@
       lifeOnKill: 0,           // 击杀回血
       healingPower: 1.0,       // 治疗加成
       shield: 0, shieldMax: 0, // 护盾
+      pickupSpeed: Game.DROP.pickupSpeed, // 掉落物被吸起时的初速（吸铁石会拉满）
     };
 
     this.level = 1;
@@ -401,13 +402,29 @@
     return false;
   };
 
-  /** 死亡：掉落经验/材料 + 碎裂特效 */
+  /** 死亡：掉落经验/材料/宝箱 + 碎裂特效。
+   *  各怪的 xp / material 本体数值冻结在 ENEMIES 里不动，倍数集中在
+   *  config.js 的 Game.DROP 一张表里调 —— 想改掉落手感只动那一处。 */
   Enemy.prototype.die = function (state) {
-    var dropXp = this.xp, dropMat = this.material;
-    state.pickups.push(new Pickup('xp', dropXp, this.x + util.rand(state.rng, -8, 8), this.y + util.rand(state.rng, -8, 8)));
-    // 材料掉落概率 60%
-    if (state.rng() < 0.6) {
-      state.pickups.push(new Pickup('material', dropMat, this.x + util.rand(state.rng, -8, 8), this.y + util.rand(state.rng, -8, 8)));
+    var D = Game.DROP;
+    var jx = function () { return util.rand(state.rng, -8, 8); };
+    state.pickups.push(new Pickup('xp', Math.ceil(this.xp * D.xpMult),
+      this.x + jx(), this.y + jx()));
+    if (state.rng() < D.matChance) {
+      state.pickups.push(new Pickup('material', Math.ceil(this.material * D.matMult),
+        this.x + jx(), this.y + jx()));
+    }
+    // 宝箱：Boss 固定给回血 + 吸铁石各一；小怪按概率给，回血 / 吸铁石二选一。
+    if (this.isBoss) {
+      for (var ci = 0; ci < D.bossChests.length; ci++) {
+        var bk = D.bossChests[ci];
+        state.pickups.push(new Pickup(bk, bk === 'heal' ? D.chestHeal * D.bossChestHealMult : 0,
+          this.x + util.rand(state.rng, -40, 40), this.y + util.rand(state.rng, -40, 40)));
+      }
+    } else if (state.rng() < D.chestChance) {
+      var kind = state.rng() < D.chestMagnetChance ? 'magnet' : 'heal';
+      state.pickups.push(new Pickup(kind, kind === 'heal' ? D.chestHeal : 0,
+        this.x + util.rand(state.rng, -16, 16), this.y + util.rand(state.rng, -16, 16)));
     }
     if (fx()) fx().death(this.x, this.y, this.isBoss);
     if (this.isBoss && fx()) fx().shake(18);
@@ -458,7 +475,7 @@
    * Pickup（经验 / 材料）
    * ============================================================ */
   function Pickup(type, value, x, y) {
-    this.type = type;       // 'xp' | 'material'
+    this.type = type;       // 'xp' | 'material' | 'heal' | 'magnet'
     this.value = value;
     this.x = x; this.y = y;
     this.vx = 0; this.vy = 0;
@@ -467,6 +484,19 @@
     this.dead = false;
     this.bob = Math.random() * Math.PI * 2;
   }
+
+  /** 吸铁石：把场上已有的全部掉落物一下吸起来。
+   *  给每个拾取物设初速指向玩家，update 里下一帧就会按磁铁逻辑接管；
+   *  同时把 magnet 置真，让它拿到 400 的捕获半径（而不是默认的 90）。
+   *  箱子本身不吸（吸完就没箱子了）。 */
+  Pickup.prototype.pullBy = function (player) {
+    var dx = player.x - this.x, dy = player.y - this.y;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    var sp = (player.stats.pickupSpeed || Game.DROP.pickupSpeed) * 1.3;
+    this.vx = dx / d * sp;
+    this.vy = dy / d * sp;
+    this.magnet = true;
+  };
 
   Pickup.prototype.update = function (dt, player) {
     this.bob += dt * 4;
@@ -482,7 +512,9 @@
       this.magnet = true;
       // 加速飞向玩家（带弧线感的简单直线加速）
       var d = Math.sqrt(d2) || 1;
-      var sp = this.type === 'material' ? 520 : 600;
+      var sp = this.type === 'material'
+        ? (player.stats.pickupSpeed || Game.DROP.pickupSpeed) * 0.85
+        : (player.stats.pickupSpeed || Game.DROP.pickupSpeed);
       this.vx = dx / d * sp;
       this.vy = dy / d * sp;
     }
@@ -500,6 +532,20 @@
         player.materials += this.value;
         if (fx()) fx().pickup(this.x, this.y, '#ffcf5e');
         if (Game.Audio) Game.Audio.pickup();
+      } else if (this.type === 'heal') {
+        // 回血箱：走 heal()，过量转化护盾由 heal 内部处理
+        var healed = player.heal(this.value);
+        if (fx()) fx().heal(this.x, this.y);
+        if (Game.Audio) Game.Audio.heal();
+      } else if (this.type === 'magnet') {
+        // 吸铁石：全场拾取物立即被吸过来，并永久提速
+        var all = player.state.pickups;
+        for (var i = 0; i < all.length; i++) {
+          if (all[i] === this) continue;
+          if (all[i].type === 'xp' || all[i].type === 'material') all[i].pullBy(player);
+        }
+        if (fx()) fx().ring(this.x, this.y, 150, '#8fd0e8');
+        if (Game.Audio) Game.Audio.buy();
       }
     }
   };
