@@ -88,7 +88,6 @@
       enemy.die(state);
       if (owner.stats.lifeOnKill > 0) owner.heal(owner.stats.lifeOnKill);
     }
-    if (crit && fx()) fx().shake(3);
     return dead;
   };
 

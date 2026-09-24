@@ -1641,6 +1641,136 @@ try {
   hl38.heal(10);
   assert(hl38.stats.hp === hl38.stats.maxHp - 10, '常规治疗与静音治疗数值一致');
 
+  /* ㉒ 回血卡下线 / 定价确定 / 伤害飘字 —— 用户报的三项，逐项锁死
+     治疗只剩角色被动与吸血两条来源，任何卡片都不该再瞬间补血。 */
+
+  // ① 升级池里不再有回血卡，applyUpgrade 也不再接遗留的 heal 字段
+  var healCards47 = [];
+  for (var t47 = 0; t47 < Game.UPGRADES.length; t47++) {
+    var u47 = Game.UPGRADES[t47];
+    if (u47.type === 'heal' || u47.apply.heal) healCards47.push(u47.label);
+  }
+  assert(healCards47.length === 0,
+         '升级池 ' + Game.UPGRADES.length + ' 张卡里无即时回血卡（异常: ' + healCards47.join(',') + '）');
+  var pu47 = new Game.Player('swordsman');
+  pu47.stats.hp = pu47.stats.maxHp - 30;
+  pu47.applyUpgrade({ heal: 30 });
+  assert(pu47.stats.hp === pu47.stats.maxHp - 30,
+         'applyUpgrade 收到遗留 heal 字段时不再回血（治疗只来自被动/吸血）');
+
+  // ② 三处发卡路径（商店 / 升级三选一 / Boss 奖励）500 轮都不出治疗卡
+  var healSeen47 = 0, badType47 = [], shopTypes47 = {}, bossShort47 = 0;
+  for (var t48 = 0; t48 < 500; t48++) {
+    var sh48 = Game.Systems.createState('campaign', 'swordsman', 90000 + t48);
+    Game.Systems.openShop(sh48);
+    for (var b48 = 0; b48 < sh48.shop.items.length; b48++) {
+      var it48 = sh48.shop.items[b48];
+      shopTypes47[it48.type] = (shopTypes47[it48.type] || 0) + 1;
+      if (it48.type === 'heal') healSeen47++;
+      if (it48.type !== 'item' && it48.type !== 'weapon' && it48.type !== 'weaponUpgrade') badType47.push(it48.type);
+    }
+    var ch48a = Game.Systems.rollLevelUpChoices(sh48);
+    var ch48b = Game.Systems.bossRewardChoices(sh48);
+    var cands47 = ch48a.concat(ch48b);
+    for (var b49 = 0; b49 < cands47.length; b49++) {
+      var c49 = cands47[b49];
+      if (c49.kind === 'upgrade' && c49.data.type === 'heal') healSeen47++;
+      if (c49.kind === 'item' && Game.ITEMS[c49.data.itemId].type === 'heal') healSeen47++;
+    }
+    // Boss 奖励的兜底必须真的凑够 3 张 —— 兜底卡从「数组末尾」改成「最强属性卡」后
+    if (ch48b.length !== 3) bossShort47++;
+  }
+  assert(bossShort47 === 0, '500 组 Boss 奖励全部凑够 3 张（兜底补齐生效，缺张 ' + bossShort47 + ' 组）');
+  assert(healSeen47 === 0, '商店 / 升级 / Boss 奖励 500 轮从未出现治疗卡（实测 ' + healSeen47 + ' 张）');
+  assert(badType47.length === 0, '商店不再出现未定义的商品类型（异常: ' + badType47.join(',') + '）');
+  assert(shopTypes47.item > 0 && shopTypes47.weapon > 0,
+         '治疗权重下放后商店仍有道具（' + shopTypes47.item + '）与武器（' + shopTypes47.weapon + '）');
+
+  // ③ 定价：priceFor 是纯函数，跨 9 个波次 × 4 种稀有度 × 3000 条独立随机流全部一致
+  var bases47 = { common: 15, rare: 35, epic: 55, legend: 85 };
+  var pfBad47 = 0, pfN47 = 0;
+  for (var r47 in bases47) for (var wv47 = 0; wv47 < 12; wv47++) {
+    pfN47++;
+    if (Game.Systems.priceFor(r47, wv47) !== bases47[r47] + wv47 * 2) pfBad47++;
+  }
+  assert(pfBad47 === 0, 'priceFor 严格等于 稀有度基础价 + 波次×2（' + pfN47 + ' 组全对）');
+  var priceSeen47 = {}, priceBad47 = 0, priceN47 = 0;
+  for (var t50 = 0; t50 < 800; t50++) {
+    var sh50 = Game.Systems.createState('campaign', 'swordsman', 150000 + t50);
+    sh50.wave = 1 + (t50 % 9);
+    Game.Systems.openShop(sh50);
+    for (var b50 = 0; b50 < sh50.shop.items.length; b50++) {
+      var it50 = sh50.shop.items[b50];
+      var key47 = it50.rarity + '#' + sh50.wave;
+      priceN47++;
+      if (priceSeen47[key47] === undefined) priceSeen47[key47] = it50.price;
+      else if (priceSeen47[key47] !== it50.price) priceBad47++;
+    }
+  }
+  assert(priceBad47 === 0,
+         '同稀有度同波次价格完全一致（' + priceN47 + ' 次跨随机流对照、' +
+         Object.keys(priceSeen47).length + ' 组稀有度×波次，冲突 ' + priceBad47 + ' 次）');
+
+  // ④ 老存档残留的已下线卡片不可购买 —— 扣钱不给东西是最糟的结果
+  var st51 = Game.Systems.createState('campaign', 'swordsman', 31337);
+  Game.Systems.openShop(st51);
+  st51.shop.items.push({ type: 'heal', name: '急救包', desc: '恢复 50 点生命', rarity: 'common', price: 15 });
+  var idx51 = st51.shop.items.length - 1;
+  st51.player.materials = 100;
+  assert(Game.Systems.buyShopItem(st51, idx51) === false, '存档里残留的治疗卡不可购买');
+  assert(st51.player.materials === 100, '买不到时不扣材料');
+  assert(st51.shop.items[idx51].sold !== true, '买不到时不标记已售');
+
+  // ⑤ 伤害飘字：暴击放大字号并延长生命；命中路径确实产出
+  Game.Renderer.effects.length = 0;
+  Game.FX.damageNumber(100, 100, 14.6, false);
+  assert(Game.Renderer.effects.length === 1, 'damageNumber 生成一个飘字特效');
+  var dt52 = Game.Renderer.effects[0];
+  assert(dt52.type === 'dmgtext' && dt52.text === '15' && !dt52.big,
+         '普通飘字四舍五入取整（14.6→15）且不加粗');
+  Game.FX.damageNumber(100, 100, 28, true);
+  var dc52 = Game.Renderer.effects[1];
+  assert(dc52.text === '28' && dc52.big && dc52.life === 0.7, '暴击飘字加粗且显示更久');
+
+  // ⑥ 命中路径真的产出飘字，且暴击抖屏已挪进 Enemy.takeDamage（近战远程统一）
+  var realCrit47 = Game.WeaponInstance.prototype._rollCrit;
+  Game.WeaponInstance.prototype._rollCrit = function () { return true; };
+
+  Game.Renderer.effects.length = 0;
+  Game.Renderer.shake = 0;
+  var p54 = new Game.Player('swordsman');
+  var e54 = new Game.Enemy('zombie', p54.x + 30, p54.y, 1);
+  e54.takeDamage(28, true, 0, 0, p54);
+  var big54 = Game.Renderer.effects.filter(function (f) { return f.type === 'dmgtext' && f.big; });
+  assert(big54.length === 1 && big54[0].text === '28', '暴击命中产出加粗飘字（数值 28）');
+  assert(Game.Renderer.shake > 0, '暴击命中抖屏（shake=' + Game.Renderer.shake.toFixed(2) + '）');
+
+  Game.Renderer.effects.length = 0;
+  Game.Renderer.shake = 0;
+  var e55 = new Game.Enemy('zombie', p54.x + 30, p54.y, 1);
+  e55.takeDamage(14, false, 0, 0, p54);
+  var norm55 = Game.Renderer.effects.filter(function (f) { return f.type === 'dmgtext' && !f.big; });
+  assert(norm55.length === 1 && norm55[0].text === '14', '普通命中产出常规飘字（数值 14）');
+  // 上面这条同时覆盖「非暴击不抖屏」的另一半：飘字存在但不加粗。
+  assert(Game.Renderer.shake === 0, '普通命中不抖屏');
+
+  // ⑦ 远程暴击端到端：子弹命中后同样产出加粗飘字并抖屏（抖动逻辑从近战挪走后回归）
+  Game.Renderer.effects.length = 0;
+  Game.Renderer.shake = 0;
+  var p56 = new Game.Player('archer');
+  p56.weapons = [Game.createWeapon('pistol', 1)];
+  var st56 = Game.Systems.createState('campaign', 'archer', 909);
+  Game.state = st56;
+  st56.player = p56; st56.enemies = []; st56.projectiles = [];
+  st56.enemies.push(new Game.Enemy('zombie', p56.x + 120, p56.y, 1));
+  p56.weapons[0].cooldownRemaining = 0;
+  p56.weapons[0].update(0.016, p56, st56);
+  for (var g56 = 0; g56 < 30; g56++) Game.Systems.updateProjectiles(st56, 0.016);
+  var rc56 = Game.Renderer.effects.filter(function (f) { return f.type === 'dmgtext' && f.big; });
+  assert(rc56.length >= 1, '远程暴击端到端产出加粗飘字（' + rc56.length + ' 条）');
+  assert(Game.Renderer.shake > 0, '远程暴击同样抖屏（shake=' + Game.Renderer.shake.toFixed(2) + '）');
+  Game.WeaponInstance.prototype._rollCrit = realCrit47;
+
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);
 }

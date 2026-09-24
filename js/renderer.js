@@ -1558,6 +1558,20 @@
         ctx.fillStyle = '#fff';
         ctx.globalAlpha = t;
         ctx.beginPath(); ctx.arc(f.x, f.y, 6 * t + 1, 0, TAU); ctx.fill();
+      } else if (f.type === 'dmgtext') {
+        // 伤害飘字：不叠加发光，且必须描边才读得清（压在高对比的粒子和暗场上）。
+        // 后 25% 生命淡出，前半段全亮，别在数字刚出现时就看不清。
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = t < 0.75 ? 1 : (t - 0.5) / 0.25;
+        ctx.font = f.big ? 'bold 22px "Segoe UI","Microsoft YaHei",sans-serif'
+                         : 'bold 15px "Segoe UI","Microsoft YaHei",sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.strokeText(f.text, f.x, f.y - (1 - t) * 30);
+        ctx.fillStyle = f.big ? PAL.gold : '#ffffff';
+        ctx.fillText(f.text, f.x, f.y - (1 - t) * 30);
       }
       ctx.restore();
     }
@@ -1642,6 +1656,14 @@
     spark: function (x, y, n) { this._dot(x, y, n, '#ffd76e', 200, 2, true); },
     heal: function (x, y) { this._dot(x, y, 6, '#6fe08a', 60, 3, true); },
     crit: function (x, y) { R.addEffect({ type: 'ring', x: x, y: y, range: 26, color: PAL.gold, life: 0.25, maxLife: 0.25 }); },
+    // 伤害飘字：暴击放大字号并鎏金，配合 crit 的金圈。数字即结算伤害。
+    damageNumber: function (x, y, amount, crit) {
+      R.addEffect({
+        type: 'dmgtext', x: x, y: y,
+        text: String(Math.round(amount)), crit: !!crit, big: !!crit,
+        life: crit ? 0.7 : 0.5, maxLife: crit ? 0.7 : 0.5,
+      });
+    },
     slash: function (x, y, angle, range, color) {
       R.addEffect({ type: 'slash', x: x, y: y, angle: angle, arc: Game.WEAPONS.iron_sword.arc, range: range, color: color, life: 0.16, maxLife: 0.16 });
     },

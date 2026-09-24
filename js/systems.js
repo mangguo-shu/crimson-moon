@@ -426,8 +426,15 @@
       }
     }
 
-    // 兜底：候选不足 3 张时补齐
-    var tail = Game.UPGRADES[Game.UPGRADES.length - 1];
+    // 兜底：候选不足 3 张时补齐。取最强的一张属性卡（优先 epic）。
+    // 不按数组末尾取 —— 那只是恰好落在强卡上，池子一改就悄悄退化；
+    // 也不取治疗卡（已全部下线），兜底只能是实打实的数值卡。
+    var tail = null;
+    for (i = 0; i < Game.UPGRADES.length; i++) {
+      var upg = Game.UPGRADES[i];
+      if (upg.type !== 'stat') continue;
+      if (!tail || upg.rarity === 'epic') tail = upg;
+    }
     while (pool.length < 3) pool.push({ kind: 'upgrade', data: tail });
 
     var choices = [];
@@ -494,7 +501,8 @@
   S.rollShopItem = function (state, rng) {
     var roll = rng();
     var p = state.player;
-    if (roll < 0.30) {
+    // 权重：道具 50% / 武器 50%。治疗卡下线后原来的 45% 治疗权重平摊给两者。
+    if (roll < 0.50) {
       // 道具
       var iids = Object.keys(Game.ITEMS);
       var itemId = iids[Math.floor(rng() * iids.length)];
@@ -502,9 +510,9 @@
       return {
         type: 'item', itemId: itemId,
         name: item.name, desc: item.desc, rarity: item.rarity,
-        price: S.priceFor(item.rarity, state.wave, rng),
+        price: S.priceFor(item.rarity, state.wave),
       };
-    } else if (roll < 0.55) {
+    } else {
       // 武器（新武器或升级）
       if (p.weapons.length < CONST.MAX_WEAPONS) {
         var wids = Object.keys(Game.WEAPONS).filter(function (id) {
@@ -515,28 +523,23 @@
         return {
           type: 'weapon', weaponId: wid,
           name: wdef.name, desc: wdef.desc, rarity: 'rare',
-          price: S.priceFor('rare', state.wave, rng),
+          price: S.priceFor('rare', state.wave),
         };
       } else {
         return {
           type: 'weaponUpgrade',
           name: '武器强化', desc: '随机强化一把武器（最高 4 星）', rarity: 'rare',
-          price: S.priceFor('rare', state.wave, rng),
+          price: S.priceFor('rare', state.wave),
         };
       }
-    } else {
-      // 治疗
-      return {
-        type: 'heal', name: '急救包', desc: '恢复 50 点生命', rarity: 'common',
-        price: S.priceFor('common', state.wave, rng),
-      };
     }
   };
 
-  S.priceFor = function (rarity, wave, rng) {
+  /** 定价：同一稀有度 + 同一波次 → 同一个价格。
+   *  原来带 (rng() * 8 - 4) 的浮动，同一张卡在不同商店里价格不同，读起来像 bug。 */
+  S.priceFor = function (rarity, wave) {
     var base = { common: 15, rare: 35, epic: 55, legend: 85 }[rarity] || 20;
-    var price = Math.round(base + wave * 2 + (rng() * 8 - 4));
-    return Math.max(5, price);
+    return Math.max(5, base + wave * 2);
   };
 
   S.buyShopItem = function (state, index) {
@@ -549,6 +552,12 @@
       if (Game.Audio) Game.Audio.hurt();
       return false;
     }
+    // 未知类型一律不买：老存档可能残留已下线的卡片（治疗卡），
+    // 「扣了钱却什么都没发生」比不卖更糟。
+    if (item.type !== 'item' && item.type !== 'weapon' && item.type !== 'weaponUpgrade') {
+      console.log('[Shop] 未知商品类型:', item.type);
+      return false;
+    }
     p.materials -= item.price;
     item.sold = true;
     shop.locked[index] = false; // 买掉了就不再需要锁定，避免残留标记污染下次商店
@@ -558,7 +567,6 @@
       var notMax = p.weapons.filter(function (w) { return w.level < 4; });
       if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
     }
-    else if (item.type === 'heal') p.heal(50);
     if (Game.Audio) Game.Audio.buy();
     console.log('[Shop] 购买:', item.name, '价格=', item.price);
     return true;

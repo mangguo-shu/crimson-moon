@@ -97,9 +97,8 @@
     this._applyStatDelta(item.stat, count);
   };
 
-  /** 应用升级选项 */
+  /** 应用升级选项。即时回血卡已下线，这里只剩数值卡。 */
   Player.prototype.applyUpgrade = function (apply) {
-    if (apply.heal) { this.heal(apply.heal); return; }
     this._applyStatDelta(apply, 1);
   };
 
@@ -380,7 +379,15 @@
     }
     if (fx()) {
       fx().blood(this.x, this.y, crit ? 10 : 4);
-      if (crit) fx().crit(this.x, this.y);
+      if (crit) {
+        fx().crit(this.x, this.y);
+        // 暴击抖屏挪到这里：原来只挂在近战路径（weapons.js _applyHit），
+        // 远程暴击毫无反馈。crit 本就已传进本函数，近战远程由此统一。
+        fx().shake(3);
+      }
+      // 伤害飘字：此前游戏里没有任何伤害数字，暴击只有一圈金环，
+      // 玩家无从目视核验暴击倍率。显示的是已含被动加成的结算值。
+      fx().damageNumber(this.x, this.y - this.radius - 8, dmg, crit);
     }
     if (this.hp <= 0) { this.dead = true; return true; }
     if (this.counter > 0 && attacker && typeof attacker.takeDamage === 'function') {

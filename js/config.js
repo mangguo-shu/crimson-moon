@@ -593,9 +593,9 @@
     { type: 'stat', rarity: 'rare',   label: '致命直觉',   desc: '暴击率 +8%',              apply: { critChance: 0.08 } },
     { type: 'stat', rarity: 'rare',   label: '厚实护甲',   desc: '护甲 +2',                 apply: { armor: 2 } },
     { type: 'stat', rarity: 'epic',   label: '血气旺盛',   desc: '最大生命 +35',            apply: { maxHp: 35 } },
-    { type: 'heal', rarity: 'common', label: '急救',       desc: '立即恢复 30 点生命',      apply: { heal: 30 } },
-    { type: 'heal', rarity: 'rare',   label: '大急救包',   desc: '立即恢复 60 点生命',      apply: { heal: 60 } },
   ];
+  // 即时回血卡（急救 / 大急救包）已于 2026-09-24 下线：治疗只来自角色被动与吸血，
+  // 不该由一张卡瞬间补齐。商店里那张「急救包」也一并移除（见 systems.js rollShopItem）。
 
   /* ---------------- 随机数（可复现，用于存档一致性） ---------------- */
   // mulberry32：输入 32 位种子，返回 0~1 伪随机数发生器。
