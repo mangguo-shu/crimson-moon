@@ -121,15 +121,39 @@ function patchMainActivity() {
   if (files.length === 0) { console.warn('[patch] 未找到 MainActivity.java，跳过'); return; }
   const p = files[0];
   let s = read(p);
-  if (!s.includes('FLAG_KEEP_SCREEN_ON')) {
-    s = s.replace(
-      /(super\.onCreate\(savedInstanceState\);)/,
-      '$1\n        // 屏幕常亮：游戏进行中禁止息屏\n        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);'
-    );
+  if (s.includes('FLAG_KEEP_SCREEN_ON')) {
+    console.log('[patch] MainActivity.java: 屏幕常亮已存在');
+    return;
+  }
+
+  const FLAG_LINES = '        // 屏幕常亮：游戏进行中禁止息屏\n' +
+                     '        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);';
+
+  if (s.includes('super.onCreate(savedInstanceState);')) {
+    // MainActivity 已重写 onCreate：紧随 super 调用后插入
+    s = s.replace(/(super\.onCreate\(savedInstanceState\);)/, '$1\n' + FLAG_LINES);
+  } else {
+    // Capacitor 默认生成的是空类 `extends BridgeActivity {}`，没有 onCreate。
+    // 之前直接 replace 会静默失败（字符串未变却仍上报成功），这里补写整个方法。
+    if (!s.includes('import android.os.Bundle;')) {
+      s = s.replace(/^import\s+com\.getcapacitor\.BridgeActivity;/m,
+                    'import android.os.Bundle;\n$&');
+    }
+    s = s.replace(/(public\s+class\s+MainActivity\s+extends\s+BridgeActivity)\s*\{\s*\}\s*$/,
+      '$1 {\n' +
+      '    @Override\n' +
+      '    protected void onCreate(Bundle savedInstanceState) {\n' +
+      '        super.onCreate(savedInstanceState);\n' +
+      FLAG_LINES +
+      '\n    }\n}\n');
+  }
+
+  if (s.includes('FLAG_KEEP_SCREEN_ON')) {
     write(p, s);
     console.log('[patch] MainActivity.java: 屏幕常亮');
   } else {
-    console.log('[patch] MainActivity.java: 已存在');
+    // 结构不符合两种已知形态时明确告警，避免再次静默成功
+    console.warn('[patch] MainActivity.java: 结构无法识别，屏幕常亮未注入，请手工检查');
   }
 }
 
