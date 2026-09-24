@@ -73,8 +73,77 @@
       critMult: 1.5,
       armor: 0,
       startWeapon: 'iron_sword',
+      // 姿态（renderer 的 _PLAYER_BODY 按此分流）。老角色没有这个字段时按
+      // swordsman 处理，所以这里显式写出只是为了让四个职业对齐。
+      body: 'swordsman',
       // 程序化绘制配色（国风）：青衫 + 月白内衬 + 朱红束带
       colors: { skin: '#f2d3ac', cloth: '#3f6b8a', cloth2: '#e6e0cf', hair: '#241d2e', accent: '#c8352f' },
+    },
+    {
+      id: 'archer',
+      name: '青木弓手',
+      category: '暴击远程',
+      desc: '在青木林里讨生活的射手，箭无虚发。',
+      passive: {
+        id: 'chuanYang',
+        name: '穿杨',
+        desc: '暴击命中额外追加 35% 伤害。',
+      },
+      baseHp: 90,
+      speed: 232,
+      damage: 0.95,
+      attackSpeed: 1.1,
+      critChance: 0.16,
+      critMult: 2.0,
+      armor: 0,
+      startWeapon: 'pistol',
+      body: 'archer',
+      // 劲装 + 束发带 + 斗笠翎羽；配色偏林野青
+      colors: { skin: '#f0d0a8', cloth: '#4f7a52', cloth2: '#e2ecd2', hair: '#2a2318', accent: '#c8352f' },
+    },
+    {
+      id: 'monk',
+      name: '玄铁武僧',
+      category: '坚韧近战',
+      desc: '古刹里打熬出来的武僧，一身硬气。',
+      passive: {
+        id: 'jingKang',
+        name: '金刚',
+        desc: '承受伤害 -18%；每波开始时获得最大生命 25% 的护盾。',
+      },
+      baseHp: 140,
+      speed: 185,
+      damage: 0.9,
+      attackSpeed: 0.9,
+      critChance: 0.04,
+      critMult: 1.5,
+      armor: 12,
+      startWeapon: 'iron_sword',
+      body: 'monk',
+      // 素色僧袍 + 光头戒疤；accent 是鎏金，供念珠 / 戒疤 / 护腕共用
+      colors: { skin: '#e8c49a', cloth: '#565e6a', cloth2: '#e8dfc0', hair: '#3a2a20', accent: '#ffcf5e' },
+    },
+    {
+      id: 'brawler',
+      name: '赤岩力士',
+      category: '爆发近战',
+      desc: '赤岩山里讨生活的力士，越打越来劲。',
+      passive: {
+        id: 'tieGu',
+        name: '铁骨',
+        desc: '生命低于 50% 时伤害 +35%。',
+      },
+      baseHp: 125,
+      speed: 205,
+      damage: 1.15,
+      attackSpeed: 0.85,
+      critChance: 0.06,
+      critMult: 1.5,
+      armor: 4,
+      startWeapon: 'iron_sword',
+      body: 'brawler',
+      // 重甲 + 束发额带；配色偏赤岩红
+      colors: { skin: '#e2b88a', cloth: '#8a3a2e', cloth2: '#d8c8b0', hair: '#2a1a14', accent: '#ffcf5e' },
     },
   ];
 
@@ -107,6 +176,43 @@
         var mult = 1 + Math.min(MAX, st.stacks) * 0.05;
         st.stacks = Math.min(MAX, st.stacks + 1);
         return info.dmg * mult;
+      },
+    },
+
+    // 穿杨（青木弓手）：暴击命中再追加 35%，叠在武器 critMult 之上。
+    // 与「连击」的分工：连击靠反复打同一目标叠层，穿杨是纯粹的爆发流，
+    // 不吃叠层、不挑目标，换来更高的暴击率（见 CHARACTERS 里的 critChance）。
+    chuanYang: {
+      name: '穿杨',
+      desc: '暴击命中额外追加 35% 伤害。',
+      onHit: function (player, info) {
+        return info.crit ? info.dmg * 1.35 : info.dmg;
+      },
+    },
+
+    // 金刚（玄铁武僧）：承伤减免 + 每波开局护盾。
+    // 护盾上限随生命成长，与护盾回复（systems.js 的 +2/秒）共用一条上限，
+    // 所以这里只在下限时抬高上限，不直接改玩家的永久上限。
+    jingKang: {
+      name: '金刚',
+      desc: '承受伤害 -18%；每波开始时获得最大生命 25% 的护盾。',
+      onDamageTaken: function (player, raw) { return raw * 0.82; },
+      onWaveStart: function (player, state, wave) {
+        var s = player.stats;
+        var v = Math.round(s.maxHp * 0.25);
+        if (s.shieldMax < v) s.shieldMax = v;
+        s.shield = Math.min(s.shieldMax, s.shield + v);
+      },
+    },
+
+    // 铁骨（赤岩力士）：残血反扑。血量低于一半时伤害放大 —— 高风险高回报，
+    // 不打残血就是白板角色。
+    tieGu: {
+      name: '铁骨',
+      desc: '生命低于 50% 时伤害 +35%。',
+      onHit: function (player, info) {
+        var s = player.stats;
+        return (s.hp / s.maxHp) < 0.5 ? info.dmg * 1.35 : info.dmg;
       },
     },
   };

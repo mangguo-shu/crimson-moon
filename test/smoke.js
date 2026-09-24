@@ -1296,6 +1296,225 @@ try {
   assert(false, '反伤机制/坦克异常: ' + e.stack);
 }
 
+/* ---------------- 职业姿态 + 新角色 ---------------- */
+console.log('\n== 职业姿态 / 新角色 ==');
+try {
+  var BODIES38 = Object.keys(Game.Renderer._PLAYER_BODY);
+  var B38 = ['swordsman', 'archer', 'monk', 'brawler'];
+
+  // ① 配置形状：每个角色的 body 都有对应姿态实现，起始武器与被动都注册了
+  var chars38 = Game.CHARACTERS;
+  assert(chars38.length === 4, '现有 4 个角色（' + chars38.length + '）');
+  var shape38 = true, bodiesUsed = {};
+  for (var i38 = 0; i38 < chars38.length; i38++) {
+    var ch38 = chars38[i38];
+    if (!ch38.body || BODIES38.indexOf(ch38.body) < 0) shape38 = false;
+    if (!Game.WEAPONS[ch38.startWeapon]) shape38 = false;
+    if (!Game.PASSIVES[ch38.passive.id]) shape38 = false;
+    if (!ch38.colors.cloth || !ch38.colors.cloth2 || !ch38.colors.skin) shape38 = false;
+    bodiesUsed[ch38.body] = true;
+  }
+  assert(shape38, '每个角色的 body / startWeapon / 被动 / 配色字段齐全');
+  var allBodiesUsed = true;
+  for (var b38 = 0; b38 < B38.length; b38++) if (!bodiesUsed[B38[b38]]) allBodiesUsed = false;
+  assert(allBodiesUsed, '4 组职业姿态各有角色使用（不白写一套剪影）');
+
+  // ② 老角色不动：流浪剑客的原字段与旧实现一致
+  var sw38 = null;
+  for (var i39 = 0; i39 < chars38.length; i39++) {
+    if (chars38[i39].id === 'swordsman') sw38 = chars38[i39];
+  }
+  assert(sw38 && sw38.baseHp === 100 && sw38.speed === 220 &&
+         sw38.damage === 1.0 && sw38.startWeapon === 'iron_sword' &&
+         sw38.passive.id === 'combo' && sw38.colors.cloth === '#3f6b8a',
+         '流浪剑客的数值 / 武器 / 被动 / 配色未被新角色影响');
+
+  // ③ 每个角色都能构造出带正确属性的玩家
+  var built38 = true;
+  for (var i40 = 0; i40 < chars38.length; i40++) {
+    var pl38 = new Game.Player(chars38[i40].id);
+    if (pl38.char.id !== chars38[i40].id) built38 = false;
+    if (pl38.stats.maxHp !== chars38[i40].baseHp) built38 = false;
+    if (pl38.stats.critChance !== chars38[i40].critChance) built38 = false;
+    if (pl38.passive.id !== chars38[i40].passive.id) built38 = false;
+  }
+  assert(built38, '4 个角色都能按配置构造出玩家（数值 / 被动绑定正确）');
+
+  // ④ 穿杨：只有暴击命中追加 35%
+  var archer38 = new Game.Player('archer');
+  var tgt38 = new Game.Enemy('zombie', 200, 200, 1);
+  assert(Game.invokePassive(archer38, 'onHit', { enemy: tgt38, dmg: 100, crit: false, weapon: null }) === 100,
+         '穿杨：非暴击命中伤害不变（100 → 100）');
+  assert(Game.invokePassive(archer38, 'onHit', { enemy: tgt38, dmg: 100, crit: true, weapon: null }) === 135,
+         '穿杨：暴击命中额外 +35%（100 → 135）');
+
+  // ⑤ 金刚：承伤减免，且不依赖叠层
+  var monk38 = new Game.Player('monk');
+  assert(Game.invokePassive(monk38, 'onDamageTaken', 100) === 82,
+         '金刚：承受伤害 -18%（100 → 82）');
+  // 开局护盾：先设盾为 0，开波应补上 maxHp 的 25%
+  monk38.stats.shieldMax = 0; monk38.stats.shield = 0;
+  var st41 = Game.Systems.createState('campaign', 'monk', 41);
+  st41.player = monk38;
+  Game.state = st41;
+  Game.Systems.startWave(st41, 2);
+  assert(monk38.stats.shieldMax === 35,
+         '金刚：开局把护盾上限抬到能装下这波护盾（maxHp 140 的 25% = 35）');
+  assert(monk38.stats.shield === 35, '金刚：开局获得最大生命 25% 的护盾（35）');
+  // 上限不无限抬升：上限已经是这个数时不再往上加
+  var smBefore38 = monk38.stats.shieldMax;
+  Game.Systems.startWave(st41, 3);
+  assert(monk38.stats.shieldMax === smBefore38,
+         '金刚：护盾上限不随波次无限抬升（仍为 ' + smBefore38 + '）');
+  // 盾满了不再叠
+  var sh38 = monk38.stats.shield;
+  monk38.stats.shield = monk38.stats.shieldMax;
+  Game.Systems.startWave(st41, 4);
+  assert(monk38.stats.shield === sh38, '金刚：护盾已满时不再叠加溢出');
+
+  // ⑥ 铁骨：只有残血时增伤
+  var bw38 = new Game.Player('brawler');
+  var tgtB38 = new Game.Enemy('zombie', 300, 300, 1);
+  assert(bw38.stats.hp === bw38.stats.maxHp, '前置：力士满血');
+  assert(Game.invokePassive(bw38, 'onHit', { enemy: tgtB38, dmg: 100, crit: false, weapon: null }) === 100,
+         '铁骨：满血时伤害不变（100 → 100）');
+  bw38.stats.hp = bw38.stats.maxHp * 0.4;
+  assert(Game.invokePassive(bw38, 'onHit', { enemy: tgtB38, dmg: 100, crit: false, weapon: null }) === 135,
+         '铁骨：血量低于 50% 时伤害 +35%（100 → 135）');
+  bw38.stats.hp = bw38.stats.maxHp;
+  assert(Game.invokePassive(bw38, 'onHit', { enemy: tgtB38, dmg: 100, crit: false, weapon: null }) === 100,
+         '铁骨：回满血后增伤关闭');
+
+  // ⑦ 集成：新角色进真实战斗路径
+  var st42 = Game.Systems.createState('campaign', 'monk', 42);
+  Game.Systems.startWave(st42, 1);
+  var mp38 = st42.player;
+  assert(mp38.char.id === 'monk' && mp38.weapons[0].defId === 'iron_sword',
+         '武僧开局装备铁剑（起始武器按配置生效）');
+  st42.enemies.length = 0;
+  var z38 = new Game.Enemy('zombie', mp38.x + 40, mp38.y, 1);
+  st42.enemies.push(z38);
+  mp38.weapons[0].cooldownRemaining = 0;
+  mp38.weapons[0].update(0.016, mp38, st42);
+  assert(mp38.damageDealt > 0, '武僧近战正常出手');
+  var ar38 = Game.Systems.createState('campaign', 'archer', 43);
+  assert(ar38.player.weapons[0].defId === 'pistol', '弓手开局装备手枪（远程职业）');
+
+  // ⑧ 角色选择界面：4 张卡，各带被动名与描述，无占位文本
+  Game.UI.renderCharSelect();
+  var cs38 = document.getElementById('menu').innerHTML;
+  assert(cs38.indexOf('[object Object]') < 0, '角色选择界面不出现 [object Object]');
+  var cardCount38 = (cs38.match(/startRun/g) || []).length;
+  assert(cardCount38 === 4, '角色选择界面渲染 4 张卡（实际 ' + cardCount38 + '）');
+  var names38 = ['流浪剑客', '青木弓手', '玄铁武僧', '赤岩力士'];
+  for (var n38 = 0; n38 < names38.length; n38++) {
+    assert(cs38.indexOf(names38[n38]) >= 0, '角色选择界面出现「' + names38[n38] + '」');
+  }
+  assert(cs38.indexOf('穿杨') >= 0 && cs38.indexOf('金刚') >= 0 && cs38.indexOf('铁骨') >= 0,
+         '角色选择界面渲染出新角色的被动名');
+
+  // ⑨ 存档往返：新角色的姿态与配色随 charId 恢复
+  var st44 = Game.Systems.createState('endless', 'monk', 700);
+  Game.Systems.startWave(st44, 5);
+  var sv38 = Game.Systems.serialize(st44);
+  var ld38 = Game.Systems.deserialize(sv38);
+  assert(ld38.player.char.id === 'monk' && ld38.player.char.body === 'monk',
+         '读档后职业姿态保留（body=monk）');
+  assert(ld38.player.stats.maxHp === 140, '读档后武僧属性保留（maxHp=140）');
+  assert(ld38.player.passive.id === 'jingKang', '读档后被动绑定保留');
+
+  // ⑩ 渲染：4 种姿态各 8 方向 + 攻击动作全程 + 受击闪白 / 反伤闪色 / 无敌帧
+  Game.state = null;
+  var st45 = Game.Systems.createState('campaign', 'swordsman', 701);
+  Game.Systems.startWave(st45, 1);
+  Game.state = st45;
+  st45.enemies.length = 0;
+  Game.Renderer.setQuality('high');
+  for (var ci38 = 0; ci38 < chars38.length; ci38++) {
+    var p38 = new Game.Player(chars38[ci38].id);
+    p38.x = st45.player.x; p38.y = st45.player.y;
+    p38.weapons = [Game.createWeapon(chars38[ci38].startWeapon, 1)];
+    st45.player = p38;
+    p38.moving = true; p38.walkTime = 1.2;
+    for (var a38 = 0; a38 < 8; a38++) {
+      p38.facing = a38 * (Math.PI / 4);
+      Game.Renderer.render(st45, 0.016);
+    }
+    // 待机呼吸分支
+    p38.moving = false;
+    Game.Renderer.render(st45, 0.016);
+    // 两种攻击动作全程逐帧
+    for (var k38 = 0; k38 < 2; k38++) {
+      var kind38 = k38 === 0 ? 'melee' : 'ranged';
+      p38.playAttack(kind38);
+      var dur38 = p38.attackAnim.dur;
+      for (var s38 = 0; s38 <= 10; s38++) {
+        p38.attackAnim.t = dur38 * (s38 / 10);
+        Game.Renderer.render(st45, 0.016);
+      }
+      p38.attackAnim = null;
+    }
+    // 受击白闪 / 反伤青色闪 / 无敌帧 三种覆盖态
+    p38.hitFlashTimer = 0.1;
+    Game.Renderer.render(st45, 0.016);
+    p38.hitFlashTimer = 0; p38.counterFlash = 0.2;
+    Game.Renderer.render(st45, 0.016);
+    p38.counterFlash = 0; p38.invincibleTimer = 0.2;
+    Game.Renderer.render(st45, 0.016);
+    p38.invincibleTimer = 0;
+  }
+  assert(true, '4 种职业姿态 × 8 方向 + 攻击动作全程 + 闪色 / 无敌帧 渲染无异常');
+
+  // ⑪ 低画质（描边关闭）下同样不崩
+  Game.Renderer.setQuality('low');
+  var pLow38 = new Game.Player('monk');
+  pLow38.x = st45.player.x; pLow38.y = st45.player.y;
+  pLow38.weapons = [Game.createWeapon('iron_sword', 1)];
+  st45.player = pLow38;
+  for (var aL38 = 0; aL38 < 8; aL38++) {
+    pLow38.facing = aL38 * (Math.PI / 4);
+    Game.Renderer.render(st45, 0.016);
+  }
+  Game.Renderer.setQuality('high');
+  st45.enemies.length = 0;
+  Game.state = null;
+  assert(true, '低画质（无描边）下新姿态渲染无异常');
+
+  // ⑫ 量化回归：老角色的头仍是同一个圆（重构没有把 swordsman 画偏）
+  function makeMatrixCtx38() {
+    var m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }, stack = [], arcs = [];
+    function mul(n) {
+      m = { a: m.a * n.a + m.c * n.b, b: m.b * n.a + m.d * n.b,
+            c: m.a * n.c + m.c * n.d, d: m.b * n.c + m.d * n.d,
+            e: m.a * n.e + m.c * n.f + m.e, f: m.b * n.e + m.d * n.f + m.f };
+    }
+    return {
+      ctx: new Proxy({
+        save: function () { stack.push(m); },
+        restore: function () { if (stack.length) m = stack.pop(); },
+        translate: function (x, y) { mul({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); },
+        rotate: function (t) { mul({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 }); },
+        scale: function (x, y) { mul({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); },
+        arc: function (x, y, r) { arcs.push({ x: x, r: r }); },
+      }, { get: function (t, k) { return (k in t) ? t[k] : function () {}; },
+           set: function (t, k, v) { t[k] = v; return true; } }),
+      arcs: arcs,
+    };
+  }
+  var swP38 = new Game.Player('swordsman');
+  swP38.weapons = [Game.createWeapon('iron_sword', 1)];
+  swP38.facing = 0;
+  var rec38 = makeMatrixCtx38();
+  Game.Renderer._drawPlayer(rec38.ctx, swP38);
+  var head38 = null;
+  for (var hi38 = 0; hi38 < rec38.arcs.length; hi38++) {
+    if (rec38.arcs[hi38].x === 0 && Math.abs(rec38.arcs[hi38].r - 9.6) < 0.01) head38 = rec38.arcs[hi38];
+  }
+  assert(head38 !== null, '重构后剑客的头部仍是那个半径 9.6 的圆（观感未漂移）');
+} catch (e) {
+  assert(false, '职业姿态/新角色异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

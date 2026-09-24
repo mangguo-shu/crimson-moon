@@ -424,7 +424,279 @@
     }
   };
 
-  /* ---------------- 玩家绘制（日漫 chibi + 国风服饰） ---------------- */
+  /* ---------------- 玩家绘制（日漫 chibi + 国风服饰） ----------------
+   * 四种职业姿态共用一套骨架：脚下光环 / 双腿 / 后臂 / 头骨与脸 / 无敌帧闪烁，
+   * 每种姿态只覆盖三块：身体（袍或甲）、头饰（发髻、斗笠、光头、束发）、
+   * 前臂与手持物（剑、弩、拳）。
+   *
+   * swordsman 这三块就是重构前的原始代码，逐行保留 —— 老角色的既有观感
+   * 不随本次拆分漂移（test/smoke.js 的「8 方向直立」断言盯的就是它的头）。
+   * 配色全部来自 char.colors，是数据驱动的；新增职业只加一段配置。 */
+
+  // 共用的脸：动漫大眼（白底 + 深瞳 + 双高光）+ 眉 + 腮红。四种姿态共用。
+  R._drawPlayerFace = function (ctx, c, breathe, tint, O) {
+    var ey = -13.4 + breathe;
+    ctx.beginPath(); ctx.ellipse(-3.4, ey, 2.3, 2.8, 0, 0, TAU);
+    ctx.fillStyle = '#fbf7ee'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(3.4, ey, 2.3, 2.8, 0, 0, TAU);
+    ctx.fillStyle = '#fbf7ee'; ctx.fill();
+    ctx.fillStyle = '#2a2233';
+    ctx.beginPath(); ctx.ellipse(-3.1, ey + 0.3, 1.7, 2.1, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(3.7, ey + 0.3, 1.7, 2.1, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-3.8, ey - 0.9, 0.75, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(3.0, ey - 0.9, 0.75, 0, TAU); ctx.fill();
+    // 眉（位于发际线之下、眼睛之上）
+    ctx.strokeStyle = tint(c.hair); ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-5.2, ey - 3.6); ctx.lineTo(-1.8, ey - 4.0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5.2, ey - 3.6); ctx.lineTo(1.8, ey - 4.0); ctx.stroke();
+    // 腮红
+    ctx.fillStyle = 'rgba(230,120,110,0.26)';
+    ctx.beginPath(); ctx.ellipse(-6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
+  };
+
+  // 共用的头骨：脸形 → 头饰（各姿态覆盖）→ 脸。头发画在眼睛之前，止于发际线。
+  R._drawPlayerHead = function (ctx, pose, c, headDX, headDY, breathe, tint, O) {
+    ctx.save();
+    ctx.translate(headDX, headDY);
+    ctx.beginPath(); ctx.arc(0, -14 + breathe, 9.6, 0, TAU);
+    fs(ctx, tint(c.skin), O, 1.8);
+    pose.headwear(ctx, c, breathe, tint, O);
+    this._drawPlayerFace(ctx, c, breathe, tint, O);
+    ctx.restore();
+  };
+
+  // 四种职业姿态。torso / headwear / arms 三段签名统一：
+  // (ctx, c, breathe, tint, O) —— arms 额外收 p 与 armAng。
+  R._PLAYER_BODY = {
+    /* ---- 剑客：交领长衫 + 发髻 + 铁剑（原始实现） ---- */
+    swordsman: {
+      torso: function (ctx, c, br, tint, O) {
+        ctx.beginPath(); ctx.ellipse(0, br * 0.4, 9.2, 11.5, 0, 0, TAU);
+        fs(ctx, tint(c.cloth), O, 1.8);
+        // 交领（右衽）：两道斜襟合成 V 领
+        ctx.strokeStyle = tint(c.cloth2); ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-4.5, -6.5); ctx.lineTo(0.5, 0.5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(4.5, -6.5); ctx.lineTo(0.5, 0.5); ctx.stroke();
+        // 腰带（朱红）
+        ctx.beginPath(); ctx.rect(-8.6, 3, 17.2, 3.4);
+        fs(ctx, tint(c.accent), O, 1.2);
+        // 披风下摆
+        ctx.beginPath();
+        ctx.moveTo(-8, 1); ctx.lineTo(-11.5, 10); ctx.lineTo(-5, 9); ctx.closePath();
+        fs(ctx, tint(c.cloth2), O, 1.3);
+      },
+      headwear: function (ctx, c, br, tint, O) {
+        // 贴头骨的厚弧带：下缘止于发际线，避免压住眉眼
+        ctx.beginPath();
+        ctx.arc(0, -14 + br, 9.9, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.strokeStyle = tint(c.hair);
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        if (O) {
+          // 弧带内外两侧描边，保持动漫轮廓
+          ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(0, -14 + br, 13.4, Math.PI * 1.17, Math.PI * 1.83); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, -14 + br, 6.4, Math.PI * 1.17, Math.PI * 1.83); ctx.stroke();
+        }
+        // 刘海（额前碎发，尖端止于眉上，不遮眼）
+        ctx.beginPath();
+        ctx.moveTo(-7.6, -19.6 + br); ctx.lineTo(-3.6, -17.7 + br); ctx.lineTo(-1.0, -20.3 + br);
+        ctx.closePath();
+        fs(ctx, tint(c.hair), O, 1.1);
+        ctx.beginPath();
+        ctx.moveTo(-1.0, -20.3 + br); ctx.lineTo(2.2, -17.5 + br); ctx.lineTo(5.6, -19.9 + br);
+        ctx.closePath();
+        fs(ctx, tint(c.hair), O, 1.1);
+        // 鬓发
+        ctx.beginPath(); ctx.ellipse(-9.2, -12.5 + br, 2.4, 6, 0.2, 0, TAU);
+        fs(ctx, tint(c.hair), O, 1.2);
+        ctx.beginPath(); ctx.ellipse(9.2, -12.5 + br, 2.4, 6, -0.2, 0, TAU);
+        fs(ctx, tint(c.hair), O, 1.2);
+        // 发髻 + 朱红发带
+        ctx.beginPath(); ctx.arc(0, -24 + br, 3.6, 0, TAU);
+        fs(ctx, tint(c.hair), O, 1.3);
+        ctx.beginPath(); ctx.rect(-4.2, -21.5 + br, 8.4, 1.9);
+        fs(ctx, tint(c.accent), O, 1);
+      },
+      arms: function (ctx, p, c, armAng, tint, O) {
+        // 前臂 + 持剑手（绕肩关节摆动，驱动攻击动作）
+        ctx.save();
+        ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
+        ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
+        ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
+        fs(ctx, tint(c.skin), O, 1.2);
+        R._drawSword(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#cfe0ea');
+        ctx.restore();
+      },
+    },
+
+    /* ---- 弓手：束腰劲装 + 斗笠翎羽 + 弩 ---- */
+    archer: {
+      torso: function (ctx, c, br, tint, O) {
+        ctx.beginPath(); ctx.ellipse(0, br * 0.4, 8.2, 10.8, 0, 0, TAU);
+        fs(ctx, tint(c.cloth), O, 1.8);
+        // 斜挎箭囊带
+        ctx.strokeStyle = tint(c.accent); ctx.lineWidth = 3; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-7, -7); ctx.lineTo(7, 4); ctx.stroke();
+        // 箭囊（身侧露出一角）
+        ctx.beginPath(); ctx.rect(5, 0, 4.4, 8);
+        fs(ctx, tint(c.accent), O, 1.2);
+        // 腰封 + 短下摆
+        ctx.beginPath(); ctx.rect(-8, 4, 16, 3);
+        fs(ctx, tint(c.cloth2), O, 1.2);
+        ctx.beginPath();
+        ctx.moveTo(-8, 6.6); ctx.lineTo(-6.2, 11); ctx.lineTo(6.2, 11); ctx.lineTo(8, 6.6);
+        ctx.closePath();
+        fs(ctx, tint(c.cloth2), O, 1.3);
+      },
+      headwear: function (ctx, c, br, tint, O) {
+        // 束发（后脑厚弧）
+        ctx.beginPath();
+        ctx.arc(0, -14 + br, 9.9, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.strokeStyle = tint(c.hair); ctx.lineWidth = 6.4; ctx.lineCap = 'round';
+        ctx.stroke();
+        // 束发带
+        ctx.beginPath(); ctx.rect(-9.4, -18.2 + br, 18.8, 2.5);
+        fs(ctx, tint(c.accent), O, 1.1);
+        // 斗笠
+        ctx.beginPath();
+        ctx.moveTo(-15, -19.4 + br); ctx.quadraticCurveTo(0, -31 + br, 15, -19.4 + br);
+        ctx.lineTo(11, -18 + br); ctx.quadraticCurveTo(0, -27.4 + br, -11, -18 + br);
+        ctx.closePath();
+        fs(ctx, PAL.wood, O, 1.4);
+        ctx.strokeStyle = '#5c452c'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(-12.4, -20.2 + br);
+        ctx.quadraticCurveTo(0, -29.4 + br, 12.4, -20.2 + br); ctx.stroke();
+        // 翎羽
+        ctx.save();
+        ctx.translate(10.5, -22.6 + br); ctx.rotate(-0.5);
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.quadraticCurveTo(3, -7, 1, -13);
+        ctx.quadraticCurveTo(-2, -7, 0, 0);
+        ctx.closePath();
+        fs(ctx, PAL.paper, O, 1.1);
+        ctx.restore();
+      },
+      arms: function (ctx, p, c, armAng, tint, O) {
+        ctx.save();
+        ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
+        ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
+        ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
+        fs(ctx, tint(c.skin), O, 1.2);
+        R._drawCrossbow(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#4fbfa0');
+        ctx.restore();
+      },
+    },
+
+    /* ---- 武僧：素色僧袍 + 念珠 + 光头戒疤 + 徒手出拳 ---- */
+    monk: {
+      torso: function (ctx, c, br, tint, O) {
+        // 宽身僧袍（梯形，下摆外扩）
+        ctx.beginPath();
+        ctx.moveTo(-11, 12); ctx.lineTo(-8.4, -8); ctx.lineTo(8.4, -8); ctx.lineTo(11, 12);
+        ctx.closePath();
+        fs(ctx, tint(c.cloth), O, 1.8);
+        // 交领
+        ctx.strokeStyle = tint(c.cloth2); ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-4, -8); ctx.lineTo(0, -1); ctx.lineTo(4, -8); ctx.stroke();
+        // 念珠（垂在胸前）
+        ctx.strokeStyle = tint(c.accent); ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(-5, -4); ctx.quadraticCurveTo(0, 6, 5, -4); ctx.stroke();
+        ctx.fillStyle = tint(c.accent);
+        var beads = [[-4.6, -2], [-3, 1.4], [-1, 3.4], [1, 3.4], [3, 1.4], [4.6, -2]];
+        for (var bi = 0; bi < beads.length; bi++) {
+          ctx.beginPath(); ctx.arc(beads[bi][0], beads[bi][1], 0.9, 0, TAU); ctx.fill();
+        }
+        // 腰带
+        ctx.beginPath(); ctx.rect(-10.6, 8, 21.2, 3);
+        fs(ctx, tint(c.cloth2), O, 1.2);
+      },
+      headwear: function (ctx, c, br, tint, O) {
+        // 光头体积高光
+        ctx.beginPath(); ctx.ellipse(-3.2, -19.4 + br, 3.4, 1.7, -0.5, 0, TAU);
+        ctx.fillStyle = 'rgba(255,255,255,0.30)'; ctx.fill();
+        // 戒疤（额上六点）
+        ctx.fillStyle = tint(c.accent);
+        var spots = [[-4.2, -18.8], [-1.4, -18.8], [1.4, -18.8], [4.2, -18.8],
+                     [-2.8, -16.1], [2.8, -16.1]];
+        for (var si = 0; si < spots.length; si++) {
+          ctx.beginPath(); ctx.arc(spots[si][0], spots[si][1] + br, 0.75, 0, TAU); ctx.fill();
+        }
+        // 僧耳坠
+        ctx.strokeStyle = tint(c.accent); ctx.lineWidth = 1; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-9.4, -12 + br); ctx.lineTo(-10.8, -7.6 + br); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(9.4, -12 + br); ctx.lineTo(10.8, -7.6 + br); ctx.stroke();
+      },
+      arms: function (ctx, p, c, armAng, tint, O) {
+        // 徒手出拳：更粗的手臂 + 拳锋鎏金护腕
+        ctx.save();
+        ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
+        ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
+        ctx.beginPath(); ctx.arc(6.8, -9.6, 2.9, 0, TAU);
+        fs(ctx, tint(c.skin), O, 1.3);
+        ctx.strokeStyle = tint(c.accent); ctx.lineWidth = 1.7;
+        ctx.beginPath(); ctx.arc(6.8, -9.6, 4.1, -0.95, 0.95); ctx.stroke();
+        ctx.restore();
+      },
+    },
+
+    /* ---- 力士：重甲肩甲 + 束发额带 + 巨拳 ---- */
+    brawler: {
+      torso: function (ctx, c, br, tint, O) {
+        ctx.beginPath(); ctx.ellipse(0, br * 0.4, 10.4, 11.6, 0, 0, TAU);
+        fs(ctx, tint(c.cloth), O, 1.9);
+        // 甲片横纹
+        ctx.strokeStyle = tint(c.cloth2); ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(-7.4, -4.5); ctx.lineTo(7.4, -4.5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-8.4, 0.6); ctx.lineTo(8.4, 0.6); ctx.stroke();
+        // 兽皮带 + 铜扣
+        ctx.beginPath(); ctx.rect(-10, 4, 20, 3.6);
+        fs(ctx, tint(c.cloth2), O, 1.2);
+        ctx.beginPath(); ctx.rect(-2.4, 3.4, 4.8, 4.8);
+        fs(ctx, tint(c.accent), O, 1);
+        // 肩甲（方块）
+        ctx.beginPath(); ctx.rect(-14.4, -10, 8, 7);
+        fs(ctx, tint(c.cloth2), O, 1.4);
+        ctx.beginPath(); ctx.rect(6.4, -10, 8, 7);
+        fs(ctx, tint(c.cloth2), O, 1.4);
+      },
+      headwear: function (ctx, c, br, tint, O) {
+        // 两侧留发（顶心剃光，绑成发冠）
+        ctx.beginPath();
+        ctx.arc(0, -14 + br, 9.9, Math.PI * 1.2, Math.PI * 1.8);
+        ctx.strokeStyle = tint(c.hair); ctx.lineWidth = 5.6; ctx.lineCap = 'round';
+        ctx.stroke();
+        // 额带
+        ctx.beginPath(); ctx.rect(-9.8, -19.4 + br, 19.6, 2.7);
+        fs(ctx, tint(c.accent), O, 1.1);
+        // 发冠
+        ctx.beginPath(); ctx.rect(-3.2, -26.4 + br, 6.4, 4.4);
+        fs(ctx, tint(c.cloth2), O, 1.2);
+        // 络腮胡
+        ctx.strokeStyle = tint(c.hair); ctx.lineWidth = 1.7; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(0, -12 + br, 8.3, Math.PI * 0.22, Math.PI * 0.78); ctx.stroke();
+      },
+      arms: function (ctx, p, c, armAng, tint, O) {
+        // 巨拳
+        ctx.save();
+        ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
+        ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 4.8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.4, -9); ctx.stroke();
+        ctx.beginPath(); ctx.arc(6.8, -10, 4, 0, TAU);
+        fs(ctx, tint(c.skin), O, 1.4);
+        ctx.strokeStyle = tint(c.accent); ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.arc(6.8, -10, 5.3, -0.95, 0.95); ctx.stroke();
+        ctx.restore();
+      },
+    },
+  };
+
   R._drawPlayer = function (ctx, p) {
     var c = p.char.colors;
     var O = this.outline;
@@ -433,6 +705,8 @@
     var now = performance.now();
     // 反伤闪色优先于受击白闪：青色是「被反弹」的专属信号，不跟普通受击混
     function tint(col) { return counterHit ? '#8fd0e8' : (flash ? '#ffffff' : col); }
+
+    var pose = R._PLAYER_BODY[p.char.body] || R._PLAYER_BODY.swordsman;
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -472,7 +746,7 @@
 
     // ---- 攻击动作（纯表现，不影响判定） ----
     var atk = p.attackAnim;
-    var armAng = 0;      // 前臂 + 剑：绕肩关节旋转
+    var armAng = 0;      // 前臂 + 手持物：绕肩关节旋转
     var bodyKick = 0;    // 远程后坐：身体向后位移
     var swingLean = 0;   // 挥砍：整体前倾
     if (atk) {
@@ -494,103 +768,20 @@
     }
     if (bodyKick) ctx.translate(-bodyKick, 0);
 
-    // ---- 双腿（月白裤，行走摆动） ----
+    // ---- 双腿（裤，行走摆动） ----
     ctx.beginPath(); ctx.ellipse(-4.2, 9 + sw * 3, 3.6, 5, 0, 0, TAU);
     fs(ctx, tint(c.cloth2), O, 1.5);
     ctx.beginPath(); ctx.ellipse(4.2, 9 - sw * 3, 3.6, 5, 0, 0, TAU);
     fs(ctx, tint(c.cloth2), O, 1.5);
 
-    // ---- 后臂（青衫广袖） ----
+    // ---- 后臂（广袖） ----
     ctx.strokeStyle = tint(c.cloth); ctx.lineWidth = 4.2; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(-3, -1); ctx.lineTo(-8, 6 + sw * 1.5); ctx.stroke();
 
-    // ---- 身体：交领右衽长衫 ----
-    ctx.beginPath(); ctx.ellipse(0, breathe * 0.4, 9.2, 11.5, 0, 0, TAU);
-    fs(ctx, tint(c.cloth), O, 1.8);
-    // 交领（右衽）：两道斜襟合成 V 领
-    ctx.strokeStyle = tint(c.cloth2); ctx.lineWidth = 3.2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-4.5, -6.5); ctx.lineTo(0.5, 0.5); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(4.5, -6.5); ctx.lineTo(0.5, 0.5); ctx.stroke();
-    // 腰带（朱红）
-    ctx.beginPath(); ctx.rect(-8.6, 3, 17.2, 3.4);
-    fs(ctx, tint(c.accent), O, 1.2);
-    // 披风下摆
-    ctx.beginPath();
-    ctx.moveTo(-8, 1); ctx.lineTo(-11.5, 10); ctx.lineTo(-5, 9); ctx.closePath();
-    fs(ctx, tint(c.cloth2), O, 1.3);
-
-    // ---- 前臂 + 持剑手（绕肩关节摆动，驱动攻击动作） ----
-    ctx.save();
-    ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
-    ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
-    ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
-    fs(ctx, tint(c.skin), O, 1.2);
-
-    this._drawSword(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#cfe0ea');
-    ctx.restore();
-
-    // ---- 头（chibi 大头，随朝向微偏） ----
-    ctx.save();
-    ctx.translate(headDX, headDY);
-    ctx.beginPath(); ctx.arc(0, -14 + breathe, 9.6, 0, TAU);
-    fs(ctx, tint(c.skin), O, 1.8);
-
-    // ---- 头发：贴头骨的厚弧带（刘海）+ 鬓发 + 发髻 + 发带 ----
-    // 用粗弧线而非半圆填充，下缘止于发际线，避免压住眉眼
-    ctx.beginPath();
-    ctx.arc(0, -14 + breathe, 9.9, Math.PI * 1.15, Math.PI * 1.85);
-    ctx.strokeStyle = tint(c.hair);
-    ctx.lineWidth = 7;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    if (O) {
-      // 弧带内外两侧描边，保持动漫轮廓
-      ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(0, -14 + breathe, 13.4, Math.PI * 1.17, Math.PI * 1.83); ctx.stroke();
-      ctx.beginPath(); ctx.arc(0, -14 + breathe, 6.4, Math.PI * 1.17, Math.PI * 1.83); ctx.stroke();
-    }
-    // 刘海（额前碎发，尖端止于眉上，不遮眼）
-    ctx.beginPath();
-    ctx.moveTo(-7.6, -19.6 + breathe); ctx.lineTo(-3.6, -17.7 + breathe); ctx.lineTo(-1.0, -20.3 + breathe);
-    ctx.closePath();
-    fs(ctx, tint(c.hair), O, 1.1);
-    ctx.beginPath();
-    ctx.moveTo(-1.0, -20.3 + breathe); ctx.lineTo(2.2, -17.5 + breathe); ctx.lineTo(5.6, -19.9 + breathe);
-    ctx.closePath();
-    fs(ctx, tint(c.hair), O, 1.1);
-    // 鬓发
-    ctx.beginPath(); ctx.ellipse(-9.2, -12.5 + breathe, 2.4, 6, 0.2, 0, TAU);
-    fs(ctx, tint(c.hair), O, 1.2);
-    ctx.beginPath(); ctx.ellipse(9.2, -12.5 + breathe, 2.4, 6, -0.2, 0, TAU);
-    fs(ctx, tint(c.hair), O, 1.2);
-    // 发髻 + 朱红发带
-    ctx.beginPath(); ctx.arc(0, -24 + breathe, 3.6, 0, TAU);
-    fs(ctx, tint(c.hair), O, 1.3);
-    ctx.beginPath(); ctx.rect(-4.2, -21.5 + breathe, 8.4, 1.9);
-    fs(ctx, tint(c.accent), O, 1);
-
-    // ---- 动漫大眼（白底 + 深瞳 + 双高光） ----
-    var ey = -13.4 + breathe;
-    ctx.beginPath(); ctx.ellipse(-3.4, ey, 2.3, 2.8, 0, 0, TAU);
-    ctx.fillStyle = '#fbf7ee'; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(3.4, ey, 2.3, 2.8, 0, 0, TAU);
-    ctx.fillStyle = '#fbf7ee'; ctx.fill();
-    ctx.fillStyle = '#2a2233';
-    ctx.beginPath(); ctx.ellipse(-3.1, ey + 0.3, 1.7, 2.1, 0, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(3.7, ey + 0.3, 1.7, 2.1, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(-3.8, ey - 0.9, 0.75, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(3.0, ey - 0.9, 0.75, 0, TAU); ctx.fill();
-    // 眉（位于发际线之下、眼睛之上）
-    ctx.strokeStyle = tint(c.hair); ctx.lineWidth = 1.1; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-5.2, ey - 3.6); ctx.lineTo(-1.8, ey - 4.0); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(5.2, ey - 3.6); ctx.lineTo(1.8, ey - 4.0); ctx.stroke();
-    // 腮红
-    ctx.fillStyle = 'rgba(230,120,110,0.26)';
-    ctx.beginPath(); ctx.ellipse(-6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
-    ctx.restore();   // 头部随朝向偏移结束
+    // ---- 身体 / 前臂与手持物 / 头（按职业姿态覆盖） ----
+    pose.torso(ctx, c, breathe, tint, O);
+    pose.arms(ctx, p, c, armAng, tint, O);
+    this._drawPlayerHead(ctx, pose, c, headDX, headDY, breathe, tint, O);
 
     ctx.restore();
 
@@ -624,6 +815,33 @@
     ctx.restore();
   };
 
+  // 弩（弓手手持物）：横置弩身 + 弩弦 + 前指的箭
+  R._drawCrossbow = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 弩身（横向）
+    ctx.beginPath(); ctx.rect(-6.4, -1.4, 12.8, 2.8);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 弩臂（上下两片弓片）
+    ctx.strokeStyle = PAL.woodDark; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-5.4, -1.4); ctx.quadraticCurveTo(-7.6, -3.4, -5.8, -5.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-5.4, 1.4); ctx.quadraticCurveTo(-7.6, 3.4, -5.8, 5.6); ctx.stroke();
+    // 弩弦
+    ctx.strokeStyle = '#d8d0c0'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-5.8, -5.2); ctx.lineTo(0, -1.2); ctx.lineTo(-5.8, 5.2); ctx.stroke();
+    // 箭杆 + 箭头（前指 -y）
+    ctx.beginPath(); ctx.rect(-0.8, -13, 1.6, 11);
+    fs(ctx, color, O, 1);
+    ctx.beginPath();
+    ctx.moveTo(-2.4, -13); ctx.lineTo(0, -17.4); ctx.lineTo(2.4, -13);
+    ctx.closePath();
+    fs(ctx, color, O, 1);
+    // 箭头反光
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(0, -15.6); ctx.lineTo(0, -13.4); ctx.stroke();
+    ctx.restore();
+  };
   /* ---------------- 敌人绘制（按类型程序化建模） ---------------- */
   R._drawEnemy = function (ctx, e) {
     var flash = e.hitFlash > 0;
