@@ -185,6 +185,37 @@
       color: '#c8382f', color2: '#5a1018', color3: '#ffcf5e',
       projectileSpeed: 200,
     },
+
+    /* ---------------- 反伤系（坦克） ----------------
+     * counter：被命中时按此比例把该次伤害反弹给攻击者（走 Player.takeDamage，
+     * 所以同样吃护甲 / 护盾 / 无敌帧）。旧怪没有这个字段 = 0，行为完全不变。
+     *
+     * 只配置给这三个新增单位，且只在 21 波起（无限模式）刷新 —— 见 systems.js
+     * 的 pickEnemyType：wave <= 20 时权重为 0，闯关前 20 波的构成不受影响。
+     * 波次成长系数见 entities.js：21 波时 hp ×4.6、伤害 ×3.4、移速 ×1.4，
+     * 下面三个的反伤比例是按这个量级定的，别单独调高了。
+     */
+    golem: {
+      id: 'golem', name: '石甲力士', behavior: 'chase',
+      hp: 200, speed: 48, damage: 14, radius: 24,
+      xp: 3, material: 3, attackCd: 1.3,
+      counter: 0.15,
+      color: '#7a8290', color2: '#3f434d', color3: '#8fd0e8',
+    },
+    bulwark: {
+      id: 'bulwark', name: '铁壁武卒', behavior: 'chase',
+      hp: 360, speed: 38, damage: 10, radius: 23,
+      xp: 4, material: 4, attackCd: 1.7,
+      counter: 0.25,
+      color: '#5d6f7d', color2: '#2b333d', color3: '#6fe3c1',
+    },
+    bruiser: {
+      id: 'bruiser', name: '铁拳力士', behavior: 'chase',
+      hp: 150, speed: 66, damage: 20, radius: 20,
+      xp: 3, material: 3, attackCd: 0.85,
+      counter: 0.08,
+      color: '#a05a3a', color2: '#4a2418', color3: '#ffd27a',
+    },
   };
 
   /* ---------------- 道具（被动，可叠加） ---------------- */

@@ -63,7 +63,8 @@
    * 影子落点 (_drawShadows) 也从这里取，保证「脚踩在影子上」只有一处事实来源：
    * 早先两边各写各的（影子按 radius*0.6 推），年兽因此浮在影子上面近 15px。
    */
-  var FOOT_Y = { player: 12, zombie: 13, bat: 6, wizard: 14, boss: 40 };
+  var FOOT_Y = { player: 12, zombie: 13, bat: 6, wizard: 14, boss: 40,
+                 golem: 19, bulwark: 18, bruiser: 16 };
   var FOOT_Y_DEFAULT = 10;
 
   /**
@@ -428,8 +429,10 @@
     var c = p.char.colors;
     var O = this.outline;
     var flash = p.hitFlashTimer > 0;
+    var counterHit = p.counterFlash > 0;
     var now = performance.now();
-    function tint(col) { return flash ? '#ffffff' : col; }
+    // 反伤闪色优先于受击白闪：青色是「被反弹」的专属信号，不跟普通受击混
+    function tint(col) { return counterHit ? '#8fd0e8' : (flash ? '#ffffff' : col); }
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -442,6 +445,17 @@
       ctx.strokeStyle = PAL.jade;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(0, 9, 18, 7, 0, 0, TAU); ctx.stroke();
+      ctx.restore();
+    }
+
+    // 反伤受击圈（青色向外扩散）：玩家被坦克反弹时的一眼提示
+    if (counterHit) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.min(1, p.counterFlash / 0.3) * 0.7;
+      ctx.strokeStyle = '#8fd0e8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 9, 22 + (0.3 - p.counterFlash) * 44, 9, 0, 0, TAU); ctx.stroke();
       ctx.restore();
     }
 
@@ -623,6 +637,9 @@
       case 'bat': this._drawBat(ctx, e, flash); break;
       case 'wizard': this._drawWizard(ctx, e, flash); break;
       case 'boss': this._drawBoss(ctx, e, flash); break;
+      case 'golem': this._drawGolem(ctx, e, flash); break;
+      case 'bulwark': this._drawBulwark(ctx, e, flash); break;
+      case 'bruiser': this._drawBruiser(ctx, e, flash); break;
       default: this._drawZombie(ctx, e, flash);
     }
     ctx.restore();
@@ -906,6 +923,219 @@
       ctx.beginPath(); ctx.arc(Math.cos(a) * clawOut, Math.sin(a) * clawOut, 3.4, 0, TAU);
       fs(ctx, PAL.paper, O, 1.2);
     }
+  };
+
+  /* ---------------- 反伤系（坦克） ----------------
+   * 三种坦克共用一条「反伤预警」约定：脚下持续脉动一圈 color3 光晕，
+   * 玩家进图就能看出「这只不能硬啃」。被命中反弹时再闪一次亮环（counterFlash）。
+   * 反伤数值在 config.js，绘制只读 e.counter / e.def.color3，两者不耦合。 */
+
+  // 反伤预警光晕。fy 为该类型的脚底支点，与 FOOT_Y 保持一致。
+  R._drawCounterAura = function (ctx, e, fy) {
+    if (!e.counter) return;
+    var now = performance.now();
+    var c = e.def.color3 || '#8fd0e8';
+    var r = e.radius + 7 + Math.sin(now * 0.005) * 2.2;
+    var flat = r * 0.38;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.32 + Math.sin(now * 0.005) * 0.12;
+    ctx.strokeStyle = c; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, fy, r, flat, 0, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 0.14; ctx.lineWidth = 5.5;
+    ctx.beginPath(); ctx.ellipse(0, fy, Math.max(6, r - 4), Math.max(3, flat - 2), 0, 0, TAU); ctx.stroke();
+    // 触发时向外扩散一次
+    if (e.counterFlash > 0) {
+      var t = e.counterFlash / 0.35;
+      ctx.globalAlpha = t * 0.85;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, fy, r + (1 - t) * 22, flat + (1 - t) * 8, 0, 0, TAU); ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  // 石甲力士：石块垒成的梯形躯干 + 方块肩甲 + 裂纹石面。慢、厚、稳定反伤。
+  R._drawGolem = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var stone  = flash ? '#fff' : d.color;
+    var stoneD = flash ? '#fff' : d.color2;
+    var rune   = flash ? '#fff' : d.color3;
+    var lunge = pulse(atkU(e));
+    var step = Math.abs(Math.sin(e.animTime * 2.6)) * 2.2;
+
+    this._drawCounterAura(ctx, e, 19);
+
+    ctx.save();
+    ctx.translate(0, -step);
+    if (lunge) ctx.scale(1 + lunge * 0.05, 1 + lunge * 0.05);
+
+    // 躯干：石块垒成的梯形，正面刻一道竖向反伤符纹
+    ctx.beginPath();
+    ctx.moveTo(-15, 19); ctx.lineTo(-12, -10); ctx.lineTo(12, -10); ctx.lineTo(15, 19);
+    ctx.closePath();
+    fs(ctx, stone, O, 1.8);
+    ctx.strokeStyle = stoneD; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(9, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 19); ctx.stroke();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = rune; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -7); ctx.lineTo(0, 16);
+    ctx.moveTo(-4, -2); ctx.lineTo(4, -2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 方块肩甲
+    ctx.beginPath(); ctx.rect(-19, -13, 10, 11);
+    fs(ctx, stoneD, O, 1.6);
+    ctx.beginPath(); ctx.rect(9, -13, 10, 11);
+    fs(ctx, stoneD, O, 1.6);
+
+    // 头：方形石面 + 裂缝 + 发光眼缝
+    ctx.beginPath(); ctx.rect(-8, -26, 16, 13);
+    fs(ctx, stone, O, 1.7);
+    ctx.strokeStyle = stoneD; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-6, -26); ctx.lineTo(-4, -20); ctx.lineTo(-6, -14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, -25); ctx.lineTo(5, -19); ctx.stroke();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = rune;
+    ctx.fillRect(-5, -22, 10, 2.4);
+    ctx.restore();
+
+    // 粗壮石臂：平举，出手时向镜头推近
+    var reach = 1 + lunge * 0.22;
+    var fistR = 5.4 * (1 + lunge * 0.5);
+    var armY = -1 + lunge * 2;
+    ctx.strokeStyle = stone; ctx.lineWidth = 6.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-10, -6); ctx.lineTo(-17 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, -6); ctx.lineTo(17 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-17 * reach, armY - 1, fistR, 0, TAU);
+    fs(ctx, stoneD, O, 1.5);
+    ctx.beginPath(); ctx.arc(17 * reach, armY - 1, fistR, 0, TAU);
+    fs(ctx, stoneD, O, 1.5);
+
+    ctx.restore();
+  };
+
+  // 铁壁武卒：方盾占掉大半身体，只露头与脚。极厚、反伤最高、最笨重。
+  R._drawBulwark = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var iron  = flash ? '#fff' : d.color;
+    var ironD = flash ? '#fff' : d.color2;
+    var rune  = flash ? '#fff' : d.color3;
+    var lunge = pulse(atkU(e));
+    var step = Math.abs(Math.sin(e.animTime * 2.2)) * 1.6;
+
+    this._drawCounterAura(ctx, e, 18);
+
+    ctx.save();
+    ctx.translate(0, -step);
+
+    // 头：铁盔，从盾上方露出
+    ctx.beginPath(); ctx.ellipse(0, -30, 8, 7.4, 0, 0, TAU);
+    fs(ctx, ironD, O, 1.7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = rune;
+    ctx.fillRect(-5, -31.5, 10, 2.2);
+    ctx.restore();
+
+    // 肩（盾两侧露出）
+    ctx.beginPath(); ctx.rect(-18, -20, 9, 10);
+    fs(ctx, ironD, O, 1.5);
+    ctx.beginPath(); ctx.rect(9, -20, 9, 10);
+    fs(ctx, ironD, O, 1.5);
+
+    // 大方盾：占身前大半，出手时微微前推
+    ctx.save();
+    ctx.translate(lunge * 3, 0);
+    ctx.beginPath();
+    ctx.moveTo(-16, -20); ctx.lineTo(16, -20); ctx.lineTo(16, 12);
+    ctx.lineTo(0, 18); ctx.lineTo(-16, 12);
+    ctx.closePath();
+    fs(ctx, iron, O, 2);
+    // 盾面铆钉
+    ctx.fillStyle = ironD;
+    var rivets = [[-10, -14], [0, -14], [10, -14], [-10, 4], [0, 4], [10, 4]];
+    for (var i = 0; i < rivets.length; i++) {
+      ctx.beginPath(); ctx.arc(rivets[i][0], rivets[i][1], 1.3, 0, TAU); ctx.fill();
+    }
+    // 盾心反伤符（同心方框）
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = rune; ctx.lineWidth = 2.2; ctx.globalAlpha = 0.8;
+    ctx.strokeRect(-8, -11, 16, 16);
+    ctx.globalAlpha = 0.4; ctx.lineWidth = 1.2;
+    ctx.strokeRect(-12, -15, 24, 24);
+    ctx.restore();
+    ctx.restore();
+
+    // 脚（盾下露出）
+    ctx.strokeStyle = ironD; ctx.lineWidth = 4.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-7, 15); ctx.lineTo(-8, 19); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(7, 15); ctx.lineTo(8, 19); ctx.stroke();
+
+    ctx.restore();
+  };
+
+  // 铁拳力士：赤铜躯干 + 巨拳套。中血较快、反伤低，但接触伤害最高。
+  R._drawBruiser = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var bronze  = flash ? '#fff' : d.color;
+    var bronzeD = flash ? '#fff' : d.color2;
+    var glow    = flash ? '#fff' : d.color3;
+    var lunge = pulse(atkU(e));
+    var step = Math.abs(Math.sin(e.animTime * 3.4)) * 2.6;
+
+    this._drawCounterAura(ctx, e, 16);
+
+    ctx.save();
+    ctx.translate(0, -step);
+
+    // 躯干
+    ctx.beginPath();
+    ctx.moveTo(-11, 16); ctx.lineTo(-10, -8); ctx.lineTo(10, -8); ctx.lineTo(11, 16);
+    ctx.closePath();
+    fs(ctx, bronze, O, 1.7);
+    // 腰带
+    ctx.beginPath(); ctx.rect(-11.5, 4, 23, 4);
+    fs(ctx, bronzeD, O, 1.2);
+
+    // 头：铜面 + 额带
+    ctx.beginPath(); ctx.arc(0, -15, 8.4, 0, TAU);
+    fs(ctx, bronzeD, O, 1.7);
+    ctx.beginPath(); ctx.rect(-8.6, -19, 17.2, 3.6);
+    fs(ctx, bronze, O, 1.2);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = glow;
+    ctx.fillRect(-5, -13.4, 10, 2.2);
+    ctx.restore();
+
+    // 巨拳：平举，出手时向镜头砸近并放大
+    var reach = 1 + lunge * 0.26;
+    var fistR = 6.6 * (1 + lunge * 0.6);
+    var armY = lunge * 2.4;
+    ctx.strokeStyle = bronze; ctx.lineWidth = 5.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-8, -5); ctx.lineTo(-16 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, -5); ctx.lineTo(16 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-16 * reach, armY - 1, fistR, 0, TAU);
+    fs(ctx, bronzeD, O, 1.8);
+    ctx.beginPath(); ctx.arc(16 * reach, armY - 1, fistR, 0, TAU);
+    fs(ctx, bronzeD, O, 1.8);
+    // 拳锋辉光（反伤标记）
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = glow; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(-16 * reach, armY - 1, fistR + 2, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(16 * reach, armY - 1, fistR + 2, 0, TAU); ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
   };
 
   /* ---------------- 投射物 ---------------- */

@@ -82,7 +82,8 @@
     var dx = enemy.x - owner.x, dy = enemy.y - owner.y;
     var dd = Math.sqrt(dx * dx + dy * dy) || 1;
     var kb = this.def.knockback || 0;
-    var dead = enemy.takeDamage(dmg, crit, dx / dd * kb, dy / dd * kb);
+    // 传入攻击者：坦克会按 counter 比例反弹（见 Enemy.takeDamage）
+    var dead = enemy.takeDamage(dmg, crit, dx / dd * kb, dy / dd * kb, owner);
     if (dead) {
       enemy.die(state);
       if (owner.stats.lifeOnKill > 0) owner.heal(owner.stats.lifeOnKill);

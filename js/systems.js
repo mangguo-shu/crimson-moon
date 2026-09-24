@@ -101,12 +101,28 @@
 
   S.pickEnemyType = function (rng, wave) {
     var r = rng();
+
+    // 坦克只在 21 波起（无限模式）刷新。
+    // wave <= 20 时 tankChance === 0：下面的分支既不会进，也不额外消耗随机数，
+    // 所以闯关前 20 波的刷新构成与加入坦克前逐位一致 —— 已验收基线保持不动。
+    var tankChance = 0;
+    if (wave >= 21) tankChance = Math.min(0.14, 0.08 + (wave - 21) * 0.002);
+    if (tankChance > 0 && r < tankChance) return S.pickTankType(rng, wave);
+
     // 高波次增加巫师（远程）比例
     var wizardChance = 0.15 + Math.min(0.2, wave * 0.01);
     var batChance = 0.3;
     if (r < wizardChance) return 'wizard';
     if (r < wizardChance + batChance) return 'bat';
     return 'zombie';
+  };
+
+  /** 坦克品种随波次推进：越靠后越厚（bulwark 反伤最高、最笨重） */
+  S.pickTankType = function (rng, wave) {
+    var t = rng();
+    if (wave < 28) return t < 0.7 ? 'golem' : 'bruiser';
+    if (wave < 40) return t < 0.45 ? 'golem' : (t < 0.8 ? 'bruiser' : 'bulwark');
+    return t < 0.4 ? 'golem' : (t < 0.7 ? 'bruiser' : 'bulwark');
   };
 
   S.edgeSpawnPoint = function (rng) {
@@ -238,6 +254,7 @@
 
     if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
     if (p.hitFlashTimer > 0) p.hitFlashTimer -= dt;
+    if (p.counterFlash > 0) p.counterFlash -= dt;
     p.tickAttackAnim(dt);
 
     // 护盾缓慢回复
@@ -284,7 +301,8 @@
             var dealt = Game.invokePassive(player, 'onHit',
               { enemy: e, dmg: p.damage, crit: p.crit, weapon: p.owner });
             var pdmg = (typeof dealt === 'number') ? dealt : p.damage;
-            var dead = e.takeDamage(pdmg, p.crit, dx / dd * (p.knockback || 0), dy / dd * (p.knockback || 0));
+            // 传入攻击者：坦克会按 counter 比例反弹（见 Enemy.takeDamage）
+            var dead = e.takeDamage(pdmg, p.crit, dx / dd * (p.knockback || 0), dy / dd * (p.knockback || 0), p.owner);
             // 吸血 / 命中回血 / 击杀回血
             if (p.owner) {
               if (p.owner.stats.lifesteal > 0) p.owner.heal(pdmg * p.owner.stats.lifesteal);

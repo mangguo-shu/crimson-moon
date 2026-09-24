@@ -1025,6 +1025,277 @@ try {
   assert(false, '菜单/纪录榜界面异常: ' + e.stack);
 }
 
+/* ---------------- 反伤机制 + 坦克（21 波起才出场） ---------------- */
+console.log('\n== 反伤机制 / 坦克 ==');
+try {
+  var EN33 = Game.ENEMIES;
+  var TANKS33 = ['golem', 'bulwark', 'bruiser'];
+  var OLD33 = ['zombie', 'bat', 'wizard', 'boss'];
+
+  // ① 配置形状：新怪都配了 counter，旧怪一个字段都没加
+  var cfg33 = true;
+  for (var c33 = 0; c33 < TANKS33.length; c33++) {
+    if (!(EN33[TANKS33[c33]].counter > 0)) cfg33 = false;
+  }
+  assert(cfg33, '三个坦克都配置了 counter（石甲力士/铁壁武卒/铁拳力士）');
+  var oldUntouched = true;
+  for (var c34 = 0; c34 < OLD33.length; c34++) {
+    if (EN33[OLD33[c34]].counter !== undefined) oldUntouched = false;
+  }
+  assert(oldUntouched, '现有四种怪没有新增 counter 字段（ENEMIES 旧条目未改动）');
+  var tanksConstruct = [];
+  for (var c35 = 0; c35 < TANKS33.length; c35++) {
+    tanksConstruct.push(new Game.Enemy(TANKS33[c35], 200, 200, 21));
+  }
+  assert(tanksConstruct.length === 3 &&
+         tanksConstruct[0].def.name === '石甲力士' &&
+         tanksConstruct[1].def.name === '铁壁武卒' &&
+         tanksConstruct[2].def.name === '铁拳力士',
+         '三种坦克都能按配置构造');
+
+  // ② 反弹比例：被命中时按 counter 把该次伤害反弹给攻击者
+  var plA = new Game.Player('swordsman');
+  plA.stats.critChance = 0;
+  plA.x = 0; plA.y = 0;
+  var g0 = new Game.Enemy('golem', 40, 0, 21);
+  g0.hp = 1e9;                                  // 防死，专注验证反弹
+  g0.takeDamage(100, false, 0, 0, plA);
+  var expA = 100 * EN33.golem.counter;
+  assert(Math.abs((100 - plA.stats.hp) - expA) < 1e-9,
+         '石甲力士按 counter=' + EN33.golem.counter + ' 反弹 ' + expA +
+         '（实扣 ' + (100 - plA.stats.hp).toFixed(2) + '）');
+  assert(plA.counterFlash > 0, '反伤受击触发专属闪色计时（区别于普通受击白闪）');
+  assert(g0.counterFlash > 0, '反弹触发时坦克亮起反伤环');
+
+  // ③ 旧怪不反弹（基线不动）
+  var plB = new Game.Player('swordsman');
+  plB.stats.critChance = 0;
+  var z0 = new Game.Enemy('zombie', 40, 0, 1);
+  z0.hp = 1e9;
+  assert(z0.counter === 0, '旧怪 counter 恒为 0');
+  z0.takeDamage(100, false, 0, 0, plB);
+  assert(plB.stats.hp === 100, '旧怪不反弹，攻击者不掉血');
+  assert(z0.counterFlash === 0, '旧怪不触发反伤环');
+  assert(plB.counterFlash === 0, '旧怪命中不触发反伤闪色');
+
+  // ④ 不暴击反弹：crit 不放大反伤
+  var plC = new Game.Player('swordsman'), plC0 = new Game.Player('swordsman');
+  plC.stats.critChance = 0; plC0.stats.critChance = 0;
+  var gC = new Game.Enemy('golem', 0, 40, 21); gC.hp = 1e9;
+  var gC0 = new Game.Enemy('golem', 0, 40, 21); gC0.hp = 1e9;
+  gC.takeDamage(100, true, 0, 0, plC);
+  gC0.takeDamage(100, false, 0, 0, plC0);
+  assert(Math.abs(plC.stats.hp - plC0.stats.hp) < 1e-9,
+         '暴击与普通命中反弹完全一致（暴击不参与反伤放大）');
+
+  // ⑤ 致死一击不反弹：死了就不再反弹，也不产生自我递归
+  var plD = new Game.Player('swordsman');
+  var gD = new Game.Enemy('golem', 0, 40, 21);
+  assert(gD.takeDamage(1e9, false, 0, 0, plD) === true, '一击致死返回死亡');
+  assert(gD.dead === true, '坦克已死');
+  assert(plD.stats.hp === 100, '致死一击不反弹（不打断玩家连招、不无限连锁）');
+
+  // ⑥ 反伤走完整减伤管线：护甲生效、护盾优先
+  var plE = new Game.Player('swordsman');
+  plE.stats.critChance = 0;
+  plE.stats.armor = 30;                          // 减伤 = 30/(30+30) = 50%
+  plE.stats.shield = 3; plE.stats.shieldMax = 3;
+  var gE = new Game.Enemy('golem', 0, 40, 21); gE.hp = 1e9;
+  gE.takeDamage(100, false, 0, 0, plE);
+  var rawE = 100 * EN33.golem.counter;
+  var afterArmorE = rawE * (1 - plE.stats.armor / (plE.stats.armor + 30));
+  assert(plE.stats.shield === 0, '反伤先吃护盾（护盾 3 已耗尽）');
+  assert(Math.abs(plE.stats.hp - (100 - (afterArmorE - 3))) < 1e-9,
+         '反伤吃护甲减伤：原始 ' + rawE + ' → 减伤后 ' + afterArmorE.toFixed(1) +
+         '，护盾吃 3，净扣 ' + (100 - plE.stats.hp).toFixed(2));
+
+  // ⑦ 无敌帧仍然吃：反弹不能穿透 0.35s 无敌帧
+  var plF = new Game.Player('swordsman');
+  plF.stats.critChance = 0;
+  var gF = new Game.Enemy('golem', 0, 40, 21); gF.hp = 1e9;
+  gF.takeDamage(100, false, 0, 0, plF);
+  assert(plF.invincibleTimer > 0, '首次反伤置上了无敌帧');
+  var hpF = plF.stats.hp;
+  gF.takeDamage(100, false, 0, 0, plF);
+  assert(plF.stats.hp === hpF, '无敌帧内第二次反伤被吞掉（不会被坦克贴脸连打致死）');
+
+  // ⑧ 集成：近战命中坦克 → 真实战斗路径触发反弹
+  var st33 = Game.Systems.createState('campaign', 'swordsman', 45);
+  var tp33 = st33.player;
+  tp33.stats.critChance = 0;
+  st33.enemies.length = 0; st33.projectiles.length = 0;
+  var g33 = new Game.Enemy('golem', tp33.x + 40, tp33.y, 21);
+  g33.hp = 1e9;
+  st33.enemies.push(g33);
+  var sw33 = tp33.weapons[0];
+  sw33.cooldownRemaining = 0;
+  sw33.update(0.016, tp33, st33);
+  assert(tp33.damageDealt > 0, '近战命中坦克造成正向伤害');
+  assert(tp33.stats.hp < 100,
+         '近战命中坦克后被反弹（hp=' + tp33.stats.hp.toFixed(2) + '）');
+  assert(tp33.counterFlash > 0, '集成路径下玩家拿到反伤闪色标记');
+
+  // ⑨ 集成：远程投射物命中坦克同样反弹
+  var st34 = Game.Systems.createState('campaign', 'swordsman', 46);
+  var tp34 = st34.player;
+  tp34.stats.critChance = 0;
+  st34.enemies.length = 0; st34.pickups.length = 0;
+  st34.enemies.push(new Game.Enemy('bulwark', tp34.x + 30, tp34.y, 35));
+  st34.projectiles.push(new Game.Projectile({
+    x: tp34.x + 30, y: tp34.y, vx: 0, vy: 0, radius: 6, damage: 20, crit: false,
+    fromPlayer: true, pierce: 0, life: 2, type: 'bullet', knockback: 0, owner: tp34,
+  }));
+  Game.Systems.updateProjectiles(st34, 0.016);
+  assert(tp34.stats.hp < 100,
+         '投射物命中坦克也被反弹（hp=' + tp34.stats.hp.toFixed(2) + '）');
+
+  // ⑩ 反伤环计时会衰减归零（否则光晕会永久挂住）
+  var g35 = new Game.Enemy('golem', 0, 0, 21);
+  var farPlayer = { x: 10000, y: 10000, radius: 16, takeDamage: function () { return 0; } };
+  g35.counterFlash = 0.35;
+  g35.update(0.2, farPlayer, { projectiles: [] });
+  assert(g35.counterFlash < 0.35,
+         '反伤环计时随时间衰减（0.35 → ' + g35.counterFlash.toFixed(3) + '）');
+
+  /* ⑪ 关键护栏：wave <= 20 的刷新构成必须与加入坦克前逐位一致。
+     把旧算法原样复刻一份当参照，逐波逐种子比对照刷序列 ——
+     只要新代码多消耗了一次 rng()，参照序列会在第 2 只怪就分叉。 */
+  function oldPick(rng, wave) {
+    var r = rng();
+    var wizardChance = 0.15 + Math.min(0.2, wave * 0.01);
+    var batChance = 0.3;
+    if (r < wizardChance) return 'wizard';
+    if (r < wizardChance + batChance) return 'bat';
+    return 'zombie';
+  }
+  var same33 = 0, monsters33 = 0;
+  for (var w33 = 1; w33 <= 20; w33++) {
+    for (var sd33 = 1; sd33 <= 30; sd33++) {
+      var sch33 = Game.Systems.buildSpawnSchedule({ seed: sd33, wave: w33 }, w33);
+      var rngRef = Game.mulberry32(Game.hashSeed(sd33 + ':' + w33));
+      var budget33 = 8 + w33 * 6;
+      if (Game.Systems.isBossWave(w33)) budget33 = Math.max(10, Math.floor(budget33 * 0.6));
+      var seq33 = [], t33 = 0.5, n33 = 0;
+      while (n33 < budget33 && t33 < Game.Systems.waveDuration(w33)) {
+        seq33.push(oldPick(rngRef, w33));
+        n33++; t33 += 0.55 - Math.min(0.3, w33 * 0.01);
+        if (t33 < 0.1) t33 = 0.1;
+      }
+      var got33 = [];
+      for (var gi33 = 0; gi33 < sch33.length; gi33++) {
+        if (!sch33[gi33].boss) got33.push(sch33[gi33].type);
+      }
+      monsters33 += got33.length;
+      if (JSON.stringify(got33) === JSON.stringify(seq33)) same33++;
+    }
+  }
+  assert(same33 === 600,
+         'wave 1~20 全部 600 组刷新计划与旧算法逐位一致（' + same33 +
+         '/600，共 ' + monsters33 + ' 只怪）—— 已验收基线未漂移');
+
+  var rngCnt = 0, baseRng33 = Game.mulberry32(7);
+  Game.Systems.pickEnemyType(function () { rngCnt++; return baseRng33(); }, 20);
+  assert(rngCnt === 1, 'wave≤20 每次刷新只消耗 1 次随机数（不额外取数，后续序列不漂移）');
+
+  // ⑫ 20 波（闯关上限）绝不刷坦克
+  var tankAt20 = 0;
+  for (var sd34 = 1; sd34 <= 200; sd34++) {
+    var sch34 = Game.Systems.buildSpawnSchedule({ seed: sd34, wave: 20 }, 20);
+    for (var si34 = 0; si34 < sch34.length; si34++) {
+      if (TANKS33.indexOf(sch34[si34].type) >= 0) tankAt20++;
+    }
+  }
+  assert(tankAt20 === 0, '20 波（闯关上限）200 组计划里 0 只坦克');
+
+  // ⑬ 21 波起三种坦克都会出场，且旧怪仍在刷（是增量，不是替换）
+  var seen33 = {};
+  for (var w34 = 21; w34 <= 45; w34++) {
+    for (var sd35 = 1; sd35 <= 30; sd35++) {
+      var sch35 = Game.Systems.buildSpawnSchedule({ seed: sd35, wave: w34 }, w34);
+      for (var si35 = 0; si35 < sch35.length; si35++) seen33[sch35[si35].type] = true;
+    }
+  }
+  var tankSeen = 0;
+  for (var ti33 = 0; ti33 < TANKS33.length; ti33++) if (seen33[TANKS33[ti33]]) tankSeen++;
+  assert(tankSeen === 3, 'wave≥21 三种坦克都会刷新（实见 ' + tankSeen + '/3）');
+  assert(seen33.zombie && seen33.bat && seen33.wizard,
+         '坦克加入后跳尸/蝠妖/邪修仍正常刷新');
+
+  // ⑭ 坦克品种分布随波次推进：28 波前不出铁壁武卒
+  var tierEarly = {}, tierLate = {};
+  for (var t34 = 0; t34 < 3000; t34++) {
+    var rr33 = Game.mulberry32(9000 + t34);
+    var early33 = Game.Systems.pickTankType(rr33, 25);
+    var late33 = Game.Systems.pickTankType(rr33, 45);
+    tierEarly[early33] = (tierEarly[early33] || 0) + 1;
+    tierLate[late33] = (tierLate[late33] || 0) + 1;
+  }
+  assert(!!tierEarly.golem && !!tierEarly.bruiser && !tierEarly.bulwark,
+         '28 波前只出石甲力士与铁拳力士（无铁壁武卒）：' + JSON.stringify(tierEarly));
+  assert(!!tierLate.golem && !!tierLate.bruiser && !!tierLate.bulwark,
+         '40 波起三种坦克同框：' + JSON.stringify(tierLate));
+
+  // ⑮ 反伤随存档往返：counter 从配置重建，血量/伤害按存档恢复不被波次系数覆盖
+  var st35 = Game.Systems.createState('endless', 'swordsman', 500);
+  Game.Systems.startWave(st35, 30);
+  st35.enemies.length = 0;
+  var g36 = new Game.Enemy('bulwark', 300, 300, 30);
+  g36.maxHp = 400; g36.hp = 400; g36.damage = 33;
+  st35.enemies.push(g36);
+  var sv33 = Game.Systems.serialize(st35);
+  assert(sv33.enemies[0].type === 'bulwark', '序列化写入了坦克类型');
+  var ld33 = Game.Systems.deserialize(sv33);
+  var g37 = ld33.enemies[0];
+  assert(g37.counter === EN33.bulwark.counter,
+         '读档后反伤比例按配置重建（' + g37.counter + '）');
+  assert(Math.abs(g37.maxHp - 400) < 1e-9 && Math.abs(g37.hp - 400) < 1e-9 &&
+         Math.abs(g37.damage - 33) < 1e-9,
+         '读档后坦克血量/伤害按存档恢复，不被构造函数按新波次重算');
+  assert(g37.counterFlash === 0, '反伤环计时不持久化（纯表现状态）');
+
+  // ⑯ 渲染：三种坦克 8 方向 + 反伤环分支 + 双画质
+  Game.state = null;
+  var st36 = Game.Systems.createState('endless', 'swordsman', 501);
+  Game.Systems.startWave(st36, 21);
+  Game.state = st36;
+  st36.enemies.length = 0;
+  for (var t35 = 0; t35 < TANKS33.length; t35++) {
+    var en33 = new Game.Enemy(TANKS33[t35], 350 + t35 * 120, 400, 30);
+    en33.hp = en33.maxHp * 0.4;                  // 非满血 → 画血条
+    st36.enemies.push(en33);
+  }
+  Game.Renderer.setQuality('high');
+  for (var a33 = 0; a33 < 8; a33++) {
+    for (var e33 = 0; e33 < st36.enemies.length; e33++) st36.enemies[e33].facing = a33 * (Math.PI / 4);
+    Game.Renderer.render(st36, 0.016);
+  }
+  assert(true, '三种坦克 8 方向直立渲染无异常');
+
+  st36.enemies[0].counterFlash = 0.2;
+  st36.enemies[1].counterFlash = 0.05;
+  st36.enemies[2].hitFlash = 0.1;
+  for (var f33 = 0; f33 < 14; f33++) {
+    st36.enemies[0].counterFlash -= 0.016;
+    st36.enemies[1].counterFlash -= 0.016;
+    Game.Renderer.render(st36, 0.016);
+  }
+  assert(true, '反伤预警环脉动 / 触发扩散 / 受击闪白 渲染无异常');
+
+  st36.player.counterFlash = 0.25;
+  Game.Renderer.render(st36, 0.016);
+  st36.player.counterFlash = 0;
+  assert(true, '玩家反伤受击圈渲染无异常');
+
+  Game.Renderer.setQuality('low');
+  Game.Renderer.render(st36, 0.016);
+  Game.Renderer.setQuality('high');
+  st36.enemies.length = 0;
+  Game.state = null;
+  assert(true, '低画质（无描边）下三种坦克渲染无异常');
+} catch (e) {
+  assert(false, '反伤机制/坦克异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

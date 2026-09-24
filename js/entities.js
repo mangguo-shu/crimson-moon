@@ -60,6 +60,7 @@
 
     this.invincibleTimer = 0;
     this.hitFlashTimer = 0;
+    this.counterFlash = 0;   // 反伤专用闪色计时（与受击白闪区分，见 renderer 取色）
     this.alive = true;
 
     // 攻击动作（纯表现：只驱动绘制姿态，不参与伤害判定与冷却）
@@ -141,8 +142,11 @@
     return toHp + (overflow > 0 ? Math.min(s.shieldMax, s.shield + overflow) - s.shield : 0);
   };
 
-  /** 承受伤害（含护甲减伤、护盾、无敌帧）。返回实际扣血。 */
-  Player.prototype.takeDamage = function (raw) {
+  /** 承受伤害（含护甲减伤、护盾、无敌帧）。返回实际扣血。
+   *  cause === 'counter'：由怪物反伤反弹而来（见 Enemy.takeDamage），
+   *  视觉上叠一层青色闪色，让玩家分清「这是被反弹的」。
+   *  反伤和普通伤害走同一条减伤管线，不豁免护甲 / 护盾 / 无敌帧 / 被动减免。 */
+  Player.prototype.takeDamage = function (raw, cause) {
     var s = this.stats;
     if (!this.alive || this.invincibleTimer > 0) return 0;
     if (Game.debugGod) return 0; // 调试无敌
@@ -166,8 +170,12 @@
     s.hp -= hpDmg;
     this.invincibleTimer = 0.35; // 无敌帧
     this.hitFlashTimer = 0.18;
-    if (fx()) fx().blood(this.x, this.y, 6);
-    if (fx()) fx().shake(6);
+    if (cause === 'counter') this.counterFlash = 0.3;
+    if (fx()) {
+      fx().blood(this.x, this.y, 6);
+      if (cause === 'counter') fx().spark(this.x, this.y, 5);
+      fx().shake(cause === 'counter' ? 4 : 6);
+    }
     if (Game.Audio) Game.Audio.hurt();
     if (Game.Native) Game.Native.vibrate(40);
     if (s.hp <= 0) { s.hp = 0; this.alive = false; }
@@ -218,6 +226,8 @@
 
     this.attackCd = 0;
     this.hitFlash = 0;
+    this.counter = def.counter || 0;  // 反伤比例：仅坦克配置，旧怪恒为 0（行为不变）
+    this.counterFlash = 0;           // 反伤预警光晕的脉动/触发计时（纯表现）
     this.knockbackX = 0; this.knockbackY = 0;
     this.facing = 0;
     this.animTime = Math.random() * 10;
@@ -246,6 +256,7 @@
   Enemy.prototype.update = function (dt, player, state) {
     this.animTime += dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;
+    if (this.counterFlash > 0) this.counterFlash -= dt;
     this.attackCd -= dt;
     this.tickAttackAnim(dt);
 
@@ -344,8 +355,12 @@
     }
   };
 
-  /** 承受伤害，返回是否死亡 */
-  Enemy.prototype.takeDamage = function (dmg, crit, kbx, kby) {
+  /** 承受伤害，返回是否死亡。
+   *  attacker：攻击者（Player）。本怪配置了 counter 时，把该次伤害按 counter 比例
+   *  反弹给它 —— 走 Player.takeDamage，因此同样吃护甲 / 护盾 / 无敌帧。
+   *  三条约定：不暴击反弹（crit 不参与）、致死一击不反弹（死了就不再反弹）、
+   *  counter 为 0 时完全不触发（旧怪无此行为，基线不动）。 */
+  Enemy.prototype.takeDamage = function (dmg, crit, kbx, kby, attacker) {
     if (this.dead) return false;
     this.hp -= dmg;
     this.hitFlash = 0.12;
@@ -358,6 +373,14 @@
       if (crit) fx().crit(this.x, this.y);
     }
     if (this.hp <= 0) { this.dead = true; return true; }
+    if (this.counter > 0 && attacker && typeof attacker.takeDamage === 'function') {
+      this.counterFlash = 0.35;
+      attacker.takeDamage(dmg * this.counter, 'counter');
+      if (fx()) {
+        fx().ring(this.x, this.y, this.radius + 16, this.def.color3 || '#8fd0e8');
+        fx().spark(attacker.x, attacker.y, 3);
+      }
+    }
     return false;
   };
 
