@@ -148,6 +148,9 @@ html, body {
            calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
   overflow-y: auto;
 }
+/* 内容超高时切到顶部对齐：justify-content:center 会把溢出部分的顶端裁掉、
+   滚不上去。角色选择页（11 张卡分 4 组）和满 10 条的纪录榜都会超高。 */
+.panel-top { justify-content: flex-start; }
 .panel h1 {
   font-size: 46px; color: var(--color-blood);
   letter-spacing: 6px;
@@ -204,6 +207,16 @@ html, body {
 .card.r-rare   { border-color: var(--color-rare);   box-shadow: 0 0 14px rgba(79,163,255,0.4); }
 .card.r-epic   { border-color: var(--color-epic);   box-shadow: 0 0 16px rgba(176,107,255,0.5); }
 .card.r-legend { border-color: var(--color-gold);   box-shadow: 0 0 20px rgba(255,207,94,0.6); }
+
+/* ===== 角色选择：按职业分组 ===== */
+.char-group { width: 100%; max-width: 1000px; margin-bottom: 20px; }
+.char-group-title {
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 6px;
+  color: var(--color-gold);
+  margin-bottom: 12px;
+}
 
 /* ===== 商店 ===== */
 .shop-grid { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }

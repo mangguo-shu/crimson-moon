@@ -88,23 +88,44 @@
         '<button class="btn ghost" ' + ((hasCampaignSave || hasEndlessSave) ? '' : 'disabled') +
         ' onclick="Game.Game.deleteSave()">删除存档</button>' +
         '<div class="subtitle">' + (Game.Input.touchMode ? '触屏：左摇杆移动，右下角暂停' : '键盘：WASD 移动 · 空格暂停 · F5 存档 · F9 读档 · ~ 调试') + '</div>';
+      // 主菜单内容不高，恢复垂直居中；角色选择页会覆盖成 panel-top（见下）。
+      el.menu.className = 'panel';
     },
 
     renderCharSelect: function () {
       var chars = Game.CHARACTERS;
-      var html = '<h2>选择角色</h2><div class="card-row">';
+      var groups = Game.BODY_GROUPS || {};
+      // 按职业（姿态）分组，每组内顺序同 CHARACTERS。没写 body 的老角色按
+      // swordsman 归组，和 renderer 的兜底保持一致。
+      var order = [], buckets = {};
       for (var i = 0; i < chars.length; i++) {
-        var c = chars[i];
-        html +=
-          '<div class="card r-legend" style="cursor:pointer" onclick="Game.Game.startRun(\'' + c.id + '\')">' +
-          '<div class="card-rarity">' + c.category + '</div>' +
-          '<div class="card-name">' + c.name + '</div>' +
-          '<div class="card-desc">' + c.desc + '</div>' +
-          '<div class="card-desc" style="color:#ffcf5e;margin-top:6px">被动：' + (c.passive ? (c.passive.name + ' — ' + c.passive.desc) : '无') + '</div>' +
-          '</div>';
+        var key = chars[i].body || 'swordsman';
+        if (!buckets[key]) { buckets[key] = []; order.push(key); }
+        buckets[key].push(chars[i]);
       }
-      html += '</div><button class="btn ghost" onclick="Game.Game.toMenu()">返回</button>';
+      var html = '<h2>选择角色</h2>';
+      for (var g = 0; g < order.length; g++) {
+        var k = order[g];
+        var list = buckets[k];
+        html += '<div class="char-group"><div class="char-group-title">' + (groups[k] || k) + '</div>' +
+                '<div class="card-row">';
+        for (var j = 0; j < list.length; j++) {
+          var c = list[j];
+          html +=
+            '<div class="card r-legend" style="cursor:pointer" onclick="Game.Game.startRun(\'' + c.id + '\')">' +
+            '<div class="card-rarity">' + c.category + '</div>' +
+            '<div class="card-name">' + c.name + '</div>' +
+            '<div class="card-desc">' + c.desc + '</div>' +
+            '<div class="card-desc" style="color:#ffcf5e;margin-top:6px">被动：' + (c.passive ? (c.passive.name + ' — ' + c.passive.desc) : '无') + '</div>' +
+            '</div>';
+        }
+        html += '</div></div>';
+      }
+      html += '<button class="btn ghost" onclick="Game.Game.toMenu()">返回</button>';
       el.menu.innerHTML = html;
+      // 11 张卡分 4 组，手机上必定超高。.panel 的 justify-content:center 在内容
+      // 溢出时会把顶端裁掉、滚不上去，所以这里切到顶部对齐。
+      el.menu.className = 'panel panel-top';
     },
 
     /* ---------------- HUD ---------------- */
@@ -261,6 +282,9 @@
         '<br><button class="btn primary" onclick="Game.Game.toMenu()">返回主菜单</button>' +
         '<button class="btn ghost" onclick="Game.Game.clearRecords()">清空纪录</button>';
       el.records.innerHTML = html;
+      // 满 10 条时 20 行明细 + 标题 + 按钮必定超高；.panel 的垂直居中会把
+      // 溢出部分的顶端裁掉、滚不上去，而溢出的恰恰是最靠前的名次。
+      el.records.className = 'panel panel-top';
     },
 
     /* ---------------- 设置 ---------------- */

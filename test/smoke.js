@@ -1304,17 +1304,21 @@ try {
 
   // ① 配置形状：每个角色的 body 都有对应姿态实现，起始武器与被动都注册了
   var chars38 = Game.CHARACTERS;
-  assert(chars38.length === 4, '现有 4 个角色（' + chars38.length + '）');
-  var shape38 = true, bodiesUsed = {};
+  assert(chars38.length === 11, '角色总数 11（实际 ' + chars38.length + '）');
+  var shape38 = true, bodiesUsed = {}, ids38 = {}, pids38 = {};
   for (var i38 = 0; i38 < chars38.length; i38++) {
     var ch38 = chars38[i38];
     if (!ch38.body || BODIES38.indexOf(ch38.body) < 0) shape38 = false;
     if (!Game.WEAPONS[ch38.startWeapon]) shape38 = false;
     if (!Game.PASSIVES[ch38.passive.id]) shape38 = false;
-    if (!ch38.colors.cloth || !ch38.colors.cloth2 || !ch38.colors.skin) shape38 = false;
+    if (!ch38.colors.cloth || !ch38.colors.cloth2 || !ch38.colors.skin || !ch38.colors.hair) shape38 = false;
+    if (!Game.BODY_GROUPS[ch38.body]) shape38 = false;
+    ids38[ch38.id] = true; pids38[ch38.passive.id] = true;
     bodiesUsed[ch38.body] = true;
   }
-  assert(shape38, '每个角色的 body / startWeapon / 被动 / 配色字段齐全');
+  assert(shape38, '每个角色的 body / 分组 / startWeapon / 被动 / 配色字段齐全');
+  assert(Object.keys(ids38).length === chars38.length, '角色 id 互不重复（否则读档取到错人）');
+  assert(Object.keys(pids38).length === chars38.length, '被动 id 互不重复（11 个角色各挂一个不同被动）');
   var allBodiesUsed = true;
   for (var b38 = 0; b38 < B38.length; b38++) if (!bodiesUsed[B38[b38]]) allBodiesUsed = false;
   assert(allBodiesUsed, '4 组职业姿态各有角色使用（不白写一套剪影）');
@@ -1338,7 +1342,7 @@ try {
     if (pl38.stats.critChance !== chars38[i40].critChance) built38 = false;
     if (pl38.passive.id !== chars38[i40].passive.id) built38 = false;
   }
-  assert(built38, '4 个角色都能按配置构造出玩家（数值 / 被动绑定正确）');
+  assert(built38, '11 个角色都能按配置构造出玩家（数值 / 被动绑定正确）');
 
   // ④ 穿杨：只有暴击命中追加 35%
   var archer38 = new Game.Player('archer');
@@ -1400,18 +1404,43 @@ try {
   var ar38 = Game.Systems.createState('campaign', 'archer', 43);
   assert(ar38.player.weapons[0].defId === 'pistol', '弓手开局装备手枪（远程职业）');
 
-  // ⑧ 角色选择界面：4 张卡，各带被动名与描述，无占位文本
+  // ⑧ 角色选择界面：11 张卡按职业分 4 组，各带被动名与描述，无占位文本
   Game.UI.renderCharSelect();
   var cs38 = document.getElementById('menu').innerHTML;
   assert(cs38.indexOf('[object Object]') < 0, '角色选择界面不出现 [object Object]');
   var cardCount38 = (cs38.match(/startRun/g) || []).length;
-  assert(cardCount38 === 4, '角色选择界面渲染 4 张卡（实际 ' + cardCount38 + '）');
-  var names38 = ['流浪剑客', '青木弓手', '玄铁武僧', '赤岩力士'];
+  assert(cardCount38 === 11, '角色选择界面渲染 11 张卡（实际 ' + cardCount38 + '）');
+  var names38 = ['流浪剑客', '疾风刺客', '铁卫武人', '青木弓手', '裂石弩手', '寒江射手',
+                 '玄铁武僧', '慈心尼师', '苦行僧', '赤岩力士', '狂岩巨擘'];
   for (var n38 = 0; n38 < names38.length; n38++) {
     assert(cs38.indexOf(names38[n38]) >= 0, '角色选择界面出现「' + names38[n38] + '」');
   }
-  assert(cs38.indexOf('穿杨') >= 0 && cs38.indexOf('金刚') >= 0 && cs38.indexOf('铁骨') >= 0,
-         '角色选择界面渲染出新角色的被动名');
+  var pNames38 = ['连击', '掠影', '格挡', '穿杨', '疾风', '贯甲', '金刚', '回春', '禅心', '铁骨', '狂战'];
+  for (var pn38 = 0; pn38 < pNames38.length; pn38++) {
+    assert(cs38.indexOf(pNames38[pn38]) >= 0, '角色选择界面渲染出被动「' + pNames38[pn38] + '」');
+  }
+  var gTitles38 = ['剑客', '弓手', '武僧', '力士'];
+  var gCount38 = (cs38.match(/char-group-title/g) || []).length;
+  assert(gCount38 === 4, '角色选择界面按 4 个职业分组（实际 ' + gCount38 + ' 组）');
+  for (var gt38 = 0; gt38 < gTitles38.length; gt38++) {
+    assert(cs38.indexOf(gTitles38[gt38]) >= 0, '分组标题出现「' + gTitles38[gt38] + '」');
+  }
+  var idsInHtml38 = [], re38 = /startRun\('([^']+)'\)/g, m38;
+  while ((m38 = re38.exec(cs38)) !== null) idsInHtml38.push(m38[1]);
+  var idMap38 = {};
+  for (var idm38 = 0; idm38 < idsInHtml38.length; idm38++) {
+    idMap38[idsInHtml38[idm38]] = (idMap38[idsInHtml38[idm38]] || 0) + 1;
+  }
+  var oneEach38 = true;
+  for (var ci39 = 0; ci39 < chars38.length; ci39++) {
+    if (idMap38[chars38[ci39].id] !== 1) oneEach38 = false;
+  }
+  assert(oneEach38, '11 个角色各出现恰好一次（不多不少）');
+  assert(document.getElementById('menu').className.indexOf('panel-top') >= 0,
+         '角色选择页切到顶部对齐（11 张卡超高时垂直居中会裁掉顶端、滚不上去）');
+  Game.UI.renderMenu(false, false, 0);
+  assert(document.getElementById('menu').className === 'panel',
+         '主菜单恢复垂直居中（panel-top 不残留）');
 
   // ⑨ 存档往返：新角色的姿态与配色随 charId 恢复
   var st44 = Game.Systems.createState('endless', 'monk', 700);
@@ -1511,6 +1540,107 @@ try {
     if (rec38.arcs[hi38].x === 0 && Math.abs(rec38.arcs[hi38].r - 9.6) < 0.01) head38 = rec38.arcs[hi38];
   }
   assert(head38 !== null, '重构后剑客的头部仍是那个半径 9.6 的圆（观感未漂移）');
+
+  /* ---- 第二批 7 个角色的被动 ---- */
+
+  // ⑬ 掠影：击杀回 4 点；满血时多余治疗蒸发、不越界
+  var as38 = new Game.Player('assassin');
+  as38.stats.hp = as38.stats.maxHp - 10;
+  Game.invokePassive(as38, 'onKill', new Game.Enemy('zombie', 0, 0, 1), null);
+  assert(as38.stats.hp === as38.stats.maxHp - 6, '掠影：击杀回复 4 点生命');
+  as38.stats.hp = as38.stats.maxHp; as38.stats.shieldMax = 0;
+  Game.invokePassive(as38, 'onKill', new Game.Enemy('zombie', 0, 0, 1), null);
+  assert(as38.stats.hp === as38.stats.maxHp, '掠影：满血时治疗不溢出');
+
+  // ⑭ 格挡：减到 0 时不扣血、不闪白、不占无敌帧、不计承伤。
+  // 把护甲归零只为让算术干净（格挡与护甲互相独立，不影响该测什么）。
+  var mr38 = Math.random;
+  Math.random = function () { return 0; };   // 必定命中格挡
+  var gd38 = new Game.Player('guard');
+  gd38.stats.armor = 0; gd38.stats.hp = 100; gd38.stats.shield = 0;
+  assert(gd38.takeDamage(50) === 0 && gd38.stats.hp === 100, '格挡成立时不掉血');
+  assert(gd38.invincibleTimer === 0, '格挡成立不占无敌帧（挡下一击不该换来额外无敌时间）');
+  assert(gd38.hitFlashTimer === 0, '格挡成立不触发受击闪白');
+  assert(gd38.damageTaken === 0, '格挡成立不计入承伤统计');
+  // 格挡不中时照旧全额结算（含无敌帧）
+  Math.random = function () { return 1; };   // 必定没挡上
+  assert(gd38.takeDamage(50) === 50 && gd38.stats.hp === 50, '格挡不中时正常结算伤害（100 → 50）');
+  assert(gd38.invincibleTimer === 0.35, '格挡不中时正常给无敌帧');
+  assert(gd38.damageTaken === 50, '格挡不中时计入承伤统计');
+  Math.random = mr38;
+
+  // ⑮ 疾风：击杀叠暴击率，5 层封顶不再涨
+  var cb38 = new Game.Player('crossbowman');
+  var cc0 = cb38.stats.critChance;
+  for (var k39 = 1; k39 <= 7; k39++) {
+    Game.invokePassive(cb38, 'onKill', new Game.Enemy('bat', 0, 0, 1), null);
+  }
+  assert(Math.abs(cb38.stats.critChance - (cc0 + 0.10)) < 1e-9,
+         '疾风：叠满 5 层后暴击率 +10%（' + cc0 + ' → ' + cb38.stats.critChance + '）');
+  assert(cb38.passiveState.critStacks === 5, '疾风叠层封顶在 5 层（第 7 次击杀不再加）');
+
+  // ⑯ 贯甲：只放大平砍，不放大暴击（与穿杨互为镜像）
+  var rg38 = new Game.Player('ranger');
+  var tgt39 = new Game.Enemy('zombie', 200, 200, 1);
+  assert(Game.invokePassive(rg38, 'onHit', { enemy: tgt39, dmg: 100, crit: false, weapon: null }) === 125,
+         '贯甲：非暴击命中 +25%（100 → 125）');
+  assert(Game.invokePassive(rg38, 'onHit', { enemy: tgt39, dmg: 100, crit: true, weapon: null }) === 100,
+         '贯甲：暴击命中不变（100 → 100）');
+
+  // ⑰ 回春：每 2 秒回 1 点，推进累加不漂移
+  var nu38 = new Game.Player('nun');
+  nu38.stats.hp = nu38.stats.maxHp - 10;
+  Game.invokePassive(nu38, 'perTick', null, 1.999);
+  assert(nu38.stats.hp === nu38.stats.maxHp - 10, '回春：不足 2 秒不回血');
+  Game.invokePassive(nu38, 'perTick', null, 0.001);
+  assert(nu38.stats.hp === nu38.stats.maxHp - 9, '回春：累计满 2 秒回 1 点');
+  nu38.stats.hp = nu38.stats.maxHp - 10;
+  Game.invokePassive(nu38, 'perTick', null, 5);
+  assert(nu38.stats.hp === nu38.stats.maxHp - 8, '回春：一次推进 5 秒恰好回 2 点（不多不少）');
+
+  // ⑱ 禅心：按原始伤害回 30%，且 heal 不回调 takeDamage（无递归）
+  var ac38 = new Game.Player('ascetic');
+  ac38.stats.armor = 0; ac38.stats.shieldMax = 0; ac38.stats.shield = 0;
+  ac38.stats.hp = ac38.stats.maxHp - 50;
+  var hp0_38 = ac38.stats.hp;
+  assert(Math.abs(ac38.takeDamage(40) - 40) < 1e-9, '禅心角色正常承伤 40');
+  assert(Math.abs(ac38.stats.hp - (hp0_38 + 12 - 40)) < 1e-9,
+         '禅心：受击回复所受伤害的 30%（回 12，扣 40，净 ' + (ac38.stats.hp - hp0_38).toFixed(0) + '）');
+
+  // ⑲ 狂战：击杀叠伤害倍率，10 层封顶，且真的进了武器伤害
+  var br38 = new Game.Player('brute');
+  var bd0 = br38.stats.damage;
+  for (var k40 = 1; k40 <= 12; k40++) {
+    Game.invokePassive(br38, 'onKill', new Game.Enemy('zombie', 0, 0, 1), null);
+  }
+  assert(Math.abs(br38.stats.damage - (bd0 + 0.30)) < 1e-9,
+         '狂战：叠满 10 层后伤害 +30%（' + bd0 + ' → ' + br38.stats.damage.toFixed(2) + '）');
+  assert(br38.passiveState.dmgStacks === 10, '狂战叠层封顶在 10 层（第 12 次击杀不再加）');
+  var w39 = Game.createWeapon('iron_sword', 1);
+  assert(Math.abs(w39.damage(br38) - w39.def.damage * (bd0 + 0.30)) < 1e-9,
+         '狂战叠层后的倍率进入武器实际伤害');
+
+  // ⑳ 存档往返：叠层数与已被动改过的属性一起保存，读档不会二次累加
+  var st46 = Game.Systems.createState('endless', 'crossbowman', 702);
+  Game.Systems.startWave(st46, 8);
+  for (var k41 = 1; k41 <= 3; k41++) {
+    Game.invokePassive(st46.player, 'onKill', new Game.Enemy('zombie', 0, 0, 1), st46);
+  }
+  var cc46 = st46.player.stats.critChance, cs46 = st46.player.passiveState.critStacks;
+  var ld46 = Game.Systems.deserialize(Game.Systems.serialize(st46));
+  assert(Math.abs(ld46.player.stats.critChance - cc46) < 1e-9,
+         '读档后暴击率按存档恢复（' + cc46 + '），不被重新累加');
+  assert(ld46.player.passiveState.critStacks === cs46, '读档后叠层数恢复（' + cs46 + ' 层）');
+
+  // ㉑ heal 的表现开关不改变数值（只关特效 / 音效，供高频被动用）
+  var hl38 = new Game.Player('swordsman');
+  hl38.stats.hp = hl38.stats.maxHp - 20;
+  hl38.heal(10, { audio: false, fx: false });
+  assert(hl38.stats.hp === hl38.stats.maxHp - 10, '静音治疗数值照常结算');
+  hl38.stats.hp = hl38.stats.maxHp - 20;
+  hl38.heal(10);
+  assert(hl38.stats.hp === hl38.stats.maxHp - 10, '常规治疗与静音治疗数值一致');
+
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);
 }

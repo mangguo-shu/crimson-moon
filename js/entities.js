@@ -125,8 +125,11 @@
     s.attackSpeed = Math.max(0.4, s.attackSpeed);
   };
 
-  /** 治疗：过量治疗转化为护盾 */
-  Player.prototype.heal = function (amount) {
+  /** 治疗：过量治疗转化为护盾。
+   *  opts.audio === false / opts.fx === false 关掉对应表现 —— 高频触发的被动
+   *  （回春每 2 秒一次、掠影每次击杀一次）如果每次都响治疗音会非常吵。 */
+  Player.prototype.heal = function (amount, opts) {
+    opts = opts || {};
     var s = this.stats;
     var real = amount * s.healingPower;
     this.healedTotal += real;
@@ -137,8 +140,8 @@
     if (overflow > 0 && s.shieldMax > 0) {
       s.shield = Math.min(s.shieldMax, s.shield + overflow);
     }
-    if (fx()) fx().heal(this.x, this.y);
-    if (Game.Audio) Game.Audio.heal();
+    if (fx() && opts.fx !== false) fx().heal(this.x, this.y);
+    if (Game.Audio && opts.audio !== false) Game.Audio.heal();
     return toHp + (overflow > 0 ? Math.min(s.shieldMax, s.shield + overflow) - s.shield : 0);
   };
 
@@ -150,9 +153,16 @@
     var s = this.stats;
     if (!this.alive || this.invincibleTimer > 0) return 0;
     if (Game.debugGod) return 0; // 调试无敌
-    // 角色被动：承伤减免
+    // 角色被动：承伤减免。「格挡」在这里把伤害减到 0，走下面的免伤分支。
     var dealt = Game.invokePassive(this, 'onDamageTaken', raw);
-    if (typeof dealt === 'number') raw = dealt;
+    var blocked = (typeof dealt === 'number' && dealt <= 0);
+    if (typeof dealt === 'number') raw = blocked ? 0 : dealt;
+    if (blocked) {
+      // 格挡成立：不当作受击。不扣血、不闪白、不播痛音、不占无敌帧 ——
+      // 挡下一击不该换来额外的无敌时间；给点金属火花让挡下这件事看得见。
+      if (fx()) { fx().spark(this.x, this.y, 4); fx().ring(this.x, this.y, 24, '#ffcf5e'); }
+      return 0;
+    }
     this.damageTaken += raw;
     // 护甲减伤：减伤 = 护甲 / (护甲 + 30)，上限 80%
     var reduction = s.armor / (s.armor + 30);

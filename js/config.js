@@ -145,7 +145,171 @@
       // 重甲 + 束发额带；配色偏赤岩红
       colors: { skin: '#e2b88a', cloth: '#8a3a2e', cloth2: '#d8c8b0', hair: '#2a1a14', accent: '#ffcf5e' },
     },
+    {
+      id: 'assassin',
+      name: '疾风刺客',
+      category: '吸血近战',
+      desc: '刀快得看不清影子，砍完就走。',
+      passive: {
+        id: 'lueYing',
+        name: '掠影',
+        desc: '每次击杀回复 4 点生命。',
+      },
+      baseHp: 95,
+      speed: 245,
+      damage: 0.92,
+      attackSpeed: 1.15,
+      critChance: 0.09,
+      critMult: 1.6,
+      armor: 0,
+      startWeapon: 'iron_sword',
+      body: 'swordsman',
+      // 深青黑劲装 + 青玉护腕；和流浪剑客共用剑客姿态，靠配色分开
+      colors: { skin: '#f0cfa8', cloth: '#2e3a4e', cloth2: '#b8c8d8', hair: '#181420', accent: '#4fbfa0' },
+    },
+    {
+      id: 'guard',
+      name: '铁卫武人',
+      category: '格挡近战',
+      desc: '军中提刀的武人，一身铁甲硬抗。',
+      passive: {
+        id: 'geDang',
+        name: '格挡',
+        desc: '受到攻击时 15% 概率完全格挡。',
+      },
+      baseHp: 135,
+      speed: 195,
+      damage: 1.0,
+      attackSpeed: 0.95,
+      critChance: 0.05,
+      critMult: 1.5,
+      armor: 10,
+      startWeapon: 'iron_sword',
+      body: 'swordsman',
+      // 玄铁甲 + 鎏金饰边
+      colors: { skin: '#e8c49a', cloth: '#5a6470', cloth2: '#dcd4c4', hair: '#2a2a2e', accent: '#ffcf5e' },
+    },
+    {
+      id: 'crossbowman',
+      name: '裂石弩手',
+      category: '叠暴远程',
+      desc: '一弩能崩碎石岩，越攒越准。',
+      passive: {
+        id: 'jiFeng',
+        name: '疾风',
+        desc: '每次击杀暴击率 +2%，最多 5 层。',
+      },
+      baseHp: 92,
+      speed: 225,
+      damage: 1.0,
+      attackSpeed: 1.05,
+      critChance: 0.12,
+      critMult: 1.9,
+      armor: 0,
+      startWeapon: 'pistol',
+      body: 'archer',
+      // 岩褐皮甲 + 朱红箭袋
+      colors: { skin: '#eecba2', cloth: '#7a5a3a', cloth2: '#e8dfc0', hair: '#2a1f18', accent: '#c8352f' },
+    },
+    {
+      id: 'ranger',
+      name: '寒江射手',
+      category: '稳定远程',
+      desc: '寒江孤舟上的射手，每一箭都打得稳。',
+      passive: {
+        id: 'guanJia',
+        name: '贯甲',
+        desc: '非暴击命中伤害 +25%。',
+      },
+      baseHp: 88,
+      speed: 238,
+      damage: 1.05,
+      attackSpeed: 1.0,
+      critChance: 0.07,
+      critMult: 1.6,
+      armor: 0,
+      startWeapon: 'pistol',
+      body: 'archer',
+      // 冰青斗篷，和青木弓手拉开色相
+      colors: { skin: '#f0d0a8', cloth: '#4f7d8c', cloth2: '#e2eef2', hair: '#22303a', accent: '#4fbfa0' },
+    },
+    {
+      id: 'nun',
+      name: '慈心尼师',
+      category: '续航近战',
+      desc: '青灯古佛旁的尼师，慢火养人。',
+      passive: {
+        id: 'huiChun',
+        name: '回春',
+        desc: '每 2 秒回复 1 点生命。',
+      },
+      baseHp: 130,
+      speed: 200,
+      damage: 0.85,
+      attackSpeed: 0.95,
+      critChance: 0.04,
+      critMult: 1.5,
+      armor: 6,
+      startWeapon: 'iron_sword',
+      body: 'monk',
+      // 缂褐僧衣 + 朱红念珠
+      colors: { skin: '#f0cfa8', cloth: '#8a7a5a', cloth2: '#e8dfc0', hair: '#3a2a20', accent: '#c8352f' },
+    },
+    {
+      id: 'ascetic',
+      name: '苦行僧',
+      category: '苦修近战',
+      desc: '苦修多年，肉身已近金刚不坏。',
+      passive: {
+        id: 'chanXin',
+        name: '禅心',
+        desc: '受击时回复所受伤害的 30%。',
+      },
+      baseHp: 145,
+      speed: 180,
+      damage: 0.95,
+      attackSpeed: 0.85,
+      critChance: 0.04,
+      critMult: 1.5,
+      armor: 14,
+      startWeapon: 'iron_sword',
+      body: 'monk',
+      // 枯褐粗布 + 石青饰带
+      colors: { skin: '#e2b88a', cloth: '#6a5a48', cloth2: '#d8d0c0', hair: '#3a2a20', accent: '#8fd0e8' },
+    },
+    {
+      id: 'brute',
+      name: '狂岩巨擘',
+      category: '狂战近战',
+      desc: '赤岩深处的大力士，越打越疯。',
+      passive: {
+        id: 'kuangZhan',
+        name: '狂战',
+        desc: '每次击杀伤害 +3%，最多 10 层。',
+      },
+      baseHp: 160,
+      speed: 170,
+      damage: 1.25,
+      attackSpeed: 0.75,
+      critChance: 0.05,
+      critMult: 1.6,
+      armor: 8,
+      startWeapon: 'iron_sword',
+      body: 'brawler',
+      // 赤岩深红重甲 + 焰色饰边
+      colors: { skin: '#dfa878', cloth: '#7a2f26', cloth2: '#c8b8a0', hair: '#201410', accent: '#ff7a5c' },
+    },
   ];
+
+  /* ---------------- 姿态分组 ---------------- */
+  // 姿态即职业：角色选择界面按此分组显示，同一组的角色共用一套剪影，
+  // 靠配色 / 武器 / 特效区分（renderer 的 _PLAYER_BODY 按 body 分流绘制）。
+  Game.BODY_GROUPS = {
+    swordsman: '剑客',
+    archer: '弓手',
+    monk: '武僧',
+    brawler: '力士',
+  };
 
   /* ---------------- 角色被动 ----------------
    * 被动 = 声明式配置 + 挂点回调。
@@ -157,7 +321,7 @@
    * 可用挂点（player 恒为首参，返回值按挂点约定）：
    *   onHit(player, info)        → 返回最终伤害。info = { enemy, dmg, crit, weapon }
    *   onDamageTaken(player, raw) → 返回减免后的伤害
-   *   onKill(player, enemy)      → 击杀结算时（可用于吸血/叠 buff）
+   *   onKill(player, enemy, state) → 击杀结算时（可用于吸血/叠 buff）
    *   onWaveStart(player, state) → 每波开始时（可用于开局护盾）
    *   perTick(player, state, dt) → 每帧（可用于缓慢回血）
    */
@@ -213,6 +377,91 @@
       onHit: function (player, info) {
         var s = player.stats;
         return (s.hp / s.maxHp) < 0.5 ? info.dmg * 1.35 : info.dmg;
+      },
+    },
+
+    // 掠影（疾风刺客）：击杀回血。打不出击杀就喝不到血 —— 纯输出换续航，
+    // 和「回春」的恒定小回血形成对比：一个是节奏型、一个是保底型。
+    lueYing: {
+      name: '掠影',
+      desc: '每次击杀回复 4 点生命。',
+      onKill: function (player, enemy, state) {
+        player.heal(4, { audio: false });
+      },
+    },
+
+    // 格挡（铁卫武人）：受击时 15% 概率完全挡下。返回 0 让
+    // Player.takeDamage 走「格挡成立」分支：不扣血、不闪白、不播痛音、
+    // 也不占无敌帧（挡下一击不该换来额外的无敌时间）。
+    geDang: {
+      name: '格挡',
+      desc: '受到攻击时 15% 概率完全格挡。',
+      onDamageTaken: function (player, raw) {
+        return Math.random() < 0.15 ? 0 : raw;
+      },
+    },
+
+    // 疾风（裂石弩手）：击杀叠暴击率，永久成长，上限 5 层 ×2% = +10%。
+    // 直接写 stats.critChance，所以会进存档；读档不会重复累加。
+    jiFeng: {
+      name: '疾风',
+      desc: '每次击杀暴击率 +2%，最多 5 层。',
+      onKill: function (player, enemy, state) {
+        var st = player.passiveState;
+        var MAX = 5;
+        if ((st.critStacks || 0) >= MAX) return;
+        st.critStacks = (st.critStacks || 0) + 1;
+        player.stats.critChance += 0.02;
+      },
+    },
+
+    // 贯甲（寒江射手）：非暴击伤害 +25%。与「穿杨」是一对镜像 ——
+    // 穿杨放大暴击、贯甲放大平砍，一个吃波动一个吃稳定。
+    guanJia: {
+      name: '贯甲',
+      desc: '非暴击命中伤害 +25%。',
+      onHit: function (player, info) {
+        return info.crit ? info.dmg : info.dmg * 1.25;
+      },
+    },
+
+    // 回春（慈心尼师）：每 2 秒回 1 点。慢但恒定，用来拉长战线。
+    // 静音：每 2 秒响一次治疗音太吵，只留绿色粒子当提示。
+    huiChun: {
+      name: '回春',
+      desc: '每 2 秒回复 1 点生命。',
+      perTick: function (player, state, dt) {
+        var st = player.passiveState;
+        st.regenAcc = (st.regenAcc || 0) + dt;
+        while (st.regenAcc >= 2) {
+          st.regenAcc -= 2;
+          if (player.stats.hp < player.stats.maxHp) player.heal(1, { audio: false });
+        }
+      },
+    },
+
+    // 禅心（苦行僧）：按所受伤害回血。挨得越多喝得越多，硬抗流的续航。
+    // heal 不会回调 takeDamage，没有递归风险。
+    chanXin: {
+      name: '禅心',
+      desc: '受击时回复所受伤害的 30%。',
+      onDamageTaken: function (player, raw) {
+        if (raw > 0) player.heal(raw * 0.3, { audio: false });
+        return raw;
+      },
+    },
+
+    // 狂战（狂岩巨擘）：击杀叠伤害，永久成长，上限 10 层 ×3% = +30%。
+    // stats.damage 是武器伤害倍率，直接写进去即生效且进存档。
+    kuangZhan: {
+      name: '狂战',
+      desc: '每次击杀伤害 +3%，最多 10 层。',
+      onKill: function (player, enemy, state) {
+        var st = player.passiveState;
+        var MAX = 10;
+        if ((st.dmgStacks || 0) >= MAX) return;
+        st.dmgStacks = (st.dmgStacks || 0) + 1;
+        player.stats.damage += 0.03;
       },
     },
   };
