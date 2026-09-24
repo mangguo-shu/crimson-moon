@@ -92,6 +92,7 @@
   WeaponInstance.prototype._meleeAttack = function (owner, state, enemy) {
     var facing = util.angleTo(owner.x, owner.y, enemy.x, enemy.y);
     owner.aimFacing = facing;
+    if (owner.playAttack) owner.playAttack('melee'); // 纯表现：下劈动作
     var dmg = this.damage(owner);
     var halfArc = this.def.arc / 2;
     var es = state.enemies;
@@ -115,6 +116,7 @@
   WeaponInstance.prototype._rangedAttack = function (owner, state, enemy) {
     var ang = util.angleTo(owner.x, owner.y, enemy.x, enemy.y);
     owner.aimFacing = ang;
+    if (owner.playAttack) owner.playAttack('ranged'); // 纯表现：射击后坐
     var crit = this._rollCrit(owner);
     var dmg = this.damage(owner) * (crit ? owner.stats.critMult : 1);
     var spd = this.def.projectileSpeed;

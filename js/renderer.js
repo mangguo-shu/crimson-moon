@@ -31,6 +31,58 @@
     if (on) { ctx.strokeStyle = OUT; ctx.lineWidth = w || 1.6; ctx.stroke(); }
   }
 
+  /**
+   * 直立化变换：取代原来的整体旋转。
+   *
+   * 旧做法是 ctx.rotate(facing + PI/2)，角色会跟着朝向整个转过去 ——
+   * 向右走时人就是「横躺着」的，既不像站着，影子也对不上脚。
+   * 现在改为：永远直立，用左右镜像表达朝向，再绕脚底做一点轻微倾斜，
+   * 保留「正朝那边」的动感。朝向数据本身（索敌/挥砍/弹道）完全不受影响。
+   *
+   * 必须在 ctx.translate(实体位置) 之后调用。
+   *
+   * @param {number} facing 朝向弧度
+   * @param {number} footY  脚底在局部坐标的 y（绕它旋转，保证脚不离开影子）
+   * @param {number} [maxLean] 最大倾斜弧度
+   * @returns {number} dirX：水平朝向分量（-1 左 / 0 正上正下 / 1 右）
+   */
+  function upright(ctx, facing, footY, maxLean) {
+    var dirX = Math.cos(facing);
+    if (dirX < 0) ctx.scale(-1, 1);          // 左右镜像
+    var lean = (maxLean === undefined ? 0.12 : maxLean) * Math.abs(dirX);
+    if (lean > 0.001) {
+      ctx.translate(0, footY);
+      ctx.rotate(lean);                       // 镜像后恒为正 = 恒向面朝方向倾
+      ctx.translate(0, -footY);
+    }
+    return dirX;
+  }
+
+  /**
+   * 脚底在局部坐标的 y —— 直立化的倾斜支点。
+   * 影子落点 (_drawShadows) 也从这里取，保证「脚踩在影子上」只有一处事实来源：
+   * 早先两边各写各的（影子按 radius*0.6 推），年兽因此浮在影子上面近 15px。
+   */
+  var FOOT_Y = { player: 12, zombie: 13, bat: 6, wizard: 14, boss: 40 };
+  var FOOT_Y_DEFAULT = 10;
+
+  /**
+   * 攻击动作进度。返回 0→1；当前没有攻击动作时返回 -1，
+   * 调用方用 `u >= 0` 判断「是否正在出手」。
+   */
+  function atkU(e) {
+    var a = e.attackAnim;
+    if (!a) return -1;
+    var u = a.t / a.dur;
+    return u < 0 ? 0 : (u > 1 ? 1 : u);
+  }
+
+  /** 出手脉冲：0 → 1 → 0，用于「前扑/俯冲/拍击」这类一进一出的动作 */
+  function pulse(u, k) {
+    if (u < 0) return 0;
+    return Math.sin(Math.PI * Math.min(1, u * (k || 1.35)));
+  }
+
   var R = {
     canvas: null, ctx: null,
     view: { w: CONST.LOGICAL_W, h: CONST.LOGICAL_H, scale: 1, dpr: 1 },
@@ -362,10 +414,12 @@
     var i;
     for (i = 0; i < state.enemies.length; i++) {
       var e = state.enemies[i];
-      this._ellipse(ctx, e.x, e.y + e.radius * 0.6, e.radius * 0.9, e.radius * 0.35);
+      // 落点取脚底，与 _drawEnemy 的直立支点同源 —— 脚必须踩在影子上
+      var fy = FOOT_Y[e.type] === undefined ? FOOT_Y_DEFAULT : FOOT_Y[e.type];
+      this._ellipse(ctx, e.x, e.y + fy, e.radius * 0.9, e.radius * 0.35);
     }
     if (state.player && state.player.alive) {
-      this._ellipse(ctx, state.player.x, state.player.y + 10, 14, 5);
+      this._ellipse(ctx, state.player.x, state.player.y + FOOT_Y.player, 14, 5);
     }
   };
 
@@ -391,12 +445,40 @@
       ctx.restore();
     }
 
-    // 朝向：视觉朝向由移动优先（在 systems 里更新 p.facing）
-    ctx.rotate(p.facing + Math.PI / 2);
+    // 直立化：不再随朝向整体旋转（旧做法会让角色「横躺」），改镜像 + 绕脚底微倾
+    var dirX = upright(ctx, p.facing, FOOT_Y.player);
 
     var moving = p.moving;
     var sw = moving ? Math.sin(p.walkTime * 11) : 0;
     var breathe = moving ? 0 : Math.sin(now * 0.0022) * 0.6; // 待机呼吸
+
+    // 头部随朝向微偏：做出「看向那边」的感觉（正上/正下时几乎不动）
+    var headDX = dirX * 1.7;
+    var headDY = -Math.sin(p.facing) * 1.1;
+
+    // ---- 攻击动作（纯表现，不影响判定） ----
+    var atk = p.attackAnim;
+    var armAng = 0;      // 前臂 + 剑：绕肩关节旋转
+    var bodyKick = 0;    // 远程后坐：身体向后位移
+    var swingLean = 0;   // 挥砍：整体前倾
+    if (atk) {
+      var u = atk.t / atk.dur;                 // 0 → 1
+      if (atk.kind === 'melee') {
+        // 0~0.35 抬剑蓄力（负 = 向后上抬）｜0.35~0.62 下劈｜0.62~1 收势
+        if (u < 0.35) armAng = -1.2 * (u / 0.35);
+        else if (u < 0.62) armAng = -1.2 + 2.6 * ((u - 0.35) / 0.27);
+        else armAng = 1.4 * (1 - (u - 0.62) / 0.38);
+        swingLean = armAng * 0.10;
+      } else {
+        // 远程：后坐快速衰减
+        bodyKick = (1 - u) * 2.2;
+        armAng = (1 - u) * -0.5;
+      }
+    }
+    if (swingLean) {
+      ctx.translate(0, 12); ctx.rotate(swingLean); ctx.translate(0, -12);
+    }
+    if (bodyKick) ctx.translate(-bodyKick, 0);
 
     // ---- 双腿（月白裤，行走摆动） ----
     ctx.beginPath(); ctx.ellipse(-4.2, 9 + sw * 3, 3.6, 5, 0, 0, TAU);
@@ -423,15 +505,20 @@
     ctx.moveTo(-8, 1); ctx.lineTo(-11.5, 10); ctx.lineTo(-5, 9); ctx.closePath();
     fs(ctx, tint(c.cloth2), O, 1.3);
 
-    // ---- 前臂 + 持剑手 ----
+    // ---- 前臂 + 持剑手（绕肩关节摆动，驱动攻击动作） ----
+    ctx.save();
+    ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
     ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.6; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
     ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
     fs(ctx, tint(c.skin), O, 1.2);
 
     this._drawSword(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#cfe0ea');
+    ctx.restore();
 
-    // ---- 头（chibi 大头） ----
+    // ---- 头（chibi 大头，随朝向微偏） ----
+    ctx.save();
+    ctx.translate(headDX, headDY);
     ctx.beginPath(); ctx.arc(0, -14 + breathe, 9.6, 0, TAU);
     fs(ctx, tint(c.skin), O, 1.8);
 
@@ -489,6 +576,7 @@
     ctx.fillStyle = 'rgba(230,120,110,0.26)';
     ctx.beginPath(); ctx.ellipse(-6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.ellipse(6.3, ey + 2.7, 1.9, 1.2, 0, 0, TAU); ctx.fill();
+    ctx.restore();   // 头部随朝向偏移结束
 
     ctx.restore();
 
@@ -527,7 +615,9 @@
     var flash = e.hitFlash > 0;
     ctx.save();
     ctx.translate(e.x, e.y);
-    ctx.rotate(e.facing + Math.PI / 2); // 面朝玩家
+    // 直立：镜像 + 绕脚底微倾；支点与影子落点同源（见 FOOT_Y 注释）
+    var fy = FOOT_Y[e.type] === undefined ? FOOT_Y_DEFAULT : FOOT_Y[e.type];
+    upright(ctx, e.facing, fy);
     switch (e.type) {
       case 'zombie': this._drawZombie(ctx, e, flash); break;
       case 'bat': this._drawBat(ctx, e, flash); break;
@@ -568,9 +658,11 @@
     var hat = flash ? '#fff' : (d.color3 || '#1a1a20');
     var hop = Math.abs(Math.sin(e.animTime * 4.2)) * 3.2;
     var sway = Math.sin(e.animTime * 4.2) * 0.09;
+    var lunge = pulse(atkU(e));          // 前扑脉冲（0→1→0）
 
     ctx.save();
     ctx.translate(0, -hop);
+    if (lunge) ctx.scale(1 + lunge * 0.07, 1 + lunge * 0.07); // 向镜头扑近
 
     // 官服长袍（下摆）
     ctx.beginPath();
@@ -600,13 +692,18 @@
     fs(ctx, PAL.lantern, O, 1);
     ctx.restore();
 
-    // 前伸双臂（僵尸标志性姿态，绘于头之后以呈现在前）
+    // 前伸双臂：正面视角下「前伸」读作向两侧前方平举 ——
+    // 原来的朝正上方伸展在直立后会变成「举手投降」，故改为平举；
+    // 出手时手臂向镜头推近 + 手掌放大，用近大远小暗示伸向观众。
+    var reach = 1 + lunge * 0.30;
+    var handR = 2.4 * (1 + lunge * 0.55);
+    var armY = -5 + lunge * 2.5;
     ctx.strokeStyle = robe; ctx.lineWidth = 4.4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-5, -4); ctx.lineTo(-8.5, -16); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(5, -4); ctx.lineTo(8.5, -16); ctx.stroke();
-    ctx.beginPath(); ctx.arc(-8.5, -17.5, 2.4, 0, TAU);
+    ctx.beginPath(); ctx.moveTo(-5, -3); ctx.lineTo(-10.5 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5, -3); ctx.lineTo(10.5 * reach, armY); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-10.5 * reach, armY - 0.8, handR, 0, TAU);
     fs(ctx, '#dfe6c8', O, 1.2);
-    ctx.beginPath(); ctx.arc(8.5, -17.5, 2.4, 0, TAU);
+    ctx.beginPath(); ctx.arc(10.5 * reach, armY - 0.8, handR, 0, TAU);
     fs(ctx, '#dfe6c8', O, 1.2);
 
     ctx.restore();
@@ -618,12 +715,14 @@
     var fur = flash ? '#fff' : d.color;
     var wing = flash ? '#fff' : d.color2;
     var flap = Math.sin(e.animTime * 15);
+    var dive = pulse(atkU(e), 1.3);      // 俯冲脉冲（0→1→0）
+    var spread = 1 - dive * 0.55;        // 收翼幅度
     var s;
 
-    // 双翼（带翼骨）
+    // 双翼（带翼骨）—— 俯冲时收拢，命中瞬间再张开
     for (s = -1; s <= 1; s += 2) {
       ctx.save();
-      ctx.scale(s, 1);
+      ctx.scale(s * spread, 1);
       ctx.beginPath();
       ctx.moveTo(2, -1);
       ctx.quadraticCurveTo(11, -8 - flap * 5, 19, -4 - flap * 6);
@@ -637,8 +736,9 @@
       ctx.beginPath(); ctx.moveTo(3, 1); ctx.lineTo(15, 3); ctx.stroke();
       ctx.restore();
     }
-    // 身体（绒毛）
-    ctx.beginPath(); ctx.ellipse(0, 0, 7, 6.5, 0, 0, TAU);
+    // 身体（绒毛）—— 俯冲时略微放大，做出「扑到眼前」的感觉
+    var bs = 1 + dive * 0.18;
+    ctx.beginPath(); ctx.ellipse(0, 0, 7 * bs, 6.5 * bs, 0, 0, TAU);
     fs(ctx, fur, O, 1.6);
     // 耳朵
     ctx.beginPath(); ctx.moveTo(-4, -5); ctx.lineTo(-6.5, -11.5); ctx.lineTo(-1.5, -6); ctx.closePath();
@@ -653,9 +753,10 @@
     // 发光眼
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(255,90,110,0.85)';
-    ctx.beginPath(); ctx.arc(-2.6, -1, 1.8, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(2.6, -1, 1.8, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,90,110,' + (0.85 + dive * 0.15) + ')';
+    var er = 1.8 * (1 + dive * 0.4);
+    ctx.beginPath(); ctx.arc(-2.6, -1, er, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(2.6, -1, er, 0, TAU); ctx.fill();
     ctx.restore();
   };
 
@@ -666,10 +767,11 @@
     var paper = flash ? '#fff' : d.color2;
     var wood = flash ? '#fff' : (d.color3 || '#8a6a3a');
     var float = Math.sin(e.animTime * 2.2) * 1.5;
+    var cast = pulse(atkU(e), 1.2);      // 施法脉冲（0→1→0）
     var i;
 
     ctx.save();
-    ctx.translate(0, float);
+    ctx.translate(0, float - cast * 2);  // 施法时微微上浮
 
     // 道袍（宽摆）
     ctx.beginPath();
@@ -703,18 +805,28 @@
     ctx.beginPath(); ctx.arc(2.4, -12.5, 1.5, 0, TAU); ctx.fill();
     ctx.restore();
 
-    // 桃木剑
+    // 桃木剑（施法时高举）
     ctx.save();
-    ctx.translate(11, 6); ctx.rotate(-0.35);
+    ctx.translate(11, 6 - cast * 4); ctx.rotate(-0.35 - cast * 0.55);
     ctx.beginPath(); ctx.rect(-1, -14, 2, 18); fs(ctx, wood, O, 1.2);
     ctx.beginPath(); ctx.rect(-3, 3, 6, 2.4); fs(ctx, PAL.lantern, O, 1);
     ctx.restore();
-
-    // 悬浮符咒（环绕）
-    for (i = 0; i < 3; i++) {
-      var a = e.animTime * 1.8 + i * (TAU / 3);
+    // 剑尖灵光
+    if (cast > 0.05) {
       ctx.save();
-      ctx.translate(Math.cos(a) * 20, Math.sin(a) * 20 - 4);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(200,150,255,' + (cast * 0.7) + ')';
+      ctx.beginPath(); ctx.arc(11 + cast * 4, -6 - cast * 4, 3.5 + cast * 5, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // 悬浮符咒（环绕；施法时向中心聚拢并加速旋转）
+    var orbR = 20 - cast * 9;
+    var spin = e.animTime * (1.8 + cast * 4);
+    for (i = 0; i < 3; i++) {
+      var a = spin + i * (TAU / 3);
+      ctx.save();
+      ctx.translate(Math.cos(a) * orbR, Math.sin(a) * orbR - 4);
       ctx.rotate(a);
       ctx.beginPath(); ctx.rect(-3, -5, 6, 10);
       fs(ctx, paper, O, 1);
@@ -729,8 +841,11 @@
     var body = flash ? '#fff' : d.color;
     var dark = flash ? '#fff' : d.color2;
     var gold = d.color3 || PAL.gold;
-    var pulse = 0.6 + Math.sin(e.animTime * 3) * 0.4;
+    var glow = 0.6 + Math.sin(e.animTime * 3) * 0.4; // 原变量名 pulse 会遮蔽同名工具函数，改名
+    var slam = pulse(atkU(e), 1.4);      // 拍击脉冲（0→1→0）
     var i, s, k, t, a;
+
+    if (slam) ctx.scale(1 + slam * 0.05, 1 + slam * 0.05); // 拍击时整体前压
 
     // 暗色内圈（体积感）
     ctx.beginPath(); ctx.ellipse(0, 6, 40, 42, 0, 0, TAU);
@@ -759,7 +874,7 @@
     fs(ctx, dark, O, 1.8);
     // 怒目
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(255,220,90,' + (0.6 + pulse * 0.4) + ')';
+    ctx.fillStyle = 'rgba(255,220,90,' + (0.6 + glow * 0.4) + ')';
     ctx.beginPath(); ctx.ellipse(-9, -8, 5, 4, -0.25, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.ellipse(9, -8, 5, 4, 0.25, 0, TAU); ctx.fill();
     ctx.restore();
@@ -775,18 +890,20 @@
     }
     // 核心辉光
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(255,90,70,' + (0.35 + pulse * 0.35) + ')';
-    ctx.beginPath(); ctx.arc(0, 16, 12 + pulse * 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,90,70,' + (0.35 + glow * 0.35 + slam * 0.3) + ')';
+    ctx.beginPath(); ctx.arc(0, 16, 12 + glow * 4 + slam * 6, 0, TAU); ctx.fill();
     ctx.restore();
-    // 利爪（环绕）
+    // 利爪（环绕；拍击时向内合拢并加速）
+    var clawIn = 32 - slam * 15;
+    var clawOut = 46 - slam * 21;
     ctx.strokeStyle = body; ctx.lineWidth = 6; ctx.lineCap = 'round';
     for (t = 0; t < 6; t++) {
-      a = e.animTime * 1.6 + t * (TAU / 6);
+      a = e.animTime * (1.6 + slam * 3) + t * (TAU / 6);
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 32, Math.sin(a) * 32);
-      ctx.lineTo(Math.cos(a) * 46, Math.sin(a) * 46);
+      ctx.moveTo(Math.cos(a) * clawIn, Math.sin(a) * clawIn);
+      ctx.lineTo(Math.cos(a) * clawOut, Math.sin(a) * clawOut);
       ctx.stroke();
-      ctx.beginPath(); ctx.arc(Math.cos(a) * 46, Math.sin(a) * 46, 3.4, 0, TAU);
+      ctx.beginPath(); ctx.arc(Math.cos(a) * clawOut, Math.sin(a) * clawOut, 3.4, 0, TAU);
       fs(ctx, PAL.paper, O, 1.2);
     }
   };
@@ -1006,11 +1123,11 @@
     if (ratio > CONST.LOW_HP_RATIO) return;
     // 濒死：屏幕边缘红色暗角，脉动
     var intensity = (1 - ratio / CONST.LOW_HP_RATIO);
-    var pulse = 0.6 + Math.sin(performance.now() * 0.006) * 0.4;
+    var beat = 0.6 + Math.sin(performance.now() * 0.006) * 0.4; // 原名 pulse 会遮蔽同名工具函数
     var v = this.view;
     var g = ctx.createRadialGradient(v.w / 2, v.h / 2, v.h * 0.3, v.w / 2, v.h / 2, v.h * 0.75);
     g.addColorStop(0, 'rgba(180,20,20,0)');
-    g.addColorStop(1, 'rgba(180,20,20,' + (0.22 * intensity * pulse) + ')');
+    g.addColorStop(1, 'rgba(180,20,20,' + (0.22 * intensity * beat) + ')');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, v.w, v.h);
   };

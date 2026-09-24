@@ -219,6 +219,7 @@
 
     if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
     if (p.hitFlashTimer > 0) p.hitFlashTimer -= dt;
+    p.tickAttackAnim(dt);
 
     // 护盾缓慢回复
     if (p.stats.shieldMax > 0 && p.stats.shield < p.stats.shieldMax) {

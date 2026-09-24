@@ -313,6 +313,169 @@ try {
   assert(false, '国风渲染异常: ' + e.stack);
 }
 
+/* ---------------- 直立化 + 攻击动作 ---------------- */
+console.log('\n== 直立化 / 攻击动作覆盖 ==');
+try {
+  var st10 = Game.Systems.createState('campaign', 'swordsman', 22);
+  Game.Systems.startWave(st10, 1);
+  Game.state = st10;
+  var pl = st10.player;
+
+  // ① 八方向直立渲染：覆盖左右镜像 + 绕脚底倾斜（正左/正右倾斜量最大）分支
+  Game.Renderer.setQuality('high');
+  for (var a8 = 0; a8 < 8; a8++) {
+    pl.facing = a8 * (Math.PI / 4);
+    Game.Renderer.render(st10, 0.016);
+  }
+  assert(true, '玩家 8 方向直立渲染无异常');
+
+  // ② 四种怪物八方向（各自脚底支点不同，boss 与蝠妖差异最大）
+  var types2 = ['zombie', 'bat', 'wizard', 'boss'];
+  st10.enemies.length = 0;
+  for (var t2 = 0; t2 < types2.length; t2++) {
+    st10.enemies.push(new Game.Enemy(types2[t2], 400 + t2 * 120, 400, 1));
+  }
+  for (var a8b = 0; a8b < 8; a8b++) {
+    for (var e2 = 0; e2 < st10.enemies.length; e2++) {
+      st10.enemies[e2].facing = a8b * (Math.PI / 4);
+    }
+    Game.Renderer.render(st10, 0.016);
+  }
+  assert(true, '四种怪物 8 方向直立渲染无异常');
+
+  // ③ 玩家攻击动作：全程 t=0→dur 逐帧，覆盖抬剑蓄力/下劈/收势三段
+  var pKinds = ['melee', 'ranged'];
+  for (var k2 = 0; k2 < pKinds.length; k2++) {
+    pl.playAttack(pKinds[k2]);
+    var pdur = pl.attackAnim.dur;
+    for (var s2 = 0; s2 <= 10; s2++) {
+      pl.attackAnim.t = pdur * (s2 / 10);
+      Game.Renderer.render(st10, 0.016);
+    }
+    pl.attackAnim = null;
+  }
+  assert(true, '玩家 近战下劈 / 远程后坐 全程姿态渲染无异常');
+
+  // ④ 怪物攻击动作：四种类型全程逐帧
+  var eKinds = ['lunge', 'dive', 'cast', 'boss'];
+  for (var k3 = 0; k3 < eKinds.length; k3++) {
+    var en2 = new Game.Enemy(types2[k3], 500, 400, 1);
+    en2.playAttack(eKinds[k3]);
+    var edur = en2.attackAnim.dur;
+    st10.enemies.push(en2);
+    for (var s3 = 0; s3 <= 10; s3++) {
+      en2.attackAnim.t = edur * (s3 / 10);
+      Game.Renderer.render(st10, 0.016);
+    }
+    st10.enemies.pop();
+  }
+  assert(true, '跳尸前扑 / 蝠妖俯冲 / 邪修施法 / 年兽拍击 全程姿态渲染无异常');
+
+  // ⑤ 计时推进：播完必须自动清空，否则姿态会永久卡在出手帧
+  var en3 = new Game.Enemy('zombie', 500, 400, 1);
+  en3.playAttack('lunge');
+  assert(en3.attackAnim !== null, 'playAttack 后 attackAnim 已挂载');
+  var guard = 0;
+  while (en3.attackAnim && guard++ < 300) en3.tickAttackAnim(0.016);
+  assert(en3.attackAnim === null, '动作播完后自动清空（' + guard + ' 帧内结束）');
+
+  // ⑥ 集成：真实战斗路径必须触发动作，而不是只有直接调 playAttack 才动
+  st10.enemies.length = 0;
+  pl.attackAnim = null;
+  var target = new Game.Enemy('zombie', pl.x + 20, pl.y, 1); // 贴脸 → 在近战范围内
+  target.hp = target.maxHp = 1e9;                            // 打不死，便于断言
+  st10.enemies.push(target);
+  var sword = new Game.WeaponInstance('iron_sword', 1);
+  sword.cooldownRemaining = 0;
+  sword.update(0.016, pl, st10);
+  assert(pl.attackAnim !== null && pl.attackAnim.kind === 'melee',
+         '铁剑近战命中触发下劈动作（集成路径，非直接调用）');
+
+  // ⑦ 低画质（描边关闭）下同样不崩
+  Game.Renderer.setQuality('low');
+  pl.playAttack('melee', 0);
+  for (var s4 = 0; s4 <= 6; s4++) {
+    pl.attackAnim.t = pl.attackAnim.dur * (s4 / 6);
+    Game.Renderer.render(st10, 0.016);
+  }
+  Game.Renderer.setQuality('high');
+  assert(true, '低画质（无描边）下攻击姿态渲染无异常');
+
+  /* ⑧ 量化验证「竖向」：追踪 canvas 变换矩阵，确认角色没有被转倒。
+     旧实现是 rotate(facing + PI/2)，朝右时局部「上」向量会被映射到 (1,0)
+     —— 也就是整个人横躺着，正是要修的问题。这里直接断言「上」仍朝上。 */
+  function makeMatrixCtx() {
+    var m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    var stack = [], arcs = [];
+    function mul(n) {
+      m = {
+        a: m.a * n.a + m.c * n.b,
+        b: m.b * n.a + m.d * n.b,
+        c: m.a * n.c + m.c * n.d,
+        d: m.b * n.c + m.d * n.d,
+        e: m.a * n.e + m.c * n.f + m.e,
+        f: m.b * n.e + m.d * n.f + m.f,
+      };
+    }
+    var api = {
+      save: function () { stack.push({ a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f }); },
+      restore: function () { if (stack.length) m = stack.pop(); },
+      translate: function (x, y) { mul({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); },
+      rotate: function (t) { mul({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 }); },
+      scale: function (x, y) { mul({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); },
+      arc: function (x, y, r) {
+        arcs.push({ x: x, r: r, a: m.a, b: m.b, c: m.c, d: m.d });
+      },
+    };
+    return {
+      ctx: new Proxy(api, {
+        get: function (t, k) { return (k in t) ? t[k] : function () {}; },
+        set: function (t, k, v) { t[k] = v; return true; },
+      }),
+      arcs: arcs,
+    };
+  }
+
+  /** 局部「上」向量 (0,-1) 经矩阵后的 y 分量；-1 = 完全朝上，0 = 横躺 */
+  function upY(mx) { return -mx.d; }
+
+  pl.attackAnim = null; // 排除手臂挥砍带来的局部旋转，只看身体基准朝向
+  var maxUy = -2, worstAngle = 0, tilts = 0;
+  for (var a9 = 0; a9 < 8; a9++) {
+    var ang9 = a9 * (Math.PI / 4);
+    pl.facing = ang9;
+    var rec = makeMatrixCtx();
+    Game.Renderer._drawPlayer(rec.ctx, pl);
+    // 头部圆：arc(0, ..., 9.6, ...) —— 半径 9.6 且 x=0 在全函数中唯一
+    var head = null;
+    for (var hi = 0; hi < rec.arcs.length; hi++) {
+      if (rec.arcs[hi].x === 0 && Math.abs(rec.arcs[hi].r - 9.6) < 0.01) head = rec.arcs[hi];
+    }
+    if (!head) { assert(false, '未捕获到头部变换矩阵（角度 ' + a9 + '）'); break; }
+    var uy = upY(head);
+    if (uy > maxUy) { maxUy = uy; worstAngle = a9; } // 取最接近 0 的 = 最不直立的
+    if (Math.abs(head.c) > 0.3) tilts++;
+  }
+  assert(maxUy < -0.9,
+         '8 方向下角色始终直立：最差「上」向量 y=' + maxUy.toFixed(3) +
+         '（角度 ' + worstAngle + '×45°，旧实现此值为 0 = 横躺）');
+  assert(tilts === 0, '倾斜量受控（|c| ≤ 0.3，无任何方向出现横躺）');
+
+  /* ⑨ 怪物走的是同一个 upright 工具，抽验跳尸头部基准朝向 */
+  var zrec = makeMatrixCtx();
+  var zom = new Game.Enemy('zombie', 400, 400, 1);
+  zom.facing = 0; // 朝右 —— 旧实现下必然横躺
+  Game.Renderer._drawEnemy(zrec.ctx, zom);
+  var zhead = null;
+  for (var zi = 0; zi < zrec.arcs.length; zi++) {
+    if (zrec.arcs[zi].x === 0 && Math.abs(zrec.arcs[zi].r - 8.2) < 0.01) zhead = zrec.arcs[zi];
+  }
+  assert(zhead !== null && upY(zhead) < -0.9,
+         '跳尸朝右时仍直立（上向量 y=' + (zhead ? upY(zhead).toFixed(3) : 'n/a') + '）');
+} catch (e) {
+  assert(false, '直立化/攻击动作异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

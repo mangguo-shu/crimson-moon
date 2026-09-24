@@ -61,6 +61,10 @@
     this.hitFlashTimer = 0;
     this.alive = true;
 
+    // 攻击动作（纯表现：只驱动绘制姿态，不参与伤害判定与冷却）
+    // { kind: 'melee' | 'ranged', t: 已播时长, dur: 总时长 }
+    this.attackAnim = null;
+
     // 本局统计（用于结算面板）
     this.damageTaken = 0;   // 承受总伤害
     this.healedTotal = 0;   // 治疗总量
@@ -68,6 +72,19 @@
   }
 
   Player.prototype.xpForLevel = function (lvl) { return 5 + lvl * 4; };
+
+  /** 触发攻击动作（纯表现）。kind: 'melee' 下劈 / 'ranged' 后坐 */
+  Player.prototype.playAttack = function (kind) {
+    this.attackAnim = { kind: kind, t: 0, dur: kind === 'melee' ? 0.30 : 0.20 };
+  };
+
+  /** 推进攻击动作计时；播完即清空 */
+  Player.prototype.tickAttackAnim = function (dt) {
+    var a = this.attackAnim;
+    if (!a) return;
+    a.t += dt;
+    if (a.t >= a.dur) this.attackAnim = null;
+  };
 
   /** 应用被动道具（可叠加） */
   Player.prototype.applyItem = function (itemId, count) {
@@ -199,12 +216,31 @@
     this.animTime = Math.random() * 10;
     this.dead = false;
     this.armorPierce = 0; // 破甲比例（后续高波次破甲怪使用）
+
+    // 攻击动作（纯表现）
+    // { kind: 'lunge' 跳尸前扑 | 'dive' 蝠妖俯冲 | 'cast' 邪修施法 | 'boss' 年兽拍击 }
+    this.attackAnim = null;
   }
+
+  /** 触发攻击动作（纯表现）。 */
+  Enemy.prototype.playAttack = function (kind) {
+    var dur = kind === 'boss' ? 0.55 : (kind === 'cast' ? 0.45 : 0.28);
+    this.attackAnim = { kind: kind, t: 0, dur: dur };
+  };
+
+  /** 推进攻击动作计时；播完即清空 */
+  Enemy.prototype.tickAttackAnim = function (dt) {
+    var a = this.attackAnim;
+    if (!a) return;
+    a.t += dt;
+    if (a.t >= a.dur) this.attackAnim = null;
+  };
 
   Enemy.prototype.update = function (dt, player, state) {
     this.animTime += dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;
     this.attackCd -= dt;
+    this.tickAttackAnim(dt);
 
     var dx = player.x - this.x, dy = player.y - this.y;
     var d = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -230,6 +266,7 @@
         // 接触伤害
         player.takeDamage(this.damage);
         this.attackCd = def.attackCd;
+        this.playAttack(behavior === 'flyer' ? 'dive' : 'lunge');
         if (behavior === 'flyer') {
           // 血蝠攻击后小幅后撤
           this.knockbackX -= dx / d * 60;
@@ -248,6 +285,7 @@
       }
       if (this.attackCd <= 0 && d < keep + 60) {
         this.attackCd = def.attackCd;
+        this.playAttack('cast');
         state.projectiles.push(new Projectile({
           x: this.x, y: this.y,
           vx: dx / d * def.projectileSpeed, vy: dy / d * def.projectileSpeed,
@@ -264,6 +302,7 @@
       }
       if (this.attackCd <= 0) {
         this.attackCd = def.attackCd;
+        this.playAttack('boss');
         this._bossAttack(player, state, dx, dy, d);
       }
     }

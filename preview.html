@@ -9,7 +9,7 @@
     font-family: system-ui, "Microsoft YaHei", sans-serif; }
   #wrap { display: flex; flex-direction: column; align-items: center; padding: 14px 14px 40px; }
   h1 { font-size: 17px; margin: 4px 0 2px; letter-spacing: .5px; }
-  p.sub { font-size: 12.5px; opacity: .65; margin: 0 0 12px; }
+  p.sub { font-size: 12.5px; opacity: .65; margin: 0 0 12px; text-align: center; line-height: 1.6; }
   #stage { width: 100%; max-width: 1280px; }
   canvas { display: block; width: 100%; height: auto; border-radius: 10px;
     box-shadow: 0 10px 34px rgba(0,0,0,.55); }
@@ -17,8 +17,12 @@
 </head>
 <body>
 <div id="wrap">
-  <h1>《赤月猎场》美术预览 · 青砖庭院 / 日漫 chibi / 国风怪物</h1>
-  <p class="sub">与游戏共用同一套 renderer.js 绘制代码 —— 此处所见即游戏内所见</p>
+  <h1>《赤月猎场》美术预览 · 直立造型 / 攻击动作</h1>
+  <p class="sub">
+    与游戏共用同一套 renderer.js 绘制代码 —— 此处所见即游戏内所见<br>
+    第 2、3 行刻意摆了不同朝向：角色<b>不再整体旋转</b>，改为左右镜像 + 绕脚底微倾<br>
+    第 3、4 行是攻击动作循环演示（主角下劈/后坐、跳尸前扑、蝠妖俯冲、邪修施法、年兽拍击）
+  </p>
   <div id="stage"><canvas id="game"></canvas></div>
 </div>
 
@@ -37,12 +41,13 @@
   R.init(canvas);
   R.setQuality('high');
 
-  /* 固定 1280x720 逻辑视口（预览用，不随窗口拉伸） */
+  /* 固定 1280x1200 逻辑视口（预览用，比游戏高，好放下多行） */
+  var VIEW_W = 1280, VIEW_H = 1200;
   function fixView() {
     var dpr = Math.min(2, window.devicePixelRatio || 1);
-    R.view = { w: 1280, h: 720, scale: 1, dpr: dpr };
-    canvas.width = 1280 * dpr;
-    canvas.height = 720 * dpr;
+    R.view = { w: VIEW_W, h: VIEW_H, scale: 1, dpr: dpr };
+    canvas.width = VIEW_W * dpr;
+    canvas.height = VIEW_H * dpr;
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
   }
@@ -53,42 +58,68 @@
   R.camera.x = 300; R.camera.y = 260;
   var CX = R.camera.x, CY = R.camera.y;
 
+  var UP = -Math.PI / 2, RIGHT = 0, DOWN = Math.PI / 2, LEFT = Math.PI;
+
   /* ---------------- 构造预览内容 ---------------- */
   function mkPlayer(lx, ly, opts) {
     var p = new Game.Player('swordsman');
     p.x = CX + lx; p.y = CY + ly;
-    p.facing = -Math.PI / 2;               // 朝上，正对观察者
+    p.facing = UP;
     p.weapons = [new Game.WeaponInstance('iron_sword', 1)];
     for (var k in (opts || {})) p[k] = opts[k];
     return p;
   }
+  function mkEnemy(type, lx, ly, facing, hpRatio) {
+    var e = new Game.Enemy(type, CX + lx, CY + ly, 1);
+    e.facing = facing;
+    if (hpRatio !== undefined) e.hp = e.maxHp * hpRatio;
+    return e;
+  }
 
-  var playerIdle = mkPlayer(150, 150, { moving: false });
-  var playerWalk = mkPlayer(400, 150, { moving: true, walkTime: 0 });
-  var playerHurt = mkPlayer(650, 150, { moving: false, hitFlashTimer: 0.2 });
+  /* 第 1 行：主角三态 */
+  var playerIdle = mkPlayer(150, 130, { moving: false });
+  var playerWalk = mkPlayer(400, 130, { moving: true, walkTime: 0 });
+  var playerHurt = mkPlayer(650, 130, { moving: false, hitFlashTimer: 0.2 });
 
+  /* 第 2 行：四种怪物静态造型（朝向各不相同，用于验证直立镜像） */
   var enemies = [
-    new Game.Enemy('zombie', CX + 150, CY + 400, 1),
-    new Game.Enemy('bat',    CX + 400, CY + 400, 1),
-    new Game.Enemy('wizard', CX + 650, CY + 400, 1),
-    new Game.Enemy('boss',   CX + 950, CY + 400, 1),
+    mkEnemy('zombie', 150, 340, UP,    0.55),   // 朝上：正对观察者
+    mkEnemy('bat',    400, 340, RIGHT, 0.35),   // 朝右：不翻转
+    mkEnemy('wizard', 650, 340, LEFT,  0.70),   // 朝左：水平镜像
+    mkEnemy('boss',   950, 340, DOWN,  undefined),
   ];
-  enemies[0].hp = enemies[0].maxHp * 0.55;   // 展示血条
-  enemies[1].hp = enemies[1].maxHp * 0.35;
-  enemies[2].hp = enemies[2].maxHp * 0.7;
-  for (var i = 0; i < enemies.length; i++) enemies[i].facing = -Math.PI / 2;
 
+  /* 第 3、4 行：攻击动作演示（动作播完自动重播 → 连续出手） */
+  var demos = [];
+  function addDemo(ent, kind) {
+    ent.playAttack(kind);
+    demos.push({ e: ent, kind: kind });
+    return ent;
+  }
+  var atkMelee  = addDemo(mkPlayer(150, 620, { facing: RIGHT }), 'melee');
+  var atkRanged = addDemo(mkPlayer(400, 620, { facing: LEFT }),  'ranged');
+  var demos3 = [
+    addDemo(mkEnemy('zombie', 700, 620, RIGHT, 0.5), 'lunge'),
+    addDemo(mkEnemy('bat',    950, 620, LEFT,  0.5), 'dive'),
+  ];
+  var demos4 = [
+    addDemo(mkEnemy('wizard', 250, 880, UP,   0.6), 'cast'),
+    addDemo(mkEnemy('boss',   780, 880, UP,   undefined), 'boss'),
+  ];
+  var demoEnemies = demos3.concat(demos4);
+
+  /* 第 5 行：掉落物与投射物 */
   var projectiles = [
-    new Game.Projectile({ x: CX + 150, y: CY + 620, vx: 100, vy: 0, radius: 6,
+    new Game.Projectile({ x: CX + 700, y: CY + 1100, vx: 100, vy: 0, radius: 6,
       damage: 5, fromPlayer: true, color: '#ffd76e', type: 'bullet' }),
-    new Game.Projectile({ x: CX + 400, y: CY + 620, vx: 100, vy: 0, radius: 7,
+    new Game.Projectile({ x: CX + 950, y: CY + 1100, vx: 100, vy: 0, radius: 7,
       damage: 5, fromPlayer: false, color: '#c48aff', type: 'spell' }),
   ];
   projectiles[0].angle = 0;
 
   var pickups = [
-    new Game.Pickup('xp', 3, CX + 650, CY + 620),
-    new Game.Pickup('material', 2, CX + 900, CY + 620),
+    new Game.Pickup('xp', 3, CX + 200, CY + 1100),
+    new Game.Pickup('material', 2, CX + 400, CY + 1100),
   ];
 
   var state = {
@@ -98,17 +129,27 @@
 
   /* ---------------- 标签 ---------------- */
   var LABELS = [
-    { t: '主角 · 待机（呼吸）', x: CX + 150, y: CY + 218 },
-    { t: '主角 · 行走（摆臂）', x: CX + 400, y: CY + 218 },
-    { t: '主角 · 受击闪白', x: CX + 650, y: CY + 218 },
-    { t: '跳尸（清朝官帽+符纸）', x: CX + 150, y: CY + 500 },
-    { t: '蝠妖（翼膜+獠牙）', x: CX + 400, y: CY + 500 },
-    { t: '邪修道人（道袍+桃木剑）', x: CX + 650, y: CY + 500 },
-    { t: '赤月年兽（犄角+云纹）', x: CX + 950, y: CY + 500 },
-    { t: '灵气珠', x: CX + 650, y: CY + 670 },
-    { t: '铜钱', x: CX + 900, y: CY + 670 },
-    { t: '子弹', x: CX + 150, y: CY + 670 },
-    { t: '法术符咒', x: CX + 400, y: CY + 670 },
+    { t: '主角 · 待机（呼吸）', x: CX + 150, y: CY + 205 },
+    { t: '主角 · 行走（摆臂）', x: CX + 400, y: CY + 205 },
+    { t: '主角 · 受击闪白',     x: CX + 650, y: CY + 205 },
+
+    { t: '跳尸 · 朝上（双臂平举前伸）', x: CX + 150, y: CY + 440 },
+    { t: '蝠妖 · 朝右',                 x: CX + 400, y: CY + 440 },
+    { t: '邪修道人 · 朝左（已镜像）',   x: CX + 650, y: CY + 440 },
+    { t: '赤月年兽 · 朝下',             x: CX + 950, y: CY + 445 },
+
+    { t: '主角 · 下劈（近战）', x: CX + 150, y: CY + 720 },
+    { t: '主角 · 后坐（远程）', x: CX + 400, y: CY + 720 },
+    { t: '跳尸 · 前扑',         x: CX + 700, y: CY + 720 },
+    { t: '蝠妖 · 俯冲收翼',     x: CX + 950, y: CY + 720 },
+
+    { t: '邪修 · 举剑施法',     x: CX + 250, y: CY + 990 },
+    { t: '年兽 · 双爪拍击',     x: CX + 780, y: CY + 1000 },
+
+    { t: '灵气珠',   x: CX + 200, y: CY + 1170 },
+    { t: '铜钱',     x: CX + 400, y: CY + 1170 },
+    { t: '子弹',     x: CX + 700, y: CY + 1170 },
+    { t: '法术符咒', x: CX + 950, y: CY + 1170 },
   ];
 
   function drawLabels() {
@@ -128,7 +169,18 @@
     ctx.textAlign = 'right';
     ctx.fillStyle = 'rgba(30,22,14,0.5)';
     ctx.font = '600 14px system-ui, sans-serif';
-    ctx.fillText('赤月猎场 · 美术预览', CX + 1250, CY + 700);
+    ctx.fillText('赤月猎场 · 美术预览', CX + 1250, CY + 1180);
+  }
+
+  /* renderer 每帧只画 state.player 一个主角，这里补画演示用的另外两个 */
+  function drawExtraPlayer(p) {
+    var ctx = R.ctx;
+    ctx.save();
+    ctx.translate(-R.camera.x, -R.camera.y);
+    ctx.fillStyle = 'rgba(48,36,24,0.22)';
+    R._ellipse(ctx, p.x, p.y + 12, 14, 5); // 与 renderer 的 FOOT_Y.player 对齐
+    R._drawPlayer(ctx, p);
+    ctx.restore();
   }
 
   /* ---------------- 循环 ---------------- */
@@ -144,14 +196,24 @@
     // 推进动画：行走循环、怪物待机、掉落物浮动
     playerWalk.walkTime += dt;
     for (var i = 0; i < enemies.length; i++) enemies[i].animTime += dt;
+    for (var j = 0; j < demoEnemies.length; j++) demoEnemies[j].animTime += dt;
     for (var k = 0; k < pickups.length; k++) pickups[k].bob += dt * 4;
 
+    // 攻击动作演示：播完立刻重播，形成连续出手
+    for (var d = 0; d < demos.length; d++) {
+      var D = demos[d];
+      D.e.tickAttackAnim(dt);
+      if (!D.e.attackAnim) D.e.playAttack(D.kind);
+    }
+
     R.render(state, dt);
+    drawExtraPlayer(atkMelee);
+    drawExtraPlayer(atkRanged);
     drawLabels();
   }
   requestAnimationFrame(loop);
 
-  console.log('[Preview] 就绪：主角 3 态 + 4 种怪物 + 2 种投射物 + 2 种掉落物');
+  console.log('[Preview] 就绪：主角 3 态 + 4 怪物 + 5 种攻击动作 + 2 投射物 + 2 掉落物');
 })();
 </script>
 </body>
