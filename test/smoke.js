@@ -2089,6 +2089,122 @@ try {
   assert(lateNew79 >= lateOld79,
          '6~15 波怪量不低于旧值（旧 ' + lateOld79 + ' → 新 ' + lateNew79 + '）');
 
+  /* ㉕ 武器等级可见 + 角色面板 —— 用户报「武器看不到等级」
+     原来等级只挂在 title 上，触屏没有悬浮，等于看不到。 */
+
+  var MAXLVL80 = Game.CONST.MAX_WEAPON_LEVEL;
+  assert(MAXLVL80 === 4, '武器等级上限提到常量（' + MAXLVL80 + '，与旧字面量一致）');
+
+  // —— 升级逻辑收敛到一处（升级卡与商店强化共用），且封顶不越界
+  var st80 = Game.Systems.createState('campaign', 'swordsman', 61);
+  var p80 = st80.player;
+  p80.weapons = [Game.createWeapon('iron_sword', 1)];
+  Game.Systems.upgradeRandomWeapon(p80);
+  assert(p80.weapons[0].level === 2, '随机强化 +1 级（1 → ' + p80.weapons[0].level + '）');
+  for (var n80 = 0; n80 < 50; n80++) Game.Systems.upgradeRandomWeapon(p80);
+  assert(p80.weapons[0].level === MAXLVL80,
+         '连升 51 次仍封顶 ' + MAXLVL80 + '（实际 ' + p80.weapons[0].level + '）');
+  Game.Systems.upgradeRandomWeapon(p80);
+  assert(p80.weapons[0].level === MAXLVL80, '已满级时强化不再加星');
+
+  var st81 = Game.Systems.createState('campaign', 'archer', 62);
+  st81.player.weapons = [Game.createWeapon('pistol', 1), Game.createWeapon('iron_sword', 1)];
+  Game.Systems.upgradeRandomWeapon(st81.player);
+  var sum82 = st81.player.weapons[0].level + st81.player.weapons[1].level;
+  assert(sum82 === 3, '一次只升一把武器（总等级 ' + sum82 + '）');
+
+  // —— HUD 武器槽：等级画在槽上，并按星级着色
+  var st82 = Game.Systems.createState('campaign', 'archer', 63);
+  st82.player.weapons = [Game.createWeapon('pistol', 3), Game.createWeapon('iron_sword', 1)];
+  Game.UI.updateHUD(st82);
+  var slots82 = document.getElementById('weapon-slots').innerHTML;
+  assert(slots82.indexOf('class="ws ws-lv3"') >= 0, '3 级武器槽按星级着色（ws-lv3）');
+  assert(slots82.indexOf('class="ws ws-lv1"') >= 0, '1 级武器槽基础色（ws-lv1）');
+  assert(slots82.indexOf('>Lv3</span>') >= 0, '武器等级直接画在槽上（Lv3）');
+  assert(slots82.indexOf('>Lv1</span>') >= 0, '第二把武器同样显示等级（Lv1）');
+  assert(slots82.indexOf('🔫') >= 0 && slots82.indexOf('🗡') >= 0, '槽上区分近战/远程图标');
+
+  // —— 角色面板：属性 / 武器伤害明细 / 道具
+  var st83 = Game.Systems.createState('campaign', 'archer', 64);
+  var p83 = st83.player;
+  p83.weapons = [Game.createWeapon('pistol', 3)];
+  p83.items = { herbal: 2, deathbell: 1 };
+  var st83html = Game.UI.renderStatsHTML(st83);
+  assert(st83html.indexOf('青木弓手') >= 0, '面板显示角色名');
+  assert(st83html.indexOf('暴击远程') >= 0, '面板显示职业分类');
+  assert(st83html.indexOf('穿杨') >= 0, '面板显示被动');
+  assert(st83html.indexOf('属性') >= 0 && st83html.indexOf('武器伤害明细') >= 0,
+         '面板有属性与武器伤害明细两个区块');
+  assert(st83html.indexOf('手枪') >= 0, '面板列出武器名');
+  assert(st83html.indexOf('Lv.3/' + MAXLVL80) >= 0,
+         '面板显示武器等级（Lv.3/' + MAXLVL80 + '）');
+  assert(st83html.indexOf('<span class="stats-wlvl">Lv.3/' + MAXLVL80 + ' ★★★☆</span>') >= 0,
+         '面板用星级显示武器等级（Lv.3/4 ★★★☆）');
+  assert(st83html.indexOf('单次暴击') >= 0, '面板显示单次暴击');
+  assert(st83html.indexOf('回春药草 ×2') >= 0, '面板列出道具与堆叠数');
+  assert(st83html.indexOf('夺命金铃 ×1') >= 0, '面板列出第二件道具');
+
+  // 关键：面板上的数字必须等于真实结算值，不是另一套算法
+  var w83 = p83.weapons[0];
+  var real83 = w83.damage(p83);
+  var cd83 = w83.cooldown(p83);
+  assert(st83html.indexOf('</span><span class="v">' + real83.toFixed(2) + '</span>') >= 0,
+         '面板伤害 = WeaponInstance.damage 的真实值（' + real83.toFixed(2) + '）');
+  assert(st83html.indexOf('<span>单次暴击</span><span class="v">' +
+         (real83 * p83.stats.critMult).toFixed(2) + '</span>') >= 0,
+         '面板单次暴击 = 伤害 × critMult（' + (real83 * p83.stats.critMult).toFixed(2) +
+         '，critMult=' + p83.stats.critMult + '）');
+  assert(st83html.indexOf('DPS ' + (real83 / cd83).toFixed(2) + '</span>') >= 0,
+         '面板 DPS = 伤害 / 冷却（' + (real83 / cd83).toFixed(2) + '）');
+
+  // 等级成长是面板要解释清楚的事：Lv.1 → Lv.4 本体伤害 ×2.5
+  var lo83 = new Game.WeaponInstance('pistol', 1).damage(p83);
+  var hi83 = new Game.WeaponInstance('pistol', MAXLVL80).damage(p83);
+  assert(Math.abs(hi83 / lo83 - 2.5) < 1e-9,
+         'Lv.1→Lv.' + MAXLVL80 + ' 本体伤害 ×2.5（' + lo83.toFixed(1) + ' → ' + hi83.toFixed(1) + '）');
+
+  var st84 = Game.Systems.createState('campaign', 'swordsman', 65);
+  assert(Game.UI.renderStatsHTML(st84).indexOf('还没有道具') >= 0, '无道具时显示占位文案');
+
+  // —— 选卡面板上有入口，且关掉后三选一不丢
+  Game.UI.renderLevelUp([{ kind: 'weaponUpgrade', data: {} }]);
+  var lu85 = document.getElementById('levelup').innerHTML;
+  assert(lu85.indexOf('查看角色面板') >= 0, '选卡面板上有「查看角色面板」入口');
+  assert(lu85.indexOf('最高 ' + MAXLVL80 + ' 星') >= 0, '武器强化说明的上限跟随常量');
+
+  // —— 开关面板：冻结世界、返回原面板、卡片内容不丢
+  var st86 = Game.Systems.createState('campaign', 'swordsman', 66);
+  st86.screen = 'PLAYING';
+  Game.state = st86;
+  Game.Game.openStats();
+  assert(st86.screen === 'PAUSED', '打开面板会冻结世界（PLAYING → PAUSED，看面板不该被打死）');
+  assert(Game.uiScreen === 'STATS', '当前界面切到角色面板');
+  assert(document.getElementById('stats').innerHTML.indexOf('角色面板') >= 0, '面板已渲染');
+  Game.Game.closeStats();
+  assert(st86.screen === 'PLAYING', '关闭面板后世界恢复（PAUSED → PLAYING）');
+  assert(Game.uiScreen === 'PLAYING', '回到游戏中界面');
+
+  var st87 = Game.Systems.createState('campaign', 'swordsman', 67);
+  Game.Systems.rollLevelUpChoices(st87);
+  st87.screen = 'LEVEL_UP';
+  Game.state = st87;
+  Game.UI.renderLevelUp(st87.levelUpChoices);
+  var before87 = document.getElementById('levelup').innerHTML;
+  Game.Game.openStats();
+  assert(st87.screen === 'LEVEL_UP', '升级面板上打开不会误切世界状态（本就冻结）');
+  Game.Game.closeStats();
+  assert(Game.uiScreen === 'LEVEL_UP', '关闭后回到升级面板');
+  assert(document.getElementById('levelup').innerHTML === before87,
+         '关闭面板后三选一原样保留（内容完全一致）');
+
+  // 暂停面板也有入口
+  var st88 = Game.Systems.createState('campaign', 'swordsman', 68);
+  st88.screen = 'PAUSED';
+  Game.state = st88;
+  Game.UI.renderPause();
+  assert(document.getElementById('pause').innerHTML.indexOf('查看角色面板') >= 0,
+         '暂停面板上也能查看角色面板');
+
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);
 }

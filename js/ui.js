@@ -22,6 +22,7 @@
       el.victory = document.getElementById('victory');
       el.settings = document.getElementById('settings');
       el.records = document.getElementById('records');
+      el.stats = document.getElementById('stats');
       el.debug = document.getElementById('debug');
       el.btnPauseTouch = document.getElementById('btn-pause-touch');
       el.saveToast = document.getElementById('save-toast');
@@ -44,7 +45,7 @@
 
     /* ---------------- 面板显隐 ---------------- */
     _hideAll: function () {
-      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'debug'];
+      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'stats', 'debug'];
       for (var i = 0; i < ids.length; i++) el[ids[i]].classList.add('hidden');
       el.overlay.classList.add('hidden');
       el.hud.classList.add('hidden');
@@ -61,6 +62,7 @@
         case 'PAUSED': el.pause.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
         case 'GAME_OVER': el.gameover.classList.remove('hidden'); break;
         case 'VICTORY': el.victory.classList.remove('hidden'); break;
+        case 'STATS': el.stats.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
         case 'SETTINGS': el.settings.classList.remove('hidden'); break;
         case 'RECORDS': el.records.classList.remove('hidden'); break;
         case 'PLAYING':
@@ -148,25 +150,38 @@
       el.hudTimer.textContent = util.fmtTime(Math.max(0, state.waveDuration - state.waveTime));
       el.hudMaterial.textContent = p.materials;
 
+      // 武器槽：名字缩写 + 等级。等级原来只挂在 title 上，触屏完全没有悬浮，
+      // 等于看不到 —— 直接画进槽里。
       var slots = '';
       for (var i = 0; i < p.weapons.length; i++) {
         var w = p.weapons[i];
-        slots += '<div class="ws" title="' + w.def.name + ' Lv.' + w.level + '">' +
-                 (w.def.type === 'melee' ? '🗡' : '🔫') + '</div>';
+        var lvCls = 'ws-lv' + Math.min(w.level, Game.CONST.MAX_WEAPON_LEVEL);
+        slots += '<div class="ws ' + lvCls + '" title="' + w.def.name + ' Lv.' + w.level +
+                 ' / ' + Game.CONST.MAX_WEAPON_LEVEL + '">' +
+                 '<span class="ws-ic">' + (w.def.type === 'melee' ? '🗡' : '🔫') + '</span>' +
+                 '<span class="ws-lv">Lv' + w.level + '</span></div>';
       }
       el.weaponSlots.innerHTML = slots;
     },
 
     /* ---------------- 升级三选一 ---------------- */
     renderLevelUp: function (choices, title) {
-      // title 可选：Boss 战利品复用同一面板但用不同标题
-      var html = '<h2>' + (title || '升级！选择一项') + '</h2><div class="card-row">';
+      // title 可选：Boss 战利品复用同一面板但用不同标题。
+      // 「查看角色面板」盖在这张面板之上，关掉就回到这里 —— 卡片内容不清空，
+      // 所以不会丢掉当前这一轮的三选一。
+      var html = '<div class="lu-head">' +
+        '<h2>' + (title || '升级！选择一项') + '</h2>' +
+        '<button class="btn ghost" onclick="Game.Game.openStats()">查看角色面板</button>' +
+        '</div><div class="card-row">';
       for (var i = 0; i < choices.length; i++) {
         var c = choices[i];
         var rarity = 'common', name = '', desc = '';
         if (c.kind === 'upgrade') { rarity = c.data.rarity; name = c.data.label; desc = c.data.desc; }
         else if (c.kind === 'weapon') { rarity = 'rare'; name = Game.WEAPONS[c.data.weaponId].name; desc = Game.WEAPONS[c.data.weaponId].desc; }
-        else if (c.kind === 'weaponUpgrade') { rarity = 'epic'; name = '武器强化'; desc = '随机强化一把武器（最高 4 星）'; }
+        else if (c.kind === 'weaponUpgrade') {
+          rarity = 'epic'; name = '武器强化';
+          desc = '随机强化一把武器（最高 ' + Game.CONST.MAX_WEAPON_LEVEL + ' 星）';
+        }
         else if (c.kind === 'item') { var it = Game.ITEMS[c.data.itemId]; rarity = it.rarity; name = it.name; desc = it.desc; }
         var r = Game.RARITY[rarity];
         html +=
@@ -177,6 +192,105 @@
       }
       html += '</div>';
       el.levelup.innerHTML = html;
+    },
+
+    /* ---------------- 角色面板（属性 / 武器 / 道具明细） ---------------- */
+    /** 纯 HTML 构造：从 HUD 按钮、升级面板、暂停面板都能打开。
+     *  伤害明细是这里的核心 —— 武器伤害 = 武器本体 × (1+0.5×(等级-1)) × 角色倍率，
+     *  跟 weapons.js 的 WeaponInstance.damage 用同一个算式，面板上就能核对。 */
+    renderStatsHTML: function (state) {
+      var p = state.player, s = p.stats, c = p.char, MAXLVL = Game.CONST.MAX_WEAPON_LEVEL;
+      var pct = function (v) { return v.toFixed(0) + '%'; };
+      var num = function (v, d) { return v.toFixed(d === undefined ? 2 : d); };
+      var stars = function (lv) {
+        var out = '';
+        for (var i = 1; i <= MAXLVL; i++) out += i <= lv ? '★' : '☆';
+        return out;
+      };
+      var row = function (k, v, gold) {
+        return '<div class="stats-row"><span>' + k + '</span><span class="v' +
+               (gold ? ' v-gold' : '') + '">' + v + '</span></div>';
+      };
+      // 玩家能看懂的减伤：护甲 / (护甲+30)，上限 80%（与 Player.takeDamage 一致）
+      var red = s.armor / (s.armor + 30);
+      if (red > 0.8) red = 0.8;
+
+      var html = '<div class="stats-head">' +
+        '<span class="stats-char">' + c.name + '</span>' +
+        '<span class="stats-tag">' + c.category + ' · Lv.' + p.level + '</span></div>' +
+        '<div class="stats-passive">被动｜' + p.passive.name + '：' + p.passive.desc + '</div>';
+
+      html += '<div class="stats-blk"><h3>属性</h3>' +
+        row('生命', Math.ceil(s.hp) + ' / ' + Math.ceil(s.maxHp), true) +
+        row('护盾', Math.floor(s.shield) + ' / ' + Math.floor(s.shieldMax)) +
+        row('伤害倍率', '×' + num(s.damage)) +
+        row('攻击速度', '×' + num(s.attackSpeed)) +
+        row('暴击率', pct(s.critChance * 100)) +
+        row('暴击伤害', '×' + num(s.critMult)) +
+        row('护甲', Math.floor(s.armor) + '（减伤 ' + pct(red * 100) + '）') +
+        row('移动速度', Math.round(s.speed)) +
+        row('吸血', pct(s.lifesteal * 100)) +
+        row('命中回血', num(s.lifeOnHit, 0) + ' / 次') +
+        row('击杀回血', num(s.lifeOnKill, 0) + ' / 次') +
+        row('治疗强度', '×' + num(s.healingPower)) +
+        row('击杀数', state.stats.kills) +
+        '</div>';
+
+      html += '<div class="stats-blk"><h3>武器伤害明细</h3>';
+      if (p.weapons.length === 0) {
+        html += '<div class="stats-empty">还没有武器</div>';
+      } else {
+        for (var i = 0; i < p.weapons.length; i++) {
+          var w = p.weapons[i];
+          var dmg = w.damage(p);              // 已含等级成长与角色倍率
+          var cd = w.cooldown(p);             // 已除攻击速度
+          var lvlUp = 1 + 0.5 * (w.level - 1);
+          html += '<div class="stats-weapon">' +
+            '<div class="stats-wname">' +
+            '<span>' + (w.def.type === 'melee' ? '🗡' : '🔫') + ' ' + w.def.name + '</span>' +
+            '<span class="stats-wlvl">Lv.' + w.level + '/' + MAXLVL + ' ' + stars(w.level) + '</span></div>' +
+            '<div class="stats-wstat"><span>本体 ' + w.def.damage + ' × 等级 ' +
+              num(lvlUp) + ' × 角色 ' + num(s.damage) + '</span><span class="v">' + num(dmg) + '</span></div>' +
+            '<div class="stats-wstat"><span>攻速 ' + num(1 / cd) + ' 次/秒' +
+              (w.def.pierce ? ' · 穿透 ' + w.def.pierce : '') +
+              (w.def.range ? ' · 射程 ' + w.def.range : '') + '</span>' +
+              '<span class="v">DPS ' + num(dmg / cd) + '</span></div>' +
+            '<div class="stats-wstat"><span>单次暴击</span><span class="v">' +
+              num(dmg * s.critMult) + '</span></div>' +
+            '</div>';
+        }
+      }
+      html += '</div>';
+
+      html += '<div class="stats-blk"><h3>道具</h3>';
+      var iids = Object.keys(p.items), n = 0;
+      for (var j = 0; j < iids.length; j++) n += p.items[iids[j]];
+      if (n === 0) {
+        html += '<div class="stats-empty">还没有道具</div>';
+      } else {
+        for (var k = 0; k < iids.length; k++) {
+          var it = Game.ITEMS[iids[k]];
+          if (!it) continue;
+          html += '<div class="stats-row"><span>' + it.name + ' ×' + p.items[iids[k]] + '</span>' +
+                  '<span class="stats-iv">' + it.desc + '</span></div>';
+        }
+      }
+      html += '</div>';
+      return html;
+    },
+
+    /** 打开面板。from 记录关回去该回哪张面板（升级面板的卡片不能丢）。 */
+    showStats: function (state, from) {
+      this._statsFrom = from || 'PLAYING';
+      el.stats.innerHTML = '<h2>角色面板</h2>' + this.renderStatsHTML(state) +
+        '<button class="btn primary" onclick="Game.Game.closeStats()">关闭</button>';
+      el.stats.className = 'panel panel-top';
+      this.showScreen('STATS');
+    },
+    closeStats: function () {
+      var from = this._statsFrom || 'PLAYING';
+      this.showScreen(from);
+      if (from === 'PAUSED') this.renderPause();
     },
 
     /* ---------------- 商店 ---------------- */
@@ -210,6 +324,7 @@
       el.pause.innerHTML =
         '<h2>已暂停</h2>' +
         '<button class="btn primary" onclick="Game.Game.resume()">继续</button>' +
+        '<button class="btn" onclick="Game.Game.openStats()">查看角色面板</button>' +
         '<button class="btn" onclick="Game.Game.saveGame()">保存游戏</button>' +
         '<button class="btn" onclick="Game.Game.restartRun()">重新开始</button>' +
         '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>';

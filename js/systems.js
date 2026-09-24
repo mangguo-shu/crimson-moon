@@ -460,14 +460,19 @@
       // 槽位已满时挤掉最早加入的那把 —— Boss 奖励的专属武器允许替换旧武器
       if (p.weapons.length > CONST.MAX_WEAPONS) p.weapons.shift();
     } else if (choice.kind === 'weaponUpgrade') {
-      // 随机升级一把未满级武器
-      var notMax = p.weapons.filter(function (w) { return w.level < 4; });
-      if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
+      S.upgradeRandomWeapon(p);
     } else if (choice.kind === 'item') {
       p.applyItem(choice.data.itemId, 1);
     }
     console.log('[LevelUp] 选择:', choice);
     if (Game.Audio) Game.Audio.levelup();
+  };
+
+  /** 随机把一把未满级武器升一级。升级卡与商店强化共用 ——
+   *  上限写在 CONST.MAX_WEAPON_LEVEL，面板显示的 Lv.3/4 从这里取。 */
+  S.upgradeRandomWeapon = function (p) {
+    var notMax = p.weapons.filter(function (w) { return w.level < CONST.MAX_WEAPON_LEVEL; });
+    if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
   };
 
   /* ============================================================
@@ -532,7 +537,7 @@
       } else {
         return {
           type: 'weaponUpgrade',
-          name: '武器强化', desc: '随机强化一把武器（最高 4 星）', rarity: 'rare',
+          name: '武器强化', desc: '随机强化一把武器（最高 ' + CONST.MAX_WEAPON_LEVEL + ' 星）', rarity: 'rare',
           price: S.priceFor('rare', state.wave),
         };
       }
@@ -568,8 +573,7 @@
     if (item.type === 'item') p.applyItem(item.itemId, 1);
     else if (item.type === 'weapon') p.weapons.push(Game.createWeapon(item.weaponId, 1));
     else if (item.type === 'weaponUpgrade') {
-      var notMax = p.weapons.filter(function (w) { return w.level < 4; });
-      if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
+      S.upgradeRandomWeapon(p);
     }
     if (Game.Audio) Game.Audio.buy();
     console.log('[Shop] 购买:', item.name, '价格=', item.price);

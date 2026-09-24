@@ -30,14 +30,18 @@
         <div class="hud-timer" id="hud-timer">00:00</div>
       </div>
       <div class="hud-right">
+        <button id="btn-stats" class="hud-btn" aria-label="角色面板"
+                onclick="Game.Game.openStats()">①</button>
         <div class="hud-material">◈ <span id="hud-material">0</span></div>
       </div>
     </div>
     <div class="hud-bottom">
-      <div class="xp-wrap">
-        <div id="xp-fill" class="xp-fill"></div>
+      <div class="hud-lvl-row">
+        <div class="hud-level" id="hud-level">Lv.1</div>
+        <div class="xp-wrap">
+          <div id="xp-fill" class="xp-fill"></div>
+        </div>
       </div>
-      <div class="hud-level" id="hud-level">Lv.1</div>
       <div class="weapon-slot" id="weapon-slots"></div>
     </div>
   </div>
@@ -52,6 +56,7 @@
   <div id="victory" class="panel hidden"></div>
   <div id="settings" class="panel hidden"></div>
   <div id="records" class="panel hidden"></div>
+  <div id="stats" class="panel hidden"></div>
   <div id="debug" class="debug-panel hidden"></div>
 
   <!-- 安卓端触摸暂停按钮 -->

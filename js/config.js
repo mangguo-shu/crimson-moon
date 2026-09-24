@@ -17,6 +17,7 @@
     WORLD_W: 2400,        // 地图世界宽（大于屏幕，相机跟随）
     WORLD_H: 1800,
     MAX_WEAPONS: 6,       // 最大武器槽数
+    MAX_WEAPON_LEVEL: 4,  // 武器最高强化等级（面板显示 Lv.3/4 用；数值未变，只是从字面量提出来）
     PARTICLE_LOW: 200,    // 低画质粒子上限
     PARTICLE_MID: 500,
     PARTICLE_HIGH: 800,

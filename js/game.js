@@ -46,7 +46,8 @@
     };
     Game.Native.onResume = function () {
       console.log('[Game] 切回前台');
-      if (Game.state && Game.state.screen === 'PAUSED') {
+      // 看面板时被切后台：回来还得在看的面板里，别把人弹到暂停页
+      if (Game.state && Game.state.screen === 'PAUSED' && Game.uiScreen !== 'STATS') {
         Game.UI.showScreen('PAUSED');
         Game.UI.renderPause();
       }
@@ -274,6 +275,23 @@
     Game.Records.clear();
     G.openRecords();
     console.log('[Game] 清空纪录');
+  };
+
+  /* ---------------- 角色面板 ----------------
+   * 从 HUD / 升级面板 / 暂停面板都能打开，关掉回到打开前那张面板。
+   * 面板内容是读出来的，游戏状态不动，所以关回去不需要重画任何东西。 */
+  G.openStats = function () {
+    var state = Game.state;
+    if (!state) return;
+    var from = state.screen;              // 'PLAYING' | 'PAUSED' | 'LEVEL_UP' | 'SHOP'
+    if (from === 'PLAYING') state.screen = 'PAUSED';   // 冻结世界：看面板时不该被打死
+    Game.UI.showStats(state, from);
+    console.log('[Stats] 打开角色面板，from=' + from);
+  };
+  G.closeStats = function () {
+    var state = Game.state;
+    if (state && Game.UI._statsFrom === 'PLAYING') state.screen = 'PLAYING';
+    Game.UI.closeStats();
   };
 
   /* ---------------- 设置面板 ---------------- */
