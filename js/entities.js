@@ -423,6 +423,7 @@
    * ============================================================ */
   function Projectile(opts) {
     this.x = opts.x; this.y = opts.y;
+    this.px = this.x; this.py = this.y;   // 上一帧位置：扫掠碰撞的线段起点
     this.vx = opts.vx; this.vy = opts.vy;
     this.radius = opts.radius || 6;
     this.damage = opts.damage;
@@ -439,6 +440,10 @@
   }
 
   Projectile.prototype.update = function (dt) {
+    // 先记下起点再位移：updateProjectiles 用 (px,py)→(x,y) 做扫掠判定。
+    // 只判终点的话，低帧率下一大步会把整个敌人踩过去（见 util.sweptHit）。
+    this.px = this.x;
+    this.py = this.y;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     this.life -= dt;

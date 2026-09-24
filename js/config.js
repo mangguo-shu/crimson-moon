@@ -631,6 +631,19 @@
       var dx = x2 - x1, dy = y2 - y1;
       return dx * dx + dy * dy;
     },
+    /** 扫掠圆碰撞：线段 (x0,y0)→(x1,y1) 是否穿过以 (cx,cy) 为圆心、r 为半径的圆。
+     *  按「本帧起点→本帧终点」整条轨迹判定，而不只判终点。单步位移比判定半径大时
+     *  （低帧率 + 780px/s 的连弩，一步可走 50 多像素越过 20px 半径），逐帧点检测会
+     *  整只跳过敌人。线段含终点，所以命中集严格覆盖旧的点检测 —— 只会多命中，不会漏。
+     *  零长线段（本帧没动）自然退化成原点检测。 */
+    sweptHit: function (x0, y0, x1, y1, cx, cy, r) {
+      var sx = x1 - x0, sy = y1 - y0;
+      var len2 = sx * sx + sy * sy;
+      var t = len2 > 0 ? ((cx - x0) * sx + (cy - y0) * sy) / len2 : 0;
+      t = t < 0 ? 0 : (t > 1 ? 1 : t);
+      var dx = cx - (x0 + sx * t), dy = cy - (y0 + sy * t);
+      return dx * dx + dy * dy <= r * r;
+    },
     angleTo: function (x1, y1, x2, y2) { return Math.atan2(y2 - y1, x2 - x1); },
     rand: function (rng, a, b) { return a + rng() * (b - a); },
     randInt: function (rng, a, b) { return Math.floor(a + rng() * (b - a + 1)); },

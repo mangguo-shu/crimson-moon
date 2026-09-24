@@ -293,8 +293,8 @@
         for (var j = state.enemies.length - 1; j >= 0; j--) {
           var e = state.enemies[j];
           if (e.dead) continue;
-          var d = util.dist(p.x, p.y, e.x, e.y);
-          if (d <= p.radius + e.radius) {
+          // 扫掠判定：整条轨迹线段 vs 敌人圆，而非只看本帧终点
+          if (util.sweptHit(p.px, p.py, p.x, p.y, e.x, e.y, p.radius + e.radius)) {
             var dx = e.x - player.x, dy = e.y - player.y;
             var dd = Math.sqrt(dx * dx + dy * dy) || 1;
             // 角色被动：远程命中同样计入连击
@@ -318,8 +318,7 @@
         }
       } else {
         // 打玩家
-        var dp = util.dist(p.x, p.y, player.x, player.y);
-        if (dp <= p.radius + player.radius && player.alive) {
+        if (player.alive && util.sweptHit(p.px, p.py, p.x, p.y, player.x, player.y, p.radius + player.radius)) {
           player.takeDamage(p.damage);
           p.dead = true;
         }

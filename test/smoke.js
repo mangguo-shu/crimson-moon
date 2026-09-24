@@ -1771,6 +1771,79 @@ try {
   assert(Game.Renderer.shake > 0, '远程暴击同样抖屏（shake=' + Game.Renderer.shake.toFixed(2) + '）');
   Game.WeaponInstance.prototype._rollCrit = realCrit47;
 
+  /* ㉓ 子弹隧穿：单步位移超过判定半径时仍能命中
+     旧代码只判「本帧终点 vs 目标圆心」，低帧率下一大步会把整只敌人踩过去。 */
+
+  var u48 = Game.util;
+  assert(u48.sweptHit(0, 0, 100, 0, 50, 0, 20) === true, '扫掠：轨迹穿过圆心 → 命中');
+  assert(u48.sweptHit(0, 0, 100, 0, 50, 60, 20) === false, '扫掠：轨迹从圆心之外擦过 → 不中');
+  assert(u48.sweptHit(50, 0, 50, 0, 50, 0, 20) === true, '扫掠：零长线段落在圆内 → 命中');
+  assert(u48.sweptHit(0, 0, 0, 0, 50, 0, 20) === false, '扫掠：零长线段在圆外 → 不中');
+  assert(u48.sweptHit(0, 0, 30, 0, 30, 0, 20) === true, '扫掠：终点恰好停在圆心 → 命中（旧行为不回归）');
+
+  // 构造出一个「点判定必漏」的场景，再证明扫掠判定能接住
+  var p57 = new Game.Player('crossbowman');
+  p57.weapons = [Game.createWeapon('jade_crossbow', 1)];
+  var st57 = Game.Systems.createState('campaign', 'crossbowman', 4242);
+  Game.state = st57; st57.player = p57; st57.enemies = []; st57.projectiles = [];
+  var e57 = new Game.Enemy('zombie', p57.x + 80, p57.y, 1);
+  e57.hp = 1e9;
+  st57.enemies.push(e57);
+  p57.weapons[0].cooldownRemaining = 0;
+  p57.weapons[0].update(0.016, p57, st57);
+  var bp57 = st57.projectiles[0];
+  bp57.update(0.2);   // 本帧位移 780 × 0.2 = 156 像素
+  var gap57 = u48.dist(bp57.x, bp57.y, e57.x, e57.y);
+  var rad57 = bp57.radius + e57.radius;
+  assert(gap57 > rad57,
+         '已构造到隧穿场景：终点离敌人 ' + gap57.toFixed(0) + 'px，大于判定半径 ' + rad57 + 'px');
+  assert(u48.sweptHit(bp57.px, bp57.py, bp57.x, bp57.y, e57.x, e57.y, rad57) === true,
+         '同一条轨迹的扫掠判定命中');
+  assert(bp57.px < bp57.x, 'px/py 记录的是本帧位移前位置（' + bp57.px.toFixed(0) + ' → ' + bp57.x.toFixed(0) + '）');
+
+  // 走真实路径：同一场景交给 updateProjectiles，敌人确实掉血、子弹确实被清除
+  var p58 = new Game.Player('crossbowman');
+  p58.weapons = [Game.createWeapon('jade_crossbow', 1)];
+  var st58 = Game.Systems.createState('campaign', 'crossbowman', 4242);
+  Game.state = st58; st58.player = p58; st58.enemies = []; st58.projectiles = [];
+  var e58 = new Game.Enemy('zombie', p58.x + 80, p58.y, 1);
+  e58.hp = 1e9;
+  st58.enemies.push(e58);
+  p58.weapons[0].cooldownRemaining = 0;
+  p58.weapons[0].update(0.016, p58, st58);
+  var hp58 = e58.hp;
+  Game.Systems.updateProjectiles(st58, 0.2);
+  assert(e58.hp < hp58, '大 dt 一步跨过的子弹仍打到敌人（掉血 ' + (hp58 - e58.hp).toFixed(1) + '）');
+  assert(st58.projectiles.length === 1 && st58.projectiles[0].pierce === 1,
+         '穿透子弹命中后 pierce 递减（2 → 1）而非消失');
+
+  // 反向：敌方高速弹也不再穿过玩家（玩家侧同样改成了扫掠判定）
+  var p59 = new Game.Player('swordsman');
+  var st59 = Game.Systems.createState('campaign', 'swordsman', 555);
+  Game.state = st59; st59.player = p59; st59.enemies = []; st59.projectiles = [];
+  st59.projectiles.push(new Game.Projectile({
+    x: p59.x - 60, y: p59.y, vx: 900, vy: 0,
+    radius: 5, damage: 7, crit: false, fromPlayer: false, life: 2,
+  }));
+  var hp59 = p59.stats.hp;
+  Game.Systems.updateProjectiles(st59, 0.2);   // 一步 180 像素，越过玩家
+  assert(p59.stats.hp < hp59, '敌方高速弹不再穿过玩家（掉血 ' + (hp59 - p59.stats.hp).toFixed(1) + '）');
+
+  // 贴脸射击不回归：子弹出生在敌人内部时仍要命中（零长/近零长线段退化到点检测）
+  var p60 = new Game.Player('archer');
+  p60.weapons = [Game.createWeapon('pistol', 1)];
+  var st60 = Game.Systems.createState('campaign', 'archer', 666);
+  Game.state = st60; st60.player = p60; st60.enemies = []; st60.projectiles = [];
+  var e60 = new Game.Enemy('zombie', p60.x + 10, p60.y, 1);
+  e60.hp = 1e9;
+  st60.enemies.push(e60);
+  p60.weapons[0].cooldownRemaining = 0;
+  p60.weapons[0].update(0.016, p60, st60);
+  var hp60 = e60.hp;
+  Game.Systems.updateProjectiles(st60, 0.016);
+  assert(e60.hp < hp60, '贴脸射击仍命中（掉血 ' + (hp60 - e60.hp).toFixed(1) + '）');
+  assert(st60.projectiles.length === 0, '无穿透的子弹命中后消失（pierce=0）');
+
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);
 }
