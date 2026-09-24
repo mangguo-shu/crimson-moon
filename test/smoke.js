@@ -476,6 +476,70 @@ try {
   assert(false, '直立化/攻击动作异常: ' + e.stack);
 }
 
+/* ---------------- 商店锁卡 ---------------- */
+console.log('\n== 商店锁卡 ==');
+try {
+  var st11 = Game.Systems.createState('campaign', 'swordsman', 42);
+  st11.player.materials = 1e6;
+  Game.state = st11;
+  Game.Systems.startWave(st11, 1);
+  Game.Game._onWaveEnd();
+  assert(st11.screen === 'SHOP' && st11.shop.items.length === 4, '波次结束进入商店，4 张卡');
+
+  // ① 同一次商店内：锁定卡在连续刷新中始终保留
+  var sig11 = st11.shop.items[0].name + '#' + st11.shop.items[0].price;
+  Game.Game.lockShop(0);
+  assert(st11.shop.locked[0] === true, '点击后锁定标记置位');
+  for (var rf = 0; rf < 6; rf++) {
+    Game.Game.refreshShop();
+    if (st11.shop.items[0].name + '#' + st11.shop.items[0].price !== sig11) break;
+    if (rf === 5) assert(true, '连续 6 次刷新，锁定卡始终保留（' + sig11 + '）');
+  }
+  assert(st11.shop.items[0].name + '#' + st11.shop.items[0].price === sig11,
+         '刷新不会替换锁定卡：期望 ' + sig11 + '，实际 ' + st11.shop.items[0].name + '#' + st11.shop.items[0].price);
+
+  // ② 关键回归：锁定卡必须跨商店延续。
+  //    旧实现 openShop 无条件把 locked 重置为 [false×4] 并重新抽卡，
+  //    导致玩家锁了卡只要点「下一波」，下次进商店锁定全部丢失（「锁卡锁不住」）。
+  var wave1Shop = st11.shop;
+  var wave1LockedCard = st11.shop.items[1].name + '#' + st11.shop.items[1].price;
+  Game.Game.lockShop(1);
+  Game.Game.nextWave();
+  Game.Game._onWaveEnd();
+  assert(st11.shop !== wave1Shop, '新商店是新对象');
+  assert(st11.shop.locked[1] === true, '跨商店后锁定标记保留');
+  assert(st11.shop.items[1].name + '#' + st11.shop.items[1].price === wave1LockedCard,
+         '跨商店后锁定卡本体保留（' + wave1LockedCard + '）');
+
+  // ③ 购买必须清除锁定，否则已购卡会作为「锁定卡」一直带回后续商店
+  Game.Game.lockShop(2);
+  var bought2 = st11.shop.items[2].name;
+  Game.Game.buyShop(2);
+  assert(st11.shop.items[2].sold === true, '锁定卡可正常购买（' + bought2 + '）');
+  assert(st11.shop.locked[2] === false, '购买后清除锁定标记（' + bought2 + '）');
+  Game.Game.nextWave();
+  Game.Game._onWaveEnd();
+  assert(st11.shop.locked[2] === false, '已购卡的锁定不会延续到下次商店');
+
+  // ⑤ 兜底旧存档：已购卡带着残留锁定标记时，不应污染新商店
+  Game.Game.nextWave();
+  Game.Game._onWaveEnd();
+  st11.shop.items[1].sold = true;   // 模拟旧版本买完没清锁定标记的存档
+  st11.shop.locked[1] = true;
+  Game.Game.nextWave();
+  Game.Game._onWaveEnd();
+  assert(st11.shop.locked[1] === false, '已购卡的残留锁定标记不污染新商店');
+  assert(st11.shop.items[1].sold !== true, '该槽位为新抽卡');
+
+  // ④ 锁定指示器渲染：文案与图标都要出现
+  Game.Game.lockShop(3);
+  var shopHtml = document.getElementById('shop').innerHTML;
+  assert(shopHtml.indexOf('已锁定') >= 0 && shopHtml.indexOf('🔒') >= 0,
+         '锁定卡渲染出「已锁定」文案与 🔒 图标');
+} catch (e) {
+  assert(false, '商店锁卡异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

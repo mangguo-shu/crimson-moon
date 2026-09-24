@@ -359,6 +359,9 @@
    * ============================================================ */
   S.openShop = function (state) {
     var rng = state.rng;
+    // 上一次的商店：锁定的卡要延续到本次，否则「锁卡锁不住」——
+    // 玩家锁了张卡想慢慢挑，只要点了「下一波」，下次进商店锁定就全部丢失。
+    var prev = state.shop;
     var shop = {
       items: [],
       refreshCost: 5,
@@ -366,8 +369,17 @@
       locked: [false, false, false, false],
     };
     for (var i = 0; i < 4; i++) {
-      shop.items.push(S.rollShopItem(state, rng));
-      shop.locked[i] = false;
+      var carry = prev && prev.items ? prev.items[i] : null;
+      var wasLocked = !!(prev && prev.locked && prev.locked[i]);
+      if (wasLocked && carry && !carry.sold) {
+        shop.locked[i] = true;
+        shop.items.push(carry);          // 锁定卡本体沿用，玩家锁的就是这一张
+      } else {
+        // 未锁定，或上一波这张已买走 / 不存在 —— 重新抽，且不残留锁定标记
+        // （后者兜底旧存档：买了卡但锁定标记没清掉的情况）
+        shop.locked[i] = false;
+        shop.items.push(S.rollShopItem(state, rng));
+      }
     }
     state.shop = shop;
     state.screen = 'SHOP';
@@ -432,6 +444,7 @@
     }
     p.materials -= item.price;
     item.sold = true;
+    shop.locked[index] = false; // 买掉了就不再需要锁定，避免残留标记污染下次商店
     if (item.type === 'item') p.applyItem(item.itemId, 1);
     else if (item.type === 'weapon') p.weapons.push(Game.createWeapon(item.weaponId, 1));
     else if (item.type === 'weaponUpgrade') {
