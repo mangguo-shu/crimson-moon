@@ -364,6 +364,8 @@
     }
     if (fx()) fx().death(this.x, this.y, this.isBoss);
     if (this.isBoss && fx()) fx().shake(18);
+    // Boss 阵亡先给奖励面板，再结算波次（见 G._triggerBossReward）
+    if (this.isBoss) state.bossRewardPending = true;
     state.stats.kills++;
   };
 

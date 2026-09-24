@@ -81,8 +81,10 @@
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
         var p = this._clientToLogical(t.clientX, t.clientY);
-        // 只有左半屏生成摇杆，且同一时刻只允许一个摇杆
-        if (!this.joystick.active && p.x < (Game.view ? Game.view.w / 2 : Game.CONST.LOGICAL_W / 2)) {
+        // 屏幕内任意触点都能生成摇杆 —— 安卓上不必只碰左半屏。
+        // 旧实现限制 p.x < 视口宽的一半，右半屏触摸完全无响应。
+        // 同一时刻只允许一个摇杆：多点触控时忽略第二个指头。
+        if (!this.joystick.active) {
           var j = this.joystick;
           j.active = true;
           j.visible = true;

@@ -51,7 +51,9 @@
    * 波次管理
    * ============================================================ */
   S.waveDuration = function (wave) {
-    return Math.min(45, 20 + (wave - 1));
+    var base = Math.min(45, 20 + (wave - 1));
+    // Boss 波是给足的 Boss 战时长，不用普通波的节奏去催
+    return S.isBossWave(wave) ? base + 45 : base;
   };
 
   S.isBossWave = function (wave) {
@@ -160,22 +162,30 @@
 
     // 波次结束判定
     if (state.isBossWave) {
-      // Boss 波：Boss 死亡且已出场后结束
+      // Boss 波：Boss 阵亡即结束（奖励由 game 层先弹，见 G._triggerBossReward）
       var anyBoss = false;
       for (var i = 0; i < state.enemies.length; i++) if (state.enemies[i].isBoss) anyBoss = true;
       if (state.bossSpawned && !anyBoss) {
         this.clearEnemies(state);
         return 'ended';
       }
-    } else {
-      // 普通波：计时结束，或所有敌人清空且刷新完毕
-      var aliveCount = 0;
-      for (var k = 0; k < state.enemies.length; k++) if (!state.enemies[k].dead) aliveCount++;
-      if (state.waveTime >= state.waveDuration && aliveCount === 0) {
+      // 硬超时兜底：Boss 战不可能无限拖，到时直接收场（防止卡关）
+      if (state.waveTime >= state.waveDuration) {
+        this.clearEnemies(state);
         return 'ended';
       }
-      // 提前清场（刷完且杀光）
+    } else {
+      // 普通波：时间一到立即结束，不必清空场上的怪（残怪由 clearEnemies 收掉）。
+      // 旧实现要求 aliveCount === 0，玩家必须追杀全场才能进商店，节奏被拖死。
+      var aliveCount = 0;
+      for (var k = 0; k < state.enemies.length; k++) if (!state.enemies[k].dead) aliveCount++;
+      if (state.waveTime >= state.waveDuration) {
+        this.clearEnemies(state);
+        return 'ended';
+      }
+      // 提前收场：刷新已排完且场上已无存活，不必等倒计时（更早进商店）
       if (state.spawnIndex >= state.spawnSchedule.length && aliveCount === 0 && state.waveTime > 1) {
+        this.clearEnemies(state);
         return 'ended';
       }
     }
@@ -192,6 +202,12 @@
     // 波次结束：清空场上残余普通怪
     for (var j = state.enemies.length - 1; j >= 0; j--) {
       if (!state.enemies[j].isBoss) state.enemies.splice(j, 1);
+    }
+    // 敌人投射物一并清掉：这些怪刚被清场，它们的子弹不该继续存在。
+    // 不清的话会冻结在商店界面，并在下一波 startWave 后重新激活。
+    // 波次改为按时间结束后这种情况明显变多，必须处理。
+    for (var k = state.projectiles.length - 1; k >= 0; k--) {
+      if (!state.projectiles[k].fromPlayer) state.projectiles.splice(k, 1);
     }
   };
 
@@ -310,10 +326,11 @@
     // 属性升级
     for (i = 0; i < Game.UPGRADES.length; i++) pool.push({ kind: 'upgrade', data: Game.UPGRADES[i] });
 
-    // 新武器（槽位未满）
+    // 新武器（槽位未满）；exclusive 武器只从 Boss 奖励产出
     if (state.player.weapons.length < CONST.MAX_WEAPONS) {
       var wids = Object.keys(Game.WEAPONS);
       for (i = 0; i < wids.length; i++) {
+        if (Game.WEAPONS[wids[i]].exclusive) continue;
         pool.push({ kind: 'weapon', data: { weaponId: wids[i] } });
       }
     } else {
@@ -337,12 +354,72 @@
     return choices;
   };
 
+  /**
+   * Boss 战奖励三选一：卡片强度高于平时升级池，并按概率塞入 Boss 专属武器。
+   * 复用升级三选一的界面与 applyChoice，不引入新 UI。
+   * 专属武器允许在槽位已满时给出 —— applyChoice 会挤掉最早加入的那把。
+   */
+  S.bossRewardChoices = function (state) {
+    var rng = state.rng;
+    var p = state.player;
+    var pool = [];
+    var i;
+
+    // 强力属性卡：只收 epic / legend，别把普通卡当奖励发出去
+    for (i = 0; i < Game.UPGRADES.length; i++) {
+      var u = Game.UPGRADES[i];
+      if (u.rarity === 'epic' || u.rarity === 'legend') pool.push({ kind: 'upgrade', data: u });
+    }
+    // 史诗 / 传说道具
+    for (var iid in Game.ITEMS) {
+      var it = Game.ITEMS[iid];
+      if (it.rarity === 'epic' || it.rarity === 'legend') pool.push({ kind: 'item', data: { itemId: iid } });
+    }
+    pool.push({ kind: 'weaponUpgrade', data: {} });
+
+    // 普通武器（槽位未满时给）
+    if (p.weapons.length < CONST.MAX_WEAPONS) {
+      var wids = Object.keys(Game.WEAPONS);
+      for (i = 0; i < wids.length; i++) {
+        if (Game.WEAPONS[wids[i]].exclusive) continue;
+        pool.push({ kind: 'weapon', data: { weaponId: wids[i] } });
+      }
+    }
+
+    // Boss 专属武器：按概率出现
+    if (rng() < Game.BOSS_EXCLUSIVE_CHANCE) {
+      var exIds = [];
+      for (var eid in Game.WEAPONS) if (Game.WEAPONS[eid].exclusive) exIds.push(eid);
+      if (exIds.length > 0) {
+        pool.push({
+          kind: 'weapon',
+          data: { weaponId: exIds[Math.floor(rng() * exIds.length)] },
+        });
+      }
+    }
+
+    // 兜底：候选不足 3 张时补齐
+    var tail = Game.UPGRADES[Game.UPGRADES.length - 1];
+    while (pool.length < 3) pool.push({ kind: 'upgrade', data: tail });
+
+    var choices = [];
+    while (choices.length < 3 && pool.length > 0) {
+      var idx = Math.floor(rng() * pool.length);
+      choices.push(pool[idx]);
+      pool.splice(idx, 1);
+    }
+    state.levelUpChoices = choices;
+    return choices;
+  };
+
   S.applyChoice = function (state, choice) {
     var p = state.player;
     if (choice.kind === 'upgrade') {
       p.applyUpgrade(choice.data.apply);
     } else if (choice.kind === 'weapon') {
       p.weapons.push(Game.createWeapon(choice.data.weaponId, 1));
+      // 槽位已满时挤掉最早加入的那把 —— Boss 奖励的专属武器允许替换旧武器
+      if (p.weapons.length > CONST.MAX_WEAPONS) p.weapons.shift();
     } else if (choice.kind === 'weaponUpgrade') {
       // 随机升级一把未满级武器
       var notMax = p.weapons.filter(function (w) { return w.level < 4; });
@@ -402,7 +479,9 @@
     } else if (roll < 0.55) {
       // 武器（新武器或升级）
       if (p.weapons.length < CONST.MAX_WEAPONS) {
-        var wids = Object.keys(Game.WEAPONS);
+        var wids = Object.keys(Game.WEAPONS).filter(function (id) {
+          return !Game.WEAPONS[id].exclusive;   // 专属武器只在 Boss 奖励里出
+        });
         var wid = wids[Math.floor(rng() * wids.length)];
         var wdef = Game.WEAPONS[wid];
         return {

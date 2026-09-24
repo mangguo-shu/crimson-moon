@@ -167,7 +167,8 @@
     if (!Game.state || Game.state.screen !== 'LEVEL_UP') return;
     var choice = Game.state.levelUpChoices[idx];
     S.applyChoice(Game.state, choice);
-    Game.state.levelUpsPending--;
+    // Boss 战利品不占升级计数，别把它减成负数
+    if (Game.state.levelUpsPending > 0) Game.state.levelUpsPending--;
     if (Game.state.levelUpsPending > 0) {
       // 连续升级：再roll
       S.rollLevelUpChoices(Game.state);
@@ -300,6 +301,13 @@
       G._victory();
       return;
     }
+    // 每轮结束血量回满：进商店前补满，让压力落在波次内而不是累计掉血
+    var p = state.player;
+    if (p.alive && p.stats.hp < p.stats.maxHp) {
+      p.stats.hp = p.stats.maxHp;
+      if (Game.FX) Game.FX.heal(p.x, p.y);
+      if (Game.Audio) Game.Audio.heal();
+    }
     G.saveGame(); // 波次结束自动存档
     S.openShop(state);
     Game.UI.renderShop(state);
@@ -340,6 +348,25 @@
       Game.FX.levelUp(state.player.x, state.player.y); // 金色灵光环
     }
     console.log('[Game] 升级 Lv.' + state.player.level);
+  };
+
+  /** Boss 阵亡奖励：强度高于平时的三选一，有概率给 Boss 专属武器。
+   *  复用 LEVEL_UP 面板与 pickLevelUp，故不占 levelUpsPending 计数。 */
+  G._triggerBossReward = function () {
+    var state = Game.state;
+    if (!state || state.screen !== 'PLAYING') return;
+    state.bossRewardPending = false;
+    S.bossRewardChoices(state);
+    state.screen = 'LEVEL_UP';
+    Game.UI.renderLevelUp(state.levelUpChoices, '🔥 赤月年兽已阵亡！选择一份战利品');
+    Game.UI.showScreen('LEVEL_UP');
+    if (Game.FX) {
+      Game.FX.flash('#ff7a5c', 0.5);
+      Game.FX.shake(10);
+      Game.FX.bossCast(state.player.x, state.player.y);
+    }
+    if (Game.Audio) Game.Audio.boss();
+    console.log('[Game] Boss 战利品三选一');
   };
 
   /* ---------------- 主循环 ---------------- */
@@ -390,6 +417,11 @@
   };
 
   G._update = function (state, dt) {
+    // Boss 刚阵亡：先弹奖励，再让波次结算进商店
+    if (state.bossRewardPending && state.screen === 'PLAYING') {
+      G._triggerBossReward();
+      return;
+    }
     // 波次推进（含刷新敌人、结束判定）
     var ended = S.updateWave(state, dt);
     if (ended === 'ended') { G._onWaveEnd(); return; }

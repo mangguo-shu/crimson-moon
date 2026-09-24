@@ -128,8 +128,9 @@
     },
 
     /* ---------------- 升级三选一 ---------------- */
-    renderLevelUp: function (choices) {
-      var html = '<h2>升级！选择一项</h2><div class="card-row">';
+    renderLevelUp: function (choices, title) {
+      // title 可选：Boss 战利品复用同一面板但用不同标题
+      var html = '<h2>' + (title || '升级！选择一项') + '</h2><div class="card-row">';
       for (var i = 0; i < choices.length; i++) {
         var c = choices[i];
         var rarity = 'common', name = '', desc = '';

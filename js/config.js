@@ -90,7 +90,25 @@
       pierce: 0, projectileSpeed: 620, knockback: 20,
       color: '#ffd76e', desc: '远程射击，单发子弹。',
     },
+    // —— Boss 专属武器 —— exclusive: true
+    // 只从 Boss 战奖励产出（见 Systems.bossRewardChoices），
+    // 普通升级池与商店都必须跳过这类武器。
+    moon_sword: {
+      id: 'moon_sword', name: '赤月斩', type: 'melee', star: 3, exclusive: true,
+      cooldown: 0.5, damage: 30, range: 86, arc: Math.PI * 0.95,
+      pierce: 3, projectileSpeed: 0, knockback: 140,
+      color: '#ff7a5c', desc: '赤月之力凝成的巨剑，横扫面前一切。',
+    },
+    jade_crossbow: {
+      id: 'jade_crossbow', name: '青玉连弩', type: 'ranged', star: 3, exclusive: true,
+      cooldown: 0.34, damage: 9, range: 0, arc: 0,
+      pierce: 2, projectileSpeed: 780, knockback: 10,
+      color: '#4fbfa0', desc: '青玉驱动连发弩箭，穿透目标。',
+    },
   };
+
+  // Boss 战奖励里出现专属武器的概率
+  Game.BOSS_EXCLUSIVE_CHANCE = 0.45;
 
   /* ---------------- 敌人 ---------------- */
   // behavior: chase(追踪近战) / flyer(快速飞行近战) / shooter(远程) / boss

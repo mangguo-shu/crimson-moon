@@ -540,6 +540,163 @@ try {
   assert(false, '商店锁卡异常: ' + e.stack);
 }
 
+/* ---------------- 节奏 / Boss 奖励 / 全屏触控 ---------------- */
+console.log('\n== 波次节奏 / Boss 奖励 / 全屏触控 ==');
+try {
+  // ① 普通波：时间一到立即结束，不必清怪（旧实现要求 aliveCount === 0）
+  var st20 = Game.Systems.createState('campaign', 'swordsman', 31);
+  Game.state = st20;
+  Game.Systems.startWave(st20, 2);
+  // 全程不调 updateEnemies / 不做任何击杀，只让时间流逝
+  var res20 = null, g20 = 0;
+  while (g20++ < 400) { res20 = Game.Systems.updateWave(st20, 0.2); if (res20 === 'ended') break; }
+  assert(res20 === 'ended', '时间到波次立即结束（共推进 ' + (g20 * 0.2).toFixed(1) + ' 秒）');
+  assert(st20.stats.kills === 0, '结束时一只怪都没杀（kills=' + st20.stats.kills + '）');
+  assert(st20.enemies.length === 0, '残怪已被清场');
+
+  // ①b 残留在场的敌人投射物也要清掉，玩家自己的保留
+  st20.projectiles.length = 0;
+  st20.projectiles.push(new Game.Projectile({
+    x: 400, y: 300, vx: 100, vy: 0, radius: 7, damage: 5, fromPlayer: false, life: 3, type: 'spell',
+  }));
+  st20.projectiles.push(new Game.Projectile({
+    x: 420, y: 300, vx: 100, vy: 0, radius: 6, damage: 5, fromPlayer: true, life: 3, type: 'bullet',
+  }));
+  Game.Systems.clearEnemies(st20);
+  assert(st20.projectiles.length === 1 && st20.projectiles[0].fromPlayer === true,
+         '清场时敌人投射物被移除，玩家投射物保留');
+
+  // ② 波末血量回满
+  st20.player.stats.hp = 30;
+  Game.Game._onWaveEnd();
+  assert(st20.player.stats.hp === st20.player.stats.maxHp,
+         '波末血量回满（30 → ' + st20.player.stats.hp + '/' + st20.player.stats.maxHp + '）');
+
+  // ③ Boss 波时长显著加长
+  var nonBoss10 = Math.min(45, 20 + (10 - 1));
+  assert(Game.Systems.isBossWave(10) === true, '第 10 波是 Boss 波');
+  assert(Game.Systems.waveDuration(10) === nonBoss10 + 45,
+         'Boss 波时长 = 普通波基准 +45：' + nonBoss10 + ' → ' + Game.Systems.waveDuration(10));
+  assert(Game.Systems.waveDuration(9) === nonBoss10 - 1,
+         '非 Boss 波不受影响：第 9 波 ' + Game.Systems.waveDuration(9) + ' 秒');
+
+  // ④ Boss 阵亡 → 弹出战利品三选一（而不是直接进商店）
+  var st21 = Game.Systems.createState('campaign', 'swordsman', 33);
+  Game.state = st21;
+  Game.Systems.startWave(st21, 1);
+  var boss = new Game.Enemy('boss', st21.player.x + 28, st21.player.y, 1);
+  boss.hp = 1;                                  // 一刀毙命，走真实战斗路径
+  st21.enemies.push(boss);
+  var wp21 = st21.player.weapons[0];
+  wp21.cooldownRemaining = 0;
+  wp21.update(0.016, st21.player, st21);
+  assert(st21.bossRewardPending === true, 'Boss 阵亡挂起奖励');
+  Game.Game._update(st21, 0.016);
+  assert(st21.screen === 'LEVEL_UP', '奖励面板已弹出（screen=' + st21.screen + '）');
+  assert(st21.levelUpChoices.length === 3, '战利品三选一（' + st21.levelUpChoices.length + ' 张）');
+  Game.Game.pickLevelUp(0);
+  assert(st21.screen === 'PLAYING', '选完后回到 PLAYING');
+  assert(st21.levelUpsPending === 0, 'Boss 奖励不污染升级计数（=' + st21.levelUpsPending + '）');
+  assert(st21.player.weapons.length > 0,
+         '战利品已应用到玩家（当前武器 ' +
+         st21.player.weapons.map(function (w) { return w.defId; }).join(',') + '）');
+
+  // ⑤ 专属武器：普通升级池与商店都不给，只在 Boss 奖励里按概率出现
+  var normalExcl = 0, shopExcl = 0, bossExcl = 0, weakCard = 0;
+  for (var t22 = 0; t22 < 200; t22++) {
+    var sn = Game.Systems.createState('campaign', 'swordsman', 6000 + t22);
+    var cn = Game.Systems.rollLevelUpChoices(sn);
+    for (var a22 = 0; a22 < cn.length; a22++) {
+      if (cn[a22].kind === 'weapon' && Game.WEAPONS[cn[a22].data.weaponId].exclusive) normalExcl++;
+    }
+  }
+  for (var t23 = 0; t23 < 200; t23++) {
+    var ss = Game.Systems.createState('campaign', 'swordsman', 8000 + t23);
+    Game.Systems.openShop(ss);
+    for (var b22 = 0; b22 < ss.shop.items.length; b22++) {
+      var it22 = ss.shop.items[b22];
+      if (it22.type === 'weapon' && Game.WEAPONS[it22.weaponId].exclusive) shopExcl++;
+    }
+  }
+  for (var t24 = 0; t24 < 300; t24++) {
+    var sb = Game.Systems.createState('campaign', 'swordsman', 9000 + t24);
+    var cb = Game.Systems.bossRewardChoices(sb);
+    var hasEx = false;
+    for (var c22 = 0; c22 < cb.length; c22++) {
+      var ch22 = cb[c22];
+      if (ch22.kind === 'weapon' && Game.WEAPONS[ch22.data.weaponId].exclusive) hasEx = true;
+      // 非武器卡必须是 epic/legend，不能把普通卡当 Boss 奖励发
+      if (ch22.kind === 'upgrade' && ch22.data.rarity !== 'epic' && ch22.data.rarity !== 'legend') weakCard++;
+      if (ch22.kind === 'item' && Game.ITEMS[ch22.data.itemId].rarity !== 'epic' &&
+          Game.ITEMS[ch22.data.itemId].rarity !== 'legend') weakCard++;
+    }
+    if (hasEx) bossExcl++;
+  }
+  assert(normalExcl === 0, '普通升级池 200 次未出现专属武器');
+  assert(shopExcl === 0, '商店 200 次未出现专属武器');
+  assert(bossExcl > 0 && bossExcl < 300,
+         'Boss 奖励有概率出专属武器（' + bossExcl + '/300 次，概率 ' +
+         (Game.BOSS_EXCLUSIVE_CHANCE).toFixed(2) + '）');
+  assert(weakCard === 0, 'Boss 奖励里的属性/道具卡全是 epic 或 legend（弱卡 ' + weakCard + ' 张）');
+
+  // ⑥ 槽位已满时，专属武器挤掉最早加入的那一把
+  var st25 = Game.Systems.createState('campaign', 'swordsman', 37);
+  st25.player.weapons = [];
+  for (var w22 = 0; w22 < Game.CONST.MAX_WEAPONS; w22++) {
+    st25.player.weapons.push(new Game.WeaponInstance('pistol', 1));
+  }
+  var oldest22 = st25.player.weapons[0].defId;
+  Game.Systems.applyChoice(st25, { kind: 'weapon', data: { weaponId: 'moon_sword' } });
+  assert(st25.player.weapons.length === Game.CONST.MAX_WEAPONS,
+         '武器槽上限不变（' + st25.player.weapons.length + '/' + Game.CONST.MAX_WEAPONS + '）');
+  var last22 = st25.player.weapons[st25.player.weapons.length - 1].defId;
+  assert(last22 === 'moon_sword',
+         '专属武器进入最后一槽（' + last22 + '）');
+  assert(st25.player.weapons.filter(function (w) { return w.defId === oldest22; }).length ===
+         Game.CONST.MAX_WEAPONS - 1,
+         '最早加入的那把被挤掉（' + oldest22 + ' 只剩 ' +
+         st25.player.weapons.filter(function (w) { return w.defId === oldest22; }).length + ' 把）');
+
+  // ⑦ 安卓触控：屏幕任意位置都能生成摇杆（旧实现只有左半屏生效）
+  Game.Input.joystick.active = false;
+  Game.Input.joystick.visible = false;
+  Game.Input.joystick.pointerId = -1;
+  var rightTouch = {
+    preventDefault: function () {},
+    changedTouches: [{ identifier: 1, clientX: 1200, clientY: 600 }],
+    length: 1,
+  };
+  Game.Input._onTouchStart(rightTouch);
+  assert(Game.Input.joystick.active === true, '右半屏（x=1200）触摸能生成摇杆');
+  assert(Game.Input.joystick.baseX === 1200 && Game.Input.joystick.baseY === 600,
+         '摇杆底盘落在触点位置（' + Game.Input.joystick.baseX + ',' + Game.Input.joystick.baseY + '）');
+  // 上滑 → 应朝「上」移动（验证方向换算正确，不只是「有响应」）
+  Game.Input._onTouchMove({
+    preventDefault: function () {},
+    changedTouches: [{ identifier: 1, clientX: 1200, clientY: 540 }],
+    length: 1,
+  });
+  var mv22 = Game.Input.getMove();
+  assert(mv22.y < -0.5, '上滑产生向上移动向量（y=' + mv22.y.toFixed(2) + '）');
+  // 多点触控：第二个指头不应抢占摇杆
+  var base22 = Game.Input.joystick.baseX;
+  Game.Input._onTouchStart({
+    preventDefault: function () {},
+    changedTouches: [{ identifier: 2, clientX: 100, clientY: 100 }],
+    length: 1,
+  });
+  assert(Game.Input.joystick.baseX === base22, '第二个指头不抢占摇杆');
+  // 触摸结束 → 归位
+  Game.Input._onTouchEnd({
+    preventDefault: function () {},
+    changedTouches: [{ identifier: 1 }],
+    length: 1,
+  });
+  assert(Game.Input.joystick.active === false, '抬手后摇杆释放');
+} catch (e) {
+  assert(false, '节奏/Boss奖励/触控异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);
