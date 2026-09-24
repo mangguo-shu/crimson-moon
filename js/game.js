@@ -11,6 +11,8 @@
 
   Game.debugGod = false;
   Game.state = null;          // 当前运行状态
+  Game.pendingMode = 'campaign'; // 角色选择后进入的模式：'campaign' | 'endless'
+  Game.uiScreen = null;         // 当前显示的面板名（ui.js 写入）
   Game.settings = { sound: true, vibrate: true, quality: 'high' };
 
   var G = Game.Game = {};
@@ -90,33 +92,58 @@
   };
 
   /* ---------------- 状态机 ---------------- */
-  G.newGame = function () {
+  // 角色选择是两种模式共用的入口：先记下目标模式，卡片点击时再分流
+  G._pickCharacter = function (mode) {
     Game.Audio.unlock();
+    Game.pendingMode = mode;
     Game.UI.renderCharSelect();
     Game.UI.showScreen('MENU');
   };
 
-  G.startCampaign = function (charId) {
+  G.newGame = function () { G._pickCharacter('campaign'); };
+
+  G.startEndless = function () {
+    var save = Game.Storage.getJSON('endless_v1');
+    if (save && save.player) {
+      // 已有未完成的对局：先问继续还是重开，别一点就把进度覆盖掉
+      G._confirmEndlessRestart(save);
+      return;
+    }
+    G._pickCharacter('endless');
+  };
+
+  /** 角色选择卡片的统一入口（ui.js 调用） */
+  G.startRun = function (charId) {
+    if (Game.pendingMode === 'endless') {
+      Game.Storage.remove('endless_v1');   // 从头开始 = 覆盖旧进度
+      G._startRun('endless', charId);
+    } else {
+      G._startRun('campaign', charId);
+    }
+  };
+
+  /** 新开一局：两种模式只差 mode 与存档槽，共用同一套初始化 */
+  G._startRun = function (mode, charId) {
     var seed = Math.floor(Math.random() * 0xffffffff);
-    console.log('[Game] 开始闯关 char=' + charId + ' seed=' + seed);
-    Game.state = S.createState('campaign', charId, seed);
+    console.log('[Game] 开始 ' + (mode === 'endless' ? '无限模式' : '闯关') +
+                ' char=' + charId + ' seed=' + seed);
+    Game.state = S.createState(mode, charId, seed);
     S.startWave(Game.state, 1);
     Game.Renderer.updateCamera(Game.state.player);
     Game.UI.showScreen('PLAYING');
     Game.UI.updateHUD(Game.state);
   };
 
-  G.continueCampaign = function () {
-    var obj = Game.Storage.getJSON('campaign_v1');
+  G._continueRun = function (mode) {
+    var slot = G._saveSlot({ mode: mode });
+    var obj = Game.Storage.getJSON(slot);
     if (!obj || !obj.player) {
-      console.warn('[Game] 无有效闯关存档');
+      console.warn('[Game] 无有效存档：' + slot);
       Game.UI.showSaveToast(new Error('无存档'));
       return;
     }
-    if (obj.version !== 1) {
-      console.warn('[Game] 存档版本不匹配 v=' + obj.version);
-    }
-    console.log('[Game] 继续闯关 wave=' + obj.wave + ' seed=' + obj.seed);
+    if (obj.version !== 1) console.warn('[Game] 存档版本不匹配 v=' + obj.version);
+    console.log('[Game] 继续 ' + slot + ' wave=' + obj.wave + ' seed=' + obj.seed);
     Game.state = S.deserialize(obj);
     Game.Renderer.updateCamera(Game.state.player);
     if (Game.state.wave === 0) S.startWave(Game.state, 1);
@@ -124,13 +151,45 @@
     Game.UI.updateHUD(Game.state);
   };
 
+  G.continueCampaign = function () { G._continueRun('campaign'); };
+  G.continueEndless = function () { G._continueRun('endless'); };
+
+  /** 无限对局重开确认（沿用 _confirmExit 的覆盖层做法） */
+  G._confirmEndlessRestart = function (save) {
+    var ov = document.getElementById('confirm-restart');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'confirm-restart';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0.8);' +
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;';
+      document.body.appendChild(ov);
+    }
+    ov.innerHTML =
+      '<h2 style="color:#fff">有未完成的无限对局（第 ' + ((save && save.wave) || 1) + ' 波）</h2>' +
+      '<div style="margin-top:14px">' +
+      '<button class="btn primary" onclick="Game.Game._closeRestart();Game.Game.continueEndless()">继续对局</button>' +
+      '<button class="btn" onclick="Game.Game._cancelRestart()">从头开始</button></div>';
+    ov.style.display = 'flex';
+  };
+  G._closeRestart = function () {
+    var ov = document.getElementById('confirm-restart');
+    if (ov) ov.style.display = 'none';
+  };
+  G._cancelRestart = function () {
+    G._closeRestart();
+    G._pickCharacter('endless');
+  };
+
   G.toMenu = function () {
     if (Game.state && ['PLAYING', 'PAUSED', 'LEVEL_UP', 'SHOP'].indexOf(Game.state.screen) >= 0) {
       G.saveGame();
     }
     Game.state = null;
-    var hasSave = !!Game.Storage.getJSON('campaign_v1');
-    Game.UI.renderMenu(hasSave);
+    Game.pendingMode = 'campaign';
+    var hasCampaign = !!Game.Storage.getJSON('campaign_v1');
+    var endless = Game.Storage.getJSON('endless_v1');
+    var hasEndless = !!(endless && endless.player);
+    Game.UI.renderMenu(hasCampaign, hasEndless, endless ? (endless.wave || 1) : 0);
     Game.UI.showScreen('MENU');
     Game.Native.allowSleep();
   };
@@ -151,15 +210,16 @@
   };
 
   G.restartRun = function () {
-    var cid = Game.state ? Game.state.player.id : 'swordsman';
-    G.startCampaign(cid);
+    if (!Game.state) return;
+    G._startRun(Game.state.mode, Game.state.player.id);
   };
 
   G.deleteSave = function () {
     Game.Storage.remove('campaign_v1');
+    Game.Storage.remove('endless_v1');
     Game.UI.showSaveToast();
     G.toMenu();
-    console.log('[Game] 删除存档');
+    console.log('[Game] 删除存档（闯关 + 无限）');
   };
 
   /* ---------------- 升级 / 商店 ---------------- */
@@ -205,6 +265,17 @@
     G.saveGame(); // 商店关闭（新波开始）自动存档
   };
 
+  /* ---------------- 纪录榜 ---------------- */
+  G.openRecords = function () {
+    Game.UI.renderRecords(Game.Records.load().runs);
+    Game.UI.showScreen('RECORDS');
+  };
+  G.clearRecords = function () {
+    Game.Records.clear();
+    G.openRecords();
+    console.log('[Game] 清空纪录');
+  };
+
   /* ---------------- 设置面板 ---------------- */
   G.openSettings = function () {
     Game.UI.renderSettings(Game.settings);
@@ -244,19 +315,28 @@
   };
 
   /* ---------------- 存档 ---------------- */
+  /** 存档槽按模式分流：闯关与无限各占一个槽，互不覆盖 */
+  G._saveSlot = function (state) {
+    return (state && state.mode === 'endless') ? 'endless_v1' : 'campaign_v1';
+  };
+
   G.saveGame = function () {
     if (!Game.state || !Game.state.player) return false;
-    if (Game.state.player && !Game.state.player.alive) return false;
+    if (!Game.state.player.alive) return false;
+    var slot = G._saveSlot(Game.state);
     var obj = S.serialize(Game.state);
-    var ok = Game.Storage.setJSON('campaign_v1', obj, function (err) {
+    var ok = Game.Storage.setJSON(slot, obj, function (err) {
       Game.UI.showSaveToast(err || null);
     });
-    console.log('[Save] 存档完成 wave=' + obj.wave + ' time=' + Game.util.fmtTime(obj.elapsed));
+    console.log('[Save] 存档完成 slot=' + slot + ' wave=' + obj.wave +
+                ' time=' + Game.util.fmtTime(obj.elapsed));
     return ok;
   };
 
   /* ---------------- 返回键处理 ---------------- */
   G._handleBack = function () {
+    // 纪录榜没有运行状态，不拦的话安卓返回键会直接退出 App
+    if (Game.uiScreen === 'RECORDS') { G.toMenu(); return { handled: true }; }
     if (!Game.state) return { handled: false }; // 主菜单：交由系统退出
     switch (Game.state.screen) {
       case 'PLAYING': G.pause(); return { handled: true };
@@ -314,11 +394,26 @@
     Game.UI.showScreen('SHOP');
   };
 
+  /** 结算成绩入榜，返回 { entered, rank }。
+   *  必须在删存档槽之前调用 —— 成绩是从 state 里现摘的，顺序反了就白跑一局。 */
+  G._recordRun = function (state) {
+    if (!Game.Records) return null;
+    try {
+      var rank = Game.Records.add(Game.Records.toRun(state));
+      if (rank && rank.entered) console.log('[Records] 入榜 第 ' + rank.rank + ' 名');
+      return rank;
+    } catch (e) {
+      console.warn('[Records] 入榜失败:', e);
+      return null;
+    }
+  };
+
   G._victory = function () {
     var state = Game.state;
     state.screen = 'VICTORY'; // 停止主循环更新，冻结 elapsed
-    Game.Storage.remove('campaign_v1'); // 通关后清除进行中的存档
-    Game.UI.renderVictory(state);
+    var rank = G._recordRun(state);
+    Game.Storage.remove(G._saveSlot(state)); // 通关后清除进行中的存档
+    Game.UI.renderVictory(state, rank);
     Game.UI.showScreen('VICTORY');
     Game.Native.allowSleep();
     console.log('[Game] 通关！');
@@ -327,12 +422,13 @@
   G._gameOver = function () {
     var state = Game.state;
     state.screen = 'GAME_OVER'; // 停止主循环更新，冻结 elapsed
-    Game.Storage.remove('campaign_v1'); // 死亡后清除进行中的存档
-    Game.UI.renderGameOver(state);
+    var rank = G._recordRun(state);
+    Game.Storage.remove(G._saveSlot(state)); // 死亡后清除进行中的存档
+    Game.UI.renderGameOver(state, rank);
     Game.UI.showScreen('GAME_OVER');
     Game.Native.allowSleep();
     if (Game.FX) Game.FX.flash('#ff0000', 0.5);
-    console.log('[Game] 游戏结束 wave=' + state.wave);
+    console.log('[Game] 游戏结束 mode=' + state.mode + ' wave=' + state.wave);
   };
 
   /* ---------------- 升级触发 ---------------- */

@@ -15,7 +15,7 @@ const vm = require('vm');
 const JS_DIR = path.join(__dirname, '..', 'js');
 const ORDER = [
   'config.js', 'storage.js', 'nativeBridge.js', 'audio.js', 'input.js',
-  'entities.js', 'weapons.js', 'renderer.js', 'systems.js', 'ui.js', 'game.js',
+  'entities.js', 'weapons.js', 'renderer.js', 'systems.js', 'records.js', 'ui.js', 'game.js',
 ];
 
 /* ---------------- 断言工具 ---------------- */
@@ -826,6 +826,203 @@ try {
   delete Game.PASSIVES._test2x;
 } catch (e) {
   assert(false, '角色被动异常: ' + e.stack);
+}
+
+/* ---------------- 纪录榜数据层 ---------------- */
+console.log('\n== 纪录榜 ==');
+try {
+  assert(!!Game.Records, 'Records 模块已挂载');
+
+  Game.Records.clear();
+  assert(Game.Records.load().runs.length === 0, '无档案时 load 回落空榜');
+
+  // 排序：波次降序 → 同波次伤害降序
+  Game.Records.clear();
+  Game.Records.add({ mode: 'endless',  wave: 5,  damage: 100, at: 1 });
+  Game.Records.add({ mode: 'campaign', wave: 20, damage: 50,  at: 2 });
+  Game.Records.add({ mode: 'endless',  wave: 20, damage: 999, at: 3 });
+  Game.Records.add({ mode: 'campaign', wave: 20, damage: 200, at: 4 });
+  var runs = Game.Records.load().runs;
+  assert(runs.length === 4, '四条成绩全部保留（未达 TOP_N）');
+  assert(runs[0].wave === 20 && runs[0].damage === 999, '同波次按伤害降序：999 排第一');
+  assert(runs[1].damage === 200, '同波次次高伤害排第二');
+  assert(runs[2].damage === 50, '同波次最低伤害排第三');
+  assert(runs[3].wave === 5, '低波次排在所有高波次之后');
+
+  // TOP_N 截断与名次
+  Game.Records.clear();
+  var last = null;
+  for (var ri = 0; ri < 14; ri++) {
+    last = Game.Records.add({ mode: 'endless', wave: 23 - ri, damage: ri, at: ri + 1 });
+  }
+  var top = Game.Records.load().runs;
+  assert(top.length === Game.Records.TOP_N, '榜单截断到 TOP_N（实际 ' + top.length + '）');
+  assert(top[0].wave === 23, '最高波次排第一（wave=23）');
+  assert(last.entered === false && last.rank === null,
+         '不入榜时 rank 为 null（截断后名次算不出，不给假数字）');
+  var r = Game.Records.add({ mode: 'endless', wave: 30, damage: 1, at: 999 });
+  assert(r.entered === true && r.rank === 1, '高于榜首的新成绩入榜且排第一');
+
+  // 旧档案兼容
+  Game.Storage.setJSON('profile_v1', { best: { wave: 3 } });
+  assert(Game.Records.load().runs.length === 0, '旧档案无 runs 字段时回落空榜');
+  Game.Storage.setJSON('profile_v1', { runs: '不是数组' });
+  assert(Game.Records.load().runs.length === 0, 'runs 类型不对时回落空榜');
+
+  // toRun 摘取
+  var st32 = Game.Systems.createState('endless', 'swordsman', 77);
+  Game.Systems.startWave(st32, 33);
+  st32.stats.kills = 42; st32.elapsed = 123.7;
+  st32.player.damageDealt = 8888.4; st32.player.materials = 15; st32.player.level = 9;
+  var run = Game.Records.toRun(st32);
+  assert(run.mode === 'endless' && run.wave === 33, 'toRun 摘取模式与波次');
+  assert(run.kills === 42 && run.damage === 8888 && run.elapsed === 124,
+         'toRun 摘取统计（伤害取整、时间取整）');
+  assert(run.charName === '流浪剑客', 'toRun 带角色名');
+  assert(run.level === 9 && run.materials === 15, 'toRun 带等级与材料');
+  assert(run.player === undefined && run.seed === undefined, 'toRun 不含存档字段');
+} catch (e) {
+  assert(false, '纪录榜异常: ' + e.stack);
+}
+
+/* ---------------- 无限模式：波次不封顶 + 存档槽隔离 ---------------- */
+console.log('\n== 无限模式 ==');
+try {
+  // 先放一条闯关存档当哨兵，用来验证无限模式不会碰它
+  Game.Storage.setJSON('campaign_v1', { mode: 'campaign', wave: 13, player: { id: 'swordsman' } });
+
+  // 存档槽分流：无限模式写 endless_v1，不占 campaign_v1
+  var stE = Game.Systems.createState('endless', 'swordsman', 101);
+  Game.Systems.startWave(stE, 1);
+  Game.state = stE;
+  Game.Game.saveGame();
+  var slot = Game.Storage.getJSON('endless_v1');
+  assert(slot && slot.mode === 'endless' && slot.wave === 1, '无限模式存档落进 endless_v1');
+  assert(Game.Storage.getJSON('campaign_v1').wave === 13, '无限模式存档不占用 campaign_v1（哨兵仍在）');
+
+  // HUD 标出模式，免得玩家不知道自己不在闯关
+  Game.UI.updateHUD(stE);
+  assert(document.getElementById('hud-wave').textContent.indexOf('无限') >= 0,
+         '无限模式 HUD 波次栏带「无限」标记');
+  var stC = Game.Systems.createState('campaign', 'swordsman', 102);
+  Game.Systems.startWave(stC, 3);
+  Game.state = stC;
+  Game.UI.updateHUD(stC);
+  assert(document.getElementById('hud-wave').textContent.indexOf('无限') < 0,
+         '闯关模式 HUD 不带「无限」标记');
+
+  // 关键回归：无限模式死亡只清自己的槽，不能误删闯关存档
+  var stE2 = Game.Systems.createState('endless', 'swordsman', 103);
+  Game.Systems.startWave(stE2, 25);
+  stE2.stats.kills = 30; stE2.player.damageDealt = 5000;
+  Game.state = stE2;
+  Game.Game.saveGame();
+  Game.Game._gameOver();
+  assert(Game.Storage.getJSON('endless_v1') === null, '无限模式死亡清掉了自己的 endless_v1');
+  assert(Game.Storage.getJSON('campaign_v1').wave === 13,
+         '【回归】无限模式死亡不误删闯关存档（wave=13 仍在）');
+
+  // 成绩已入榜
+  var board = Game.Records.load().runs;
+  assert(board.length > 0 && board.some(function (x) { return x.wave === 25 && x.mode === 'endless'; }),
+         '无限模式结算成绩已写入纪录榜');
+
+  // 波次不封顶：无限模式第 21 波结束应进商店而不是胜利
+  var stE3 = Game.Systems.createState('endless', 'swordsman', 104);
+  Game.Systems.startWave(stE3, 21);
+  Game.state = stE3;
+  Game.Game._onWaveEnd();
+  assert(Game.state.screen === 'SHOP', '无限模式第 21 波结束进商店，不触发胜利');
+  assert(!!Game.state.shop, '无限模式第 21 波商店正常打开');
+
+  // 商店点「下一波」能进 22 波
+  Game.Game.nextWave();
+  assert(Game.state.screen === 'PLAYING' && Game.state.wave === 22,
+         '无限模式商店「下一波」进入第 22 波');
+
+  // 无限模式存档可继续（序列化回环保留 mode 与波次）
+  var stE4 = Game.Systems.createState('endless', 'swordsman', 555);
+  Game.Systems.startWave(stE4, 8);
+  Game.state = stE4;
+  Game.Game.saveGame();
+  Game.state = null;
+  Game.Game.continueEndless();
+  assert(Game.state.mode === 'endless' && Game.state.wave === 8,
+         '无限模式存档可继续（mode/endless 与 wave=8 保留）');
+
+  // 闯关封顶行为未被改坏
+  var stC2 = Game.Systems.createState('campaign', 'swordsman', 105);
+  Game.Systems.startWave(stC2, 20);
+  Game.state = stC2;
+  Game.Game._onWaveEnd();
+  assert(Game.state.screen === 'VICTORY', '闯关第 20 波结束仍触发胜利（未被无限模式影响）');
+  Game.state = null;
+} catch (e) {
+  assert(false, '无限模式异常: ' + e.stack);
+}
+
+/* ---------------- 菜单 / 纪录榜界面 ---------------- */
+console.log('\n== 菜单与纪录榜界面 ==');
+try {
+  Game.Records.clear();
+  Game.Storage.remove('campaign_v1');
+  Game.Storage.remove('endless_v1');
+  Game.state = null;
+  Game.Game.toMenu();
+  var menuHtml = document.getElementById('menu').innerHTML;
+  assert(menuHtml.indexOf('startEndless') >= 0, '菜单有无限模式入口');
+  assert(menuHtml.indexOf('openRecords') >= 0, '菜单有纪录榜入口');
+  assert(menuHtml.indexOf('开发中') < 0, '菜单不再有「开发中」占位按钮');
+  assert(menuHtml.indexOf('删除存档') >= 0, '菜单保留删除存档');
+
+  // 有未完成对局时按钮提示可继续的波次
+  Game.Storage.setJSON('endless_v1', { wave: 25, player: { id: 'swordsman' } });
+  Game.state = null;
+  Game.Game.toMenu();
+  assert(document.getElementById('menu').innerHTML.indexOf('继续 第 25 波') >= 0,
+         '有无尽存档时菜单提示可继续的波次');
+
+  // 角色选择卡片走统一入口（按 pendingMode 分流）
+  Game.pendingMode = 'endless';
+  Game.UI.renderCharSelect();
+  assert(document.getElementById('menu').innerHTML.indexOf('startRun') >= 0,
+         '角色卡片改调 startRun（按 pendingMode 分流）');
+  Game.pendingMode = 'campaign';
+
+  // 纪录榜界面
+  Game.Game.openRecords();
+  assert(Game.uiScreen === 'RECORDS', 'openRecords 切换到 RECORDS 面板');
+  assert(document.getElementById('records').innerHTML.indexOf('暂无纪录') >= 0, '空榜显示占位文案');
+
+  // 榜有数据时的行渲染
+  Game.Records.add({ mode: 'endless', charName: '流浪剑客', wave: 42, kills: 120,
+                     damage: 8888, materials: 30, level: 12, elapsed: 950 });
+  Game.Game.openRecords();
+  var rHtml = document.getElementById('records').innerHTML;
+  assert(rHtml.indexOf('NO.1') >= 0 && rHtml.indexOf('第 42 波') >= 0, '榜单渲染名次与波次');
+  assert(rHtml.indexOf('无限') >= 0 && rHtml.indexOf('流浪剑客') >= 0, '榜单渲染模式与角色名');
+  assert(rHtml.indexOf('15:50') >= 0, '榜单渲染存活时间（15:50）');
+
+  // 清空纪录
+  Game.Game.clearRecords();
+  assert(Game.Storage.getJSON('profile_v1') === null, '清空纪录移除 profile_v1');
+  assert(document.getElementById('records').innerHTML.indexOf('暂无纪录') >= 0, '清空后回到空榜占位');
+
+  // 纪录榜上按安卓返回键应回菜单，而不是把 App 退出去
+  var bk = Game.Game._handleBack();
+  assert(bk.handled === true && Game.uiScreen === 'MENU', '纪录榜按返回键回菜单而非退出 App');
+
+  // 主菜单按返回键仍交给系统（无运行状态、无面板需要拦）
+  var bk2 = Game.Game._handleBack();
+  assert(bk2.handled === false, '主菜单按返回键仍交由系统处理');
+
+  // 收尾：清掉测试写的存档，避免污染本地开发环境
+  Game.Storage.remove('campaign_v1');
+  Game.Storage.remove('endless_v1');
+  Game.Records.clear();
+  Game.state = null;
+} catch (e) {
+  assert(false, '菜单/纪录榜界面异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

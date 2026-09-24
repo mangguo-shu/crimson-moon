@@ -21,6 +21,7 @@
       el.gameover = document.getElementById('gameover');
       el.victory = document.getElementById('victory');
       el.settings = document.getElementById('settings');
+      el.records = document.getElementById('records');
       el.debug = document.getElementById('debug');
       el.btnPauseTouch = document.getElementById('btn-pause-touch');
       el.saveToast = document.getElementById('save-toast');
@@ -43,7 +44,7 @@
 
     /* ---------------- 面板显隐 ---------------- */
     _hideAll: function () {
-      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'debug'];
+      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'debug'];
       for (var i = 0; i < ids.length; i++) el[ids[i]].classList.add('hidden');
       el.overlay.classList.add('hidden');
       el.hud.classList.add('hidden');
@@ -51,6 +52,7 @@
     },
 
     showScreen: function (name) {
+      Game.uiScreen = name;   // 供 game.js 判断「当前显示哪个面板」（如纪录榜无运行状态）
       this._hideAll();
       switch (name) {
         case 'MENU': el.menu.classList.remove('hidden'); break;
@@ -60,6 +62,7 @@
         case 'GAME_OVER': el.gameover.classList.remove('hidden'); break;
         case 'VICTORY': el.victory.classList.remove('hidden'); break;
         case 'SETTINGS': el.settings.classList.remove('hidden'); break;
+        case 'RECORDS': el.records.classList.remove('hidden'); break;
         case 'PLAYING':
           el.hud.classList.remove('hidden');
           if (Game.Input.touchMode) el.btnPauseTouch.classList.remove('hidden');
@@ -68,17 +71,21 @@
     },
 
     /* ---------------- 主菜单 ---------------- */
-    renderMenu: function (hasCampaignSave) {
+    /** hasCampaignSave / hasEndlessSave：两个模式各有独立存档槽；endlessWave 用于提示可继续的波次 */
+    renderMenu: function (hasCampaignSave, hasEndlessSave, endlessWave) {
+      var endlessLabel = hasEndlessSave
+        ? '无限模式 · 继续 第 ' + endlessWave + ' 波'
+        : '无限模式';
       el.menu.innerHTML =
         '<h1>赤月猎场</h1>' +
         '<div class="subtitle">Crimson Moon Hunt</div>' +
-        '<button class="btn primary" onclick="Game.Game.newGame()">开始游戏</button>' +
+        '<button class="btn primary" onclick="Game.Game.newGame()">开始闯关</button>' +
         '<button class="btn" ' + (hasCampaignSave ? '' : 'disabled') +
         ' onclick="Game.Game.continueCampaign()">继续闯关</button>' +
-        '<button class="btn" disabled title="后续版本开放">无限模式（开发中）</button>' +
-        '<button class="btn" disabled title="后续版本开放">纪录榜（开发中）</button>' +
+        '<button class="btn" onclick="Game.Game.startEndless()">' + endlessLabel + '</button>' +
+        '<button class="btn" onclick="Game.Game.openRecords()">纪录榜</button>' +
         '<button class="btn ghost" onclick="Game.Game.openSettings()">设置</button>' +
-        '<button class="btn ghost" ' + (hasCampaignSave ? '' : 'disabled') +
+        '<button class="btn ghost" ' + ((hasCampaignSave || hasEndlessSave) ? '' : 'disabled') +
         ' onclick="Game.Game.deleteSave()">删除存档</button>' +
         '<div class="subtitle">' + (Game.Input.touchMode ? '触屏：左摇杆移动，右下角暂停' : '键盘：WASD 移动 · 空格暂停 · F5 存档 · F9 读档 · ~ 调试') + '</div>';
     },
@@ -89,7 +96,7 @@
       for (var i = 0; i < chars.length; i++) {
         var c = chars[i];
         html +=
-          '<div class="card r-legend" style="cursor:pointer" onclick="Game.Game.startCampaign(\'' + c.id + '\')">' +
+          '<div class="card r-legend" style="cursor:pointer" onclick="Game.Game.startRun(\'' + c.id + '\')">' +
           '<div class="card-rarity">' + c.category + '</div>' +
           '<div class="card-name">' + c.name + '</div>' +
           '<div class="card-desc">' + c.desc + '</div>' +
@@ -114,7 +121,9 @@
       }
       el.xpFill.style.width = util.clamp(p.xp / p.xpNext * 100, 0, 100) + '%';
       el.hudLevel.textContent = 'Lv.' + p.level;
-      el.hudWave.textContent = '波次 ' + state.wave + (state.isBossWave ? ' · BOSS' : '');
+      el.hudWave.textContent = '波次 ' + state.wave +
+        (state.mode === 'endless' ? ' · 无限' : '') +
+        (state.isBossWave ? ' · BOSS' : '');
       el.hudTimer.textContent = util.fmtTime(Math.max(0, state.waveDuration - state.waveTime));
       el.hudMaterial.textContent = p.materials;
 
@@ -186,11 +195,17 @@
     },
 
     /* ---------------- 结算 ---------------- */
-    renderGameOver: function (state) {
+    renderGameOver: function (state, rank) {
       var p = state.player;
+      var tag = state.mode === 'endless' ? '无限' : '闯关';
+      var rec = rank && rank.entered
+        ? '<div class="stat-line" style="color:#ffcf5e">☆ 进入纪录榜 第 ' + rank.rank + ' 名</div>'
+        : '';
       el.gameover.innerHTML =
         '<h1>败北</h1>' +
+        '<div class="stat-line" style="color:#aaa">' + tag + '模式</div>' +
         '<div class="stat-line">存活波次：<b>' + state.wave + '</b></div>' +
+        rec +
         '<div class="stat-line">击杀数：<b>' + state.stats.kills + '</b></div>' +
         '<div class="stat-line">存活时间：<b>' + util.fmtTime(state.elapsed) + '</b></div>' +
         '<div class="stat-line">造成伤害：<b>' + Math.round(p.damageDealt) + '</b></div>' +
@@ -201,8 +216,11 @@
         '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>';
     },
 
-    renderVictory: function (state) {
+    renderVictory: function (state, rank) {
       var p = state.player;
+      var rec = rank && rank.entered
+        ? '<div class="stat-line" style="color:#ffcf5e">☆ 进入纪录榜 第 ' + rank.rank + ' 名</div>'
+        : '';
       el.victory.innerHTML =
         '<h1 style="color:#ffcf5e">通关！</h1>' +
         '<div class="stat-line">章节：<b>赤月荒原</b></div>' +
@@ -210,7 +228,39 @@
         '<div class="stat-line">存活时间：<b>' + util.fmtTime(state.elapsed) + '</b></div>' +
         '<div class="stat-line">造成伤害：<b>' + Math.round(p.damageDealt) + '</b></div>' +
         '<div class="stat-line">获得材料：<b>' + p.materials + '</b></div>' +
+        rec +
         '<button class="btn primary" onclick="Game.Game.toMenu()">返回主菜单</button>';
+    },
+
+    /* ---------------- 纪录榜 ---------------- */
+    renderRecords: function (runs) {
+      runs = runs || [];
+      var html = '<h2>纪录榜</h2>' +
+                 '<div class="subtitle">按到达波次排序 · 最多 ' + Game.Records.TOP_N + ' 条</div>';
+      if (!runs.length) {
+        html += '<div class="subtitle" style="margin-top:20px">暂无纪录，打一局试试。</div>';
+      } else {
+        for (var i = 0; i < runs.length; i++) {
+          var r = runs[i];
+          var tag = r.mode === 'endless' ? '无限' : '闯关';
+          var medal = i === 0 ? '🥇 ' : (i === 1 ? '🥈 ' : (i === 2 ? '🥉 ' : ''));
+          html +=
+            '<div class="stat-line">' +
+            '<b>' + medal + 'NO.' + (i + 1) + '</b>' +
+            '<span style="color:#ffcf5e;font-weight:700"> 第 ' + r.wave + ' 波</span>' +
+            ' · ' + tag + ' · ' + (r.charName || '?') +
+            '</div>' +
+            '<div class="stat-line" style="font-size:12px;color:#aaa;margin-top:2px">' +
+            'Lv.' + (r.level || 1) + ' · 击杀 ' + (r.kills || 0) +
+            ' · 伤害 ' + (r.damage || 0) +
+            ' · 存活 ' + util.fmtTime(r.elapsed || 0) +
+            '</div>';
+        }
+      }
+      html +=
+        '<br><button class="btn primary" onclick="Game.Game.toMenu()">返回主菜单</button>' +
+        '<button class="btn ghost" onclick="Game.Game.clearRecords()">清空纪录</button>';
+      el.records.innerHTML = html;
     },
 
     /* ---------------- 设置 ---------------- */
