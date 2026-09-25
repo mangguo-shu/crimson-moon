@@ -48,61 +48,46 @@
   }
 
   /* ---------------- 背景音乐 ----------------
-   * 四个慢速和弦循环（Am7 → Fmaj7 → Cmaj7 → G6），sine 垫音 + 低八度三角波
-   * 低音 + 五声音阶上的偶发高光音。MUSIC_VOL 刻意压得很低 —— 背景音乐压过
-   * 战斗音效就不叫背景了。
+   * 第二版。第一版是慢速大七和弦垫音（Am7/Fmaj7/Cmaj7/G6，5 秒一换、四声部
+   * 一直悬着），真机听感太像咖啡馆背景乐，跟猎场的调子不搭。这版换成小调
+   * 琶音序列：三角形短音按八分音符排点（快起快落，像拨响的琴弦），下面压
+   * 一个正弦低音脉冲，进度 Am → Em → Dm → Am 全小和弦。
+   * 区别在质感而不是音量：音符短、有节奏、会走动，而不是四个长音叠在一起。
    *
    * 自动播放策略：AudioContext 必须在用户手势后才算 running，所以 startMusic
    * 由 unlock() 触发；上下文挂起时（切后台）定时器自己退让，回来自己续上。
    */
-  var MUSIC_VOL = 0.06;     // 单个音符峰值，调这里就能整体变响/变轻
-  var CHORD_SEC = 5;        // 每个和弦 5 秒，整段 20 秒循环
-  var CHORDS = [
-    [45, 60, 67],   // Am7   A2 C4 G4
-    [41, 57, 64],   // Fmaj7 F2 A3 E4
-    [48, 64, 71],   // Cmaj7 C3 E4 B4
-    [43, 59, 62],   // G6    G2 B3 D4
+  var MUSIC_VOL = 0.05;          // 单个音符峰值，调这里就能整体变响/变轻
+  var BPM = 92;                  // 慢而稳，不上头
+  var STEP = 60 / BPM / 2;       // 一步 = 八分音符 ≈ 0.326 秒
+  var STEPS_PER_CHORD = 8;       // 8 步 ≈ 2.6 秒一个和弦，整段 10.4 秒循环
+  // Am → Em → Dm → Am：全小和弦，压得住猎场的调子
+  var ARP = [
+    [57, 60, 64, 69, 72, 69, 64, 60],   // Am   A3 C4 E4 A4 C5
+    [52, 55, 59, 64, 67, 64, 59, 55],   // Em   E3 G3 B3 E4 G4
+    [50, 53, 57, 62, 65, 62, 57, 53],   // Dm   D3 F3 A3 D4 F4
+    [57, 60, 64, 69, 72, 76, 69, 64],   // Am   A3 C4 E4 A4 C5 E5
   ];
-  var SPARKLE = [69, 72, 74, 76, 79];   // 五声音阶 A4 C5 D5 E5 G5
+  // A3 E3 D3 A3。想压到根音低八度（A2/E2/D2）但那是 110/82/73 Hz，
+  // 手机喇叭在 80Hz 以下基本滚掉了，写了也白写。所以低音贴着琶音下沿走，
+  // 跟琶音共用根音 —— 波形成分不同（正弦 vs 三角）听起来是加厚，不是打架。
+  var BASS = [57, 52, 50, 57];
   var musicOn = true;
   var musicTimer = null;
-  var musicStep = 0;
+  var musicStep = 0;      // 累计步数，跨和弦累加
 
   function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
-  /** 排一个慢起慢落的和弦垫音；dur 长于 CHORD_SEC，让相邻和弦交叠不露缝 */
-  function scheduleChord(chord, t, dur) {
-    for (var i = 0; i < chord.length; i++) {
-      var f = midiFreq(chord[i]);
-      var o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(f, t);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(MUSIC_VOL, t + dur * 0.45);
-      g.gain.linearRampToValueAtTime(0, t + dur);
-      o.connect(g); g.connect(musicGain);
-      o.start(t); o.stop(t + dur + 0.05);
-      // 低八度三角波做低音支点，垫音不会飘在空里
-      var b = ctx.createOscillator(), bg = ctx.createGain();
-      b.type = 'triangle';
-      b.frequency.setValueAtTime(f / 2, t);
-      bg.gain.setValueAtTime(0, t);
-      bg.gain.linearRampToValueAtTime(MUSIC_VOL * 0.4, t + dur * 0.5);
-      bg.gain.linearRampToValueAtTime(0, t + dur);
-      b.connect(bg); bg.connect(musicGain);
-      b.start(t); b.stop(t + dur + 0.05);
-    }
-  }
-
-  function scheduleSparkle(t) {
+  /** 拨弦音色：15ms 快起 + 指数衰减，像被拨响的琴弦而不是长鸣的音色 */
+  function pluck(midi, t, dur, vol, type) {
     var o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(midiFreq(SPARKLE[Math.floor(Math.random() * SPARKLE.length)]), t);
+    o.type = type;
+    o.frequency.setValueAtTime(midiFreq(midi), t);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(MUSIC_VOL * 0.5, t + 0.4);
-    g.gain.linearRampToValueAtTime(0, t + 2.2);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(musicGain);
-    o.start(t); o.stop(t + 2.25);
+    o.start(t); o.stop(t + dur + 0.03);
   }
 
   function musicTick() {
@@ -114,11 +99,16 @@
       musicTimer = window.setTimeout(musicTick, 1000);
       return;
     }
-    var t = ctx.currentTime + 0.08;
-    scheduleChord(CHORDS[musicStep % CHORDS.length], t, CHORD_SEC * 1.6);
-    if (musicStep % 2 === 1) scheduleSparkle(t + 1.2);
-    musicStep++;
-    musicTimer = window.setTimeout(musicTick, (CHORD_SEC - 0.08) * 1000);
+    var idx = Math.floor(musicStep / STEPS_PER_CHORD) % ARP.length;
+    var t0 = ctx.currentTime + 0.08;
+    // 一个和弦排满 8 个八分音符；尾音故意留一点交叠，衔接不露缝
+    for (var i = 0; i < ARP[idx].length; i++) {
+      pluck(ARP[idx][i], t0 + i * STEP, STEP * 1.5, MUSIC_VOL, 'triangle');
+    }
+    // 低音脉冲只在头一拍，音量略高一点给节奏一个支点
+    pluck(BASS[idx], t0, STEP * 3.2, MUSIC_VOL * 1.6, 'sine');
+    musicStep += STEPS_PER_CHORD;
+    musicTimer = window.setTimeout(musicTick, STEP * STEPS_PER_CHORD * 1000);
   }
 
   function startMusic() {
