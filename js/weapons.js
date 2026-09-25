@@ -32,6 +32,7 @@
     this.cooldownRemaining = 0;
     this.slot = slot || 0;   // 槽位序号 → 轨道角度
     this.swingTime = 0;      // 距上次出手多久（渲染画出手余韵用；不持久化）
+    this.lastAim = 0;        // 上次出手的朝向：挥砍时让剑身指向敌人，而不是沿径向朝外
   }
 
   /** 本把武器挂在轨道上的位置。纯查询、不改状态：
@@ -138,6 +139,7 @@
     var facing = util.angleTo(this.x, this.y, enemy.x, enemy.y);
     var rng = this.range();
     this.swingTime = 0;
+    this.lastAim = facing;
     if (this._primary()) {
       // 视觉朝向仍以玩家为中心，别被轨道角度带偏
       owner.aimFacing = util.angleTo(owner.x, owner.y, enemy.x, enemy.y);
@@ -158,7 +160,7 @@
         }
       }
     }
-    if (fx()) fx().slash(this.x, this.y, facing, rng, this.def.color);
+    if (fx()) fx().slash(this.x, this.y, facing, rng, this.def.color, this.def.arc);
     if (this._primary() && Game.Audio) Game.Audio.hit();
   };
 
@@ -166,6 +168,7 @@
   WeaponInstance.prototype._rangedAttack = function (owner, state, enemy) {
     var ang = util.angleTo(this.x, this.y, enemy.x, enemy.y);
     this.swingTime = 0;
+    this.lastAim = ang;
     if (this._primary()) {
       owner.aimFacing = ang;
       if (owner.playAttack) owner.playAttack('ranged');  // 纯表现：射击后坐

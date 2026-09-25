@@ -813,26 +813,34 @@
   // 永远只等于「攻速快了一点」，玩家感知不到。位置直接取 WeaponInstance
   // 本帧算好的 x/y（weapons.js update 时写入），不在这边重算角度，
   // 逻辑在打哪边图标就一定在哪边。
+  //
+  // ⚠ 坐标系：本方法在 _drawPlayer 的 ctx.translate(p.x, p.y) 之后调用，
+  // 原点已经是玩家中心，必须画局部坐标 (w.x - p.x)。直接画 w.x/w.y 会把卫星
+  // 搬到世界坐标「玩家 + 武器」的位置，飞到镜头外 —— 玩家只看到刀光特效、
+  // 看不到武器，于是读成「攻击延迟」。刀光走 FX 系统是绝对世界坐标，
+  // 两者必须落在同一点。
   R._drawOrbitWeapons = function (ctx, p, now) {
-    var O = this.outline;
     for (var i = 0; i < p.weapons.length; i++) {
       var w = p.weapons[i];
       if (w.x === undefined) continue;   // 首次 update 之前还没算过位置
-      var a = w.aimAngle;
+      var x = w.x - p.x, y = w.y - p.y;  // 世界坐标 → 玩家局部坐标
       // 出手余韵：挥砍瞬间向外刷一道弧光，每把武器都有独立反馈
       var sw = (w.swingTime || 0);
       var swinging = sw >= 0 && sw < 0.22;
+      // 挥砍时剑身指向敌人，静止时沿径向朝外 —— 否则刀光朝敌人、
+      // 剑尖朝另一个方向，动作和特效对不上。
+      var rot = (swinging && w.lastAim !== undefined) ? w.lastAim : w.aimAngle;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.30 + Math.sin(now * 0.004 + i * 1.3) * 0.09;
       ctx.strokeStyle = w.def.color;
       ctx.lineWidth = swinging ? 4 : 2.2;
-      ctx.beginPath(); ctx.arc(w.x, w.y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
       ctx.restore();
       ctx.save();
-      ctx.translate(w.x, w.y);
+      ctx.translate(x, y);
       // 武器头朝外：轨道角度 a 是「玩家指向武器」，剑身沿径向指出去
-      ctx.rotate(a - Math.PI / 2);
+      ctx.rotate(rot - Math.PI / 2);
       ctx.scale(0.62, 0.62);
       if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
       else this._drawCrossbow(ctx, 0, 0, w.def.color);
@@ -844,7 +852,7 @@
         ctx.strokeStyle = w.def.color;
         ctx.lineWidth = 1.1;
         for (var k = 1; k < w.level; k++) {
-          ctx.beginPath(); ctx.arc(w.x, w.y, 15 + k * 3.4, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 15 + k * 3.4, 0, TAU); ctx.stroke();
         }
         ctx.restore();
       }
@@ -1767,8 +1775,10 @@
         life: crit ? 0.7 : 0.5, maxLife: crit ? 0.7 : 0.5,
       });
     },
-    slash: function (x, y, angle, range, color) {
-      R.addEffect({ type: 'slash', x: x, y: y, angle: angle, arc: Game.WEAPONS.iron_sword.arc, range: range, color: color, life: 0.16, maxLife: 0.16 });
+    // arc 必须跟着武器走：赤月斩的扇形是 π*0.95、铁剑只有 π*0.75，
+    // 之前硬编码铁剑的弧，赤月斩实际能打到的范围比刀光显示的宽。
+    slash: function (x, y, angle, range, color, arc) {
+      R.addEffect({ type: 'slash', x: x, y: y, angle: angle, arc: arc || Game.WEAPONS.iron_sword.arc, range: range, color: color, life: 0.16, maxLife: 0.16 });
     },
     muzzle: function (x, y, angle) {
       var p = util.onCircle(x, y, 16, angle);

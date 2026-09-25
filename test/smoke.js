@@ -2821,28 +2821,74 @@ try {
   ctx211.arc = function () { arcs211.push([].slice.call(arguments)); };
   Game.Renderer.render(s211, 0.016);
   ctx211.arc = origArc211;
+  // ⚠ 卫星必须画在「玩家局部坐标」里：_drawPlayer 已经 ctx.translate(p.x, p.y)，
+  // 原点就是玩家中心。画绝对坐标 w.x/w.y 会把卫星搬到世界坐标「玩家 + 武器」，
+  // 飞到镜头外 —— 真机上只剩刀光特效、看不到武器，读成「攻击延迟」。
   var satRings211 = arcs211.filter(function (a) {
     if (Math.abs(a[2] - 11) > 0.5) return false;
     for (var q211 = 0; q211 < pl211.weapons.length; q211++) {
       var wq = pl211.weapons[q211];
-      if (Math.abs(a[0] - wq.x) < 1 && Math.abs(a[1] - wq.y) < 1) return true;
+      var lx = wq.x - pl211.x, ly = wq.y - pl211.y;
+      if (Math.abs(a[0] - lx) < 1 && Math.abs(a[1] - ly) < 1) return true;
     }
     return false;
   });
   assert(satRings211.length === pl211.weapons.length,
          '每把环绕武器都画出了自己的光晕圈（' + satRings211.length + ' 圈 / ' +
          pl211.weapons.length + ' 把武器）');
-  // 每把武器的位置就是逻辑算好的那一个（不重算角度）
-  var allOnOrbit = arcs211.filter(function (a) {
-    return pl211.weapons.some(function (w) { return Math.abs(a[0] - w.x) < 1; });
-  }).length > 0;
-  assert(allOnOrbit, '卫星画在 WeaponInstance 本帧算好的 x/y 上');
+  var onOrbit211 = satRings211.length === pl211.weapons.length &&
+    satRings211.every(function (a) {
+      return Math.abs(Math.sqrt(a[0] * a[0] + a[1] * a[1]) - K.WEAPON_ORBIT_R) < 1;
+    });
+  assert(onOrbit211, '卫星画在距玩家中心 ' + K.WEAPON_ORBIT_R +
+         ' 的局部坐标上（画成绝对坐标会飞到镜头外，只剩特效）');
+  // 不能退化成「画在玩家身上」：至少一把卫星离原点有明显距离
+  assert(satRings211.some(function (a) {
+    return Math.sqrt(a[0] * a[0] + a[1] * a[1]) > K.WEAPON_ORBIT_R * 0.9;
+  }), '卫星确实挂在轨道上，不是叠在玩家身上');
 
   // 没跑过 update 的武器没有位置，卫星要跳过而不是画半截
   var s212 = Game.Systems.createState('campaign', 'swordsman', 777011);
   s212.enemies.length = 0; s212.projectiles.length = 0;
   Game.Renderer.render(s212, 0.016);
   assert(true, '武器还没算过位置时渲染无异常（卫星跳过）');
+
+  // ---- 12. 武器和刀光要对得上：扇形是自己的，剑身指向敌人 ----
+  var slash213 = null;
+  var origSlash213 = Game.FX.slash;
+  Game.FX.slash = function (x, y, angle, range, color, arc) {
+    slash213 = { x: x, y: y, angle: angle, range: range, color: color, arc: arc };
+  };
+  var s213 = Game.Systems.createState('campaign', 'swordsman', 777012);
+  var pl213 = s213.player;
+  pl213.weapons.push(Game.createWeapon('moon_sword', 1, 1));
+  Game.Systems.normalizeSlots(pl213);
+  s213.enemies.length = 0;
+  var wm213 = pl213.weapons[1];
+  s213.enemies.push(atWeapon(wm213, pl213, 40, 'zombie', 1));
+  wm213.cooldownRemaining = 0;
+  wm213.update(0.016, pl213, s213);
+  Game.FX.slash = origSlash213;
+  assert(slash213 && Math.abs(slash213.arc - Game.WEAPONS.moon_sword.arc) < 1e-9,
+         '刀光扇形用武器自己的 arc（赤月斩 ' + Game.WEAPONS.moon_sword.arc.toFixed(2) +
+         '，不是铁剑的 ' + Game.WEAPONS.iron_sword.arc.toFixed(2) + '）');
+  assert(slash213 &&
+         Math.abs(slash213.range - Game.WEAPONS.moon_sword.range * K.MELEE_RANGE_SCALE) < 1e-9,
+         '刀光半径用有效射程（已含 ×' + K.MELEE_RANGE_SCALE + '）');
+  // 刀光从武器位置发出，不在玩家身上 —— 卫星和特效必须同一处
+  assert(slash213 &&
+         Math.abs(slash213.x - wm213.x) < 0.001 && Math.abs(slash213.y - wm213.y) < 0.001,
+         '刀光从武器所在的轨道位置发出，不是从玩家身上');
+  assert(wm213.lastAim === Game.util.angleTo(wm213.x, wm213.y, s213.enemies[0].x, s213.enemies[0].y),
+         '武器记录了出手朝向（渲染挥砍时让剑身指向敌人，不是沿径向朝外）');
+
+  // 静止时剑身沿径向朝外：没出手的武器 lastAim 不应影响显示
+  var s214 = Game.Systems.createState('campaign', 'swordsman', 777013);
+  var pl214 = s214.player;
+  s214.enemies.length = 0;
+  pl214.weapons[0].update(0.016, pl214, s214);   // 无敌人，不出手
+  assert(pl214.weapons[0].lastAim === 0 && pl214.weapons[0].swingTime > 0,
+         '没出手的武器保持初始朝向，只累积余韵计时');
 } catch (e) {
   assert(false, '环绕武器/调参异常: ' + e.stack);
 }
