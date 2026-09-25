@@ -270,18 +270,21 @@
       } else {
         for (var i = 0; i < p.weapons.length; i++) {
           var w = p.weapons[i];
-          var dmg = w.damage(p);              // 已含等级成长与角色倍率
+          var dmg = w.damage(p);              // 已含等级成长、远程系数与角色倍率
           var cd = w.cooldown(p);             // 已除攻击速度
           var lvlUp = 1 + 0.5 * (w.level - 1);
+          var scale = w.def.type === 'ranged' ? Game.CONST.RANGED_DMG_SCALE : 1;
+          var rng = w.def.type === 'melee' ? w.range() : 0;
           html += '<div class="stats-weapon">' +
             '<div class="stats-wname">' +
             '<span>' + (w.def.type === 'melee' ? '🗡' : '🔫') + ' ' + w.def.name + '</span>' +
             '<span class="stats-wlvl">Lv.' + w.level + '/' + MAXLVL + ' ' + stars(w.level) + '</span></div>' +
-            '<div class="stats-wstat"><span>本体 ' + w.def.damage + ' × 等级 ' +
+            '<div class="stats-wstat"><span>本体 ' + w.def.damage +
+              (scale !== 1 ? ' × 远程 ' + scale : '') + ' × 等级 ' +
               num(lvlUp) + ' × 角色 ' + num(s.damage) + '</span><span class="v">' + num(dmg) + '</span></div>' +
             '<div class="stats-wstat"><span>攻速 ' + num(1 / cd) + ' 次/秒' +
               (w.def.pierce ? ' · 穿透 ' + w.def.pierce : '') +
-              (w.def.range ? ' · 射程 ' + w.def.range : '') + '</span>' +
+              (rng ? ' · 射程 ' + num(rng, 1) : '') + '</span>' +
               '<span class="v">DPS ' + num(dmg / cd) + '</span></div>' +
             '<div class="stats-wstat"><span>单次暴击</span><span class="v">' +
               num(dmg * s.critMult) + '</span></div>' +

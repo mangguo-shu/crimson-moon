@@ -744,6 +744,8 @@
       ctx.restore();
     }
 
+    this._drawOrbitWeapons(ctx, p, now);
+
     // 直立化：不再随朝向整体旋转（旧做法会让角色「横躺」），改镜像 + 绕脚底微倾
     var dirX = upright(ctx, p.facing, FOOT_Y.player);
 
@@ -803,6 +805,49 @@
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(p.x, p.y, p.radius + 4, 0, TAU); ctx.fill();
       ctx.restore();
+    }
+  };
+
+  // 环绕武器卫星：多把武器挂在玩家身边的轨道上，各自出手。
+  // 这是「我有多少把武器」在画面里的唯一证据 —— 不画出来，第二把武器就
+  // 永远只等于「攻速快了一点」，玩家感知不到。位置直接取 WeaponInstance
+  // 本帧算好的 x/y（weapons.js update 时写入），不在这边重算角度，
+  // 逻辑在打哪边图标就一定在哪边。
+  R._drawOrbitWeapons = function (ctx, p, now) {
+    var O = this.outline;
+    for (var i = 0; i < p.weapons.length; i++) {
+      var w = p.weapons[i];
+      if (w.x === undefined) continue;   // 首次 update 之前还没算过位置
+      var a = w.aimAngle;
+      // 出手余韵：挥砍瞬间向外刷一道弧光，每把武器都有独立反馈
+      var sw = (w.swingTime || 0);
+      var swinging = sw >= 0 && sw < 0.22;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.30 + Math.sin(now * 0.004 + i * 1.3) * 0.09;
+      ctx.strokeStyle = w.def.color;
+      ctx.lineWidth = swinging ? 4 : 2.2;
+      ctx.beginPath(); ctx.arc(w.x, w.y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.translate(w.x, w.y);
+      // 武器头朝外：轨道角度 a 是「玩家指向武器」，剑身沿径向指出去
+      ctx.rotate(a - Math.PI / 2);
+      ctx.scale(0.62, 0.62);
+      if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
+      else this._drawCrossbow(ctx, 0, 0, w.def.color);
+      ctx.restore();
+      // 强化等级：一圈一圈，Lv1 光晕、Lv2 起每级多一圈
+      if (w.level > 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = w.def.color;
+        ctx.lineWidth = 1.1;
+        for (var k = 1; k < w.level; k++) {
+          ctx.beginPath(); ctx.arc(w.x, w.y, 15 + k * 3.4, 0, TAU); ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
   };
 

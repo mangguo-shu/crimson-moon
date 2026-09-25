@@ -111,6 +111,15 @@ assert(!!Game, 'Game 命名空间存在');
 assert(!!Game.Player && !!Game.Enemy && !!Game.Projectile && !!Game.Pickup, '实体类已挂载');
 assert(!!Game.Systems && !!Game.Renderer && !!Game.UI && !!Game.Storage, '系统/渲染/UI/存储模块已挂载');
 
+/* ---------------- 环绕武器测试助手 ---------------- */
+// 武器从「自己所在的轨道位置」出手，不再从玩家身上。想测命中就得按武器位置摆敌人；
+// 而且轨道角度随 performance.now() 转，写死「player.x + 40」会随进程耗时漂移成 flaky
+// （进程跑得慢一点角度就转开，最坏情况武器正好在敌人背后，够不着）。
+const atWeapon = function (w, owner, off, type, wave) {
+  const p = w.posAt(owner);
+  return new Game.Enemy(type, p.x + Math.cos(p.a) * off, p.y + Math.sin(p.a) * off, wave);
+};
+
 /* ---------------- RNG 确定性 ---------------- */
 console.log('\n== RNG 确定性 ==');
 const r1 = Game.mulberry32(12345);
@@ -161,7 +170,7 @@ console.log('\n== 近战战斗 ==');
 const st3 = Game.Systems.createState('campaign', 'swordsman', 5);
 Game.Systems.startWave(st3, 1);
 const player = st3.player;
-const zombie = new Game.Enemy('zombie', player.x + 40, player.y, 1);
+const zombie = atWeapon(player.weapons[0], player, 40, 'zombie', 1);
 zombie.hp = 1000; // 防死，验证扣血
 st3.enemies.push(zombie);
 player.weapons[0].update(0.1, player, st3); // 首次攻击立即出手
@@ -584,10 +593,10 @@ try {
   var st21 = Game.Systems.createState('campaign', 'swordsman', 33);
   Game.state = st21;
   Game.Systems.startWave(st21, 1);
-  var boss = new Game.Enemy('boss', st21.player.x + 28, st21.player.y, 1);
+  var wp21 = st21.player.weapons[0];
+  var boss = atWeapon(wp21, st21.player, 28, 'boss', 1);
   boss.hp = 1;                                  // 一刀毙命，走真实战斗路径
   st21.enemies.push(boss);
-  var wp21 = st21.player.weapons[0];
   wp21.cooldownRemaining = 0;
   wp21.update(0.016, st21.player, st21);
   assert(st21.bossRewardPending === true, 'Boss 阵亡挂起奖励');
@@ -760,10 +769,10 @@ try {
   tp26.stats.critChance = 0;
   tp26.weapons = st26.player.weapons;   // 接回起始武器（Player 构造不带武器）
   st26.player = tp26; st26.enemies = []; st26.projectiles = []; st26.pickups = [];
-  var me26 = new Game.Enemy('zombie', tp26.x + 40, tp26.y, 1);
+  var w26 = tp26.weapons[0];
+  var me26 = atWeapon(w26, tp26, 40, 'zombie', 1);
   var hp026 = me26.hp;
   st26.enemies.push(me26);
-  var w26 = tp26.weapons[0];
   w26.cooldownRemaining = 0;
   w26.update(0.016, tp26, st26);
   assert(me26.dead === true, 'onHit 生效：铁剑 14 翻成 28，一刀打死 20 血的跳尸');
@@ -1124,10 +1133,10 @@ try {
   var tp33 = st33.player;
   tp33.stats.critChance = 0;
   st33.enemies.length = 0; st33.projectiles.length = 0;
-  var g33 = new Game.Enemy('golem', tp33.x + 40, tp33.y, 21);
+  var sw33 = tp33.weapons[0];
+  var g33 = atWeapon(sw33, tp33, 40, 'golem', 21);
   g33.hp = 1e9;
   st33.enemies.push(g33);
-  var sw33 = tp33.weapons[0];
   sw33.cooldownRemaining = 0;
   sw33.update(0.016, tp33, st33);
   assert(tp33.damageDealt > 0, '近战命中坦克造成正向伤害');
@@ -1398,7 +1407,7 @@ try {
   assert(mp38.char.id === 'monk' && mp38.weapons[0].defId === 'iron_sword',
          '武僧开局装备铁剑（起始武器按配置生效）');
   st42.enemies.length = 0;
-  var z38 = new Game.Enemy('zombie', mp38.x + 40, mp38.y, 1);
+  var z38 = atWeapon(mp38.weapons[0], mp38, 40, 'zombie', 1);
   st42.enemies.push(z38);
   mp38.weapons[0].cooldownRemaining = 0;
   mp38.weapons[0].update(0.016, mp38, st42);
@@ -1836,11 +1845,14 @@ try {
   p60.weapons = [Game.createWeapon('pistol', 1)];
   var st60 = Game.Systems.createState('campaign', 'archer', 666);
   Game.state = st60; st60.player = p60; st60.enemies = []; st60.projectiles = [];
-  var e60 = new Game.Enemy('zombie', p60.x + 10, p60.y, 1);
+  // 环绕后子弹从武器所在的轨道位置出膛，「贴脸」要按武器位置摆敌人
+  var w60 = p60.weapons[0];
+  var pp60 = w60.posAt(p60);
+  var e60 = new Game.Enemy('zombie', pp60.x + 10, pp60.y, 1);
   e60.hp = 1e9;
   st60.enemies.push(e60);
-  p60.weapons[0].cooldownRemaining = 0;
-  p60.weapons[0].update(0.016, p60, st60);
+  w60.cooldownRemaining = 0;
+  w60.update(0.016, p60, st60);
   var hp60 = e60.hp;
   Game.Systems.updateProjectiles(st60, 0.016);
   assert(e60.hp < hp60, '贴脸射击仍命中（掉血 ' + (hp60 - e60.hp).toFixed(1) + '）');
@@ -2406,11 +2418,11 @@ try {
   var s99 = Game.Systems.createState('campaign', 'swordsman', 230000);
   s99.player.applyItem('lifeluck', 1);
   s99.player.applyItem('deathbell', 1);
-  var e99 = new Game.Enemy('bat', s99.player.x + 30, s99.player.y, 1);
+  var wp99 = s99.player.weapons[0];
+  var e99 = atWeapon(wp99, s99.player, 30, 'bat', 1);
   s99.enemies.push(e99);
   var calls99 = [];
   s99.player.heal = function (v) { calls99.push(v); return 0; };
-  var wp99 = s99.player.weapons[0];
   wp99.cooldownRemaining = 0;
   wp99.update(0.016, s99.player, s99);
   assert(calls99.length === 2,
@@ -2576,6 +2588,263 @@ try {
   Game.settings = saved110;
 } catch (e) {
   assert(false, '每波不重卡/加量/回血卡改造异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉗ 环绕武器：多把武器各自挂轨、自主攻击 + 远程降伤 / 近战加范围
+ * ============================================================ */
+console.log('\n== ㉗ 环绕武器 + 远程降伤 + 近战加范围 ==');
+try {
+  var K = Game.CONST;
+
+  // ---- 1. 调参开关就位，且 WEAPONS 表本体未被改动（冻结区保持原样）----
+  assert(K.WEAPON_ORBIT_R === 62 && K.WEAPON_ORBIT_SPEED === 0.25,
+         '轨道半径/转速就位（R=' + K.WEAPON_ORBIT_R + ' / 转速 ' + K.WEAPON_ORBIT_SPEED + ' rad/s）');
+  assert(K.RANGED_DMG_SCALE === 0.6 && K.MELEE_RANGE_SCALE === 1.25,
+         '远程伤害 ×0.6 / 近战范围 ×1.25 两个开关就位');
+  assert(Game.WEAPONS.pistol.damage === 10 && Game.WEAPONS.iron_sword.range === 66,
+         'WEAPONS 表本体数值未被改动（系数在 WeaponInstance 里应用，不是改表）');
+
+  var pl201 = new Game.Player('swordsman');
+  var pistol201 = Game.createWeapon('pistol', 1);
+  var sword201 = Game.createWeapon('iron_sword', 1);
+  var moon201 = Game.createWeapon('moon_sword', 1);
+  assert(Math.abs(pistol201.damage(pl201) - 10 * 0.6) < 1e-9, '手枪伤害被压到 10×0.6=6');
+  assert(Math.abs(sword201.damage(pl201) - 14) < 1e-9, '铁剑伤害不受远程系数影响（仍 14）');
+  assert(Math.abs(sword201.range() - 66 * 1.25) < 1e-9, '铁剑范围 66 → 82.5');
+  assert(Math.abs(moon201.range() - 86 * 1.25) < 1e-9, '赤月斩范围 86 → 107.5');
+  assert(Math.abs(pistol201.damage(pl201) - 6) < 1e-9 &&
+         Math.abs(Game.createWeapon('pistol', 3).damage(pl201) - 6 * 2) < 1e-9,
+         '远程系数与等级成长叠乘（Lv.3 手枪 6×2=12）');
+
+  // ---- 2. 轨道公式：均分、越界安全、武器数变化会重新均分 ----
+  assert(typeof Game.orbitSlot === 'function', 'Game.orbitSlot 是逻辑与渲染共用的唯一角度公式');
+  assert(Game.orbitSlot(0, 0) === 0 && Game.orbitSlot(0, 5) === 0 && Game.orbitSlot(-1, 0) === 0,
+         '武器数 ≤0 时角度退化为 0（不会越界，也不会除零）');
+  // 时间项会让每次调用之间有微差（测试桩里 performance.now 是 Date.now，误差量级 1e-3 rad），
+  // 所以这里比的是「相邻夹角差」而不是绝对值 —— 时间项在作差时被消掉。
+  var ang202 = [];
+  for (var k202 = 0; k202 < 4; k202++) ang202.push(Game.orbitSlot(4, k202));
+  var even202 = true;
+  for (var k202b = 1; k202b < 4; k202b++) {
+    if (Math.abs((ang202[k202b] - ang202[k202b - 1]) - Math.PI * 2 / 4) > 1e-3) even202 = false;
+  }
+  assert(even202, '4 把武器在轨道上均分（相邻夹角 ≈ 2π/4）');
+  // 单把武器也在转：基准相位为 0，位置落在半径 R 的圆上，不会叠在玩家身上
+  var one202 = Game.createWeapon('pistol', 1, 0);
+  var host202 = { weapons: [one202], x: 100, y: 100 };
+  var pt202 = one202.posAt(host202);
+  assert(Math.abs(Game.util.dist(pt202.x, pt202.y, 100, 100) - K.WEAPON_ORBIT_R) < 0.001,
+         '单把武器同样挂在半径 ' + K.WEAPON_ORBIT_R + ' 的轨道上');
+  assert(Math.abs(Game.orbitSlot(6, 1) - Game.orbitSlot(4, 1)) > 0.4,
+         '武器数变化会重新均分整条轨道（4 把 → 6 把，第 1 槽位置跟着动）');
+
+  // ---- 3. 6 把武器互不重叠、且都挂在同一圈上 ----
+  var s203 = Game.Systems.createState('campaign', 'swordsman', 777001);
+  var pl203 = s203.player;
+  for (var i203 = 1; i203 < K.MAX_WEAPONS; i203++) pl203.weapons.push(Game.createWeapon('pistol', 1, i203));
+  Game.Systems.normalizeSlots(pl203);
+  var pts203 = pl203.weapons.map(function (w) { return w.posAt(pl203); });
+  assert(pts203.every(function (pt) {
+    return Math.abs(Game.util.dist(pt.x, pt.y, pl203.x, pl203.y) - K.WEAPON_ORBIT_R) < 0.001;
+  }), '每把武器都挂在半径 ' + K.WEAPON_ORBIT_R + ' 的同一圈上');
+  var apart203 = true, minGap203 = Infinity;
+  for (var a203 = 0; a203 < pts203.length; a203++)
+    for (var b203 = a203 + 1; b203 < pts203.length; b203++) {
+      var g203 = Game.util.dist(pts203[a203].x, pts203[a203].y, pts203[b203].x, pts203[b203].y);
+      if (g203 < minGap203) minGap203 = g203;
+      if (g203 < 40) apart203 = false;
+    }
+  assert(apart203, '6 把武器在轨道上互不重叠（最近两把间距 ' + minGap203.toFixed(0) + 'px）');
+
+  // ---- 4. 武器从「轨道位置」出手，不是从玩家身上 ----
+  var s204 = Game.Systems.createState('campaign', 'swordsman', 777002);
+  var pl204 = s204.player;
+  s204.enemies.length = 0; s204.projectiles.length = 0;
+  var sw204 = pl204.weapons[0];
+  var far204 = atWeapon(sw204, pl204, 90, 'zombie', 1);   // 距武器 90px
+  far204.hp = 1e9;
+  s204.enemies.push(far204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(far204.hp < 1e9, '径向 90px 的敌人被命中（原射程 66 差 24px，靠 ×1.25 补上）');
+
+  // 玩家身后的敌人也打得着：武器绕到身前，反向 30px 处距武器 62+30=92px
+  var pp204 = sw204.posAt(pl204);
+  var ca204 = Math.cos(pp204.a), sa204 = Math.sin(pp204.a);
+  var back204 = new Game.Enemy('zombie', pl204.x - ca204 * 30, pl204.y - sa204 * 30, 1);
+  back204.hp = 1e9;
+  s204.enemies.length = 0;
+  s204.enemies.push(back204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(back204.hp < 1e9,
+         '玩家身后的敌人也打得着（武器在身前，反向 30px 处距武器 92px < 有效范围 97.5）');
+
+  // ---- 5. 击退方向从武器位置算，不是从玩家身上 ----
+  var s205 = Game.Systems.createState('campaign', 'swordsman', 777003);
+  var pl205 = s205.player;
+  s205.enemies.length = 0; s205.projectiles.length = 0;
+  var sw205 = pl205.weapons[0];
+  var pp205 = sw205.posAt(pl205);
+  var cr205 = Math.cos(pp205.a), sr205 = Math.sin(pp205.a);
+  var mid205 = new Game.Enemy('zombie', pl205.x + cr205 * 30, pl205.y + sr205 * 30, 1);
+  mid205.hp = 1e9;   // 夹在玩家与武器之间
+  s205.enemies.push(mid205);
+  sw205.cooldownRemaining = 0;
+  sw205.update(0.016, pl205, s205);
+  var kdot205 = mid205.knockbackX * cr205 + mid205.knockbackY * sr205;
+  assert(kdot205 < -10,
+         '击退方向从武器位置算：敌人被推回玩家这边（点积 ' + kdot205.toFixed(1) + '）');
+
+  // ---- 6. 只有主武器驱动玩家身上的动作与音效 ----
+  var n206 = 0;
+  var origHit206 = Game.Audio.hit;
+  var origShoot206 = Game.Audio.shoot;
+  Game.Audio.hit = function () { n206++; };
+  Game.Audio.shoot = function () { n206++; };
+  var s206 = Game.Systems.createState('campaign', 'swordsman', 777004);
+  var pl206 = s206.player;
+  s206.enemies.length = 0; s206.projectiles.length = 0;
+  pl206.playAttack = function () { n206++; };
+  var sub206 = new Game.WeaponInstance('moon_sword', 1, 1);   // 副武器
+  pl206.weapons.push(sub206);
+  s206.enemies.push(atWeapon(sub206, pl206, 40, 'zombie', 1));
+  sub206.cooldownRemaining = 0;
+  sub206.update(0.016, pl206, s206);
+  assert(n206 === 0, '副武器出手不打断玩家：不触发玩家动作、不播打击音（触发 ' + n206 + ' 次）');
+  n206 = 0;
+  var s206b = Game.Systems.createState('campaign', 'swordsman', 777005);
+  var pl206b = s206b.player;
+  pl206b.playAttack = function () { n206++; };
+  s206b.enemies.length = 0;
+  s206b.enemies.push(atWeapon(pl206b.weapons[0], pl206b, 40, 'zombie', 1));
+  pl206b.weapons[0].cooldownRemaining = 0;
+  pl206b.weapons[0].update(0.016, pl206b, s206b);
+  assert(n206 >= 1, '主武器出手仍触发玩家下劈动作（' + n206 + ' 次）');
+  Game.Audio.hit = origHit206;
+  Game.Audio.shoot = origShoot206;
+
+  // ---- 7. 多把武器各自打自己的目标，不是只有一把在动 ----
+  var s207 = Game.Systems.createState('campaign', 'swordsman', 777006);
+  var pl207 = s207.player;
+  s207.enemies.length = 0; s207.projectiles.length = 0;
+  pl207.weapons.push(Game.createWeapon('moon_sword', 1, 1));
+  pl207.weapons.push(Game.createWeapon('pistol', 1, 2));
+  Game.Systems.normalizeSlots(pl207);
+  pl207.weapons.forEach(function (w, i) {
+    var t = atWeapon(w, pl207, 40, i === 2 ? 'wizard' : 'zombie', 1);
+    t.hp = 1e9;
+    s207.enemies.push(t);
+  });
+  pl207.weapons.forEach(function (w) { w.cooldownRemaining = 0; });
+  var dealt207 = 0;
+  pl207.weapons.forEach(function (w) {
+    var b = pl207.damageDealt;
+    w.update(0.016, pl207, s207);
+    dealt207 += pl207.damageDealt - b;
+  });
+  assert(dealt207 > 0, '多把武器累计造成伤害（' + dealt207.toFixed(1) + '）');
+  assert(s207.enemies[0].hp < 1e9 && s207.enemies[1].hp < 1e9,
+         '两把近战武器各自打到了自己的敌人');
+  assert(s207.projectiles.length === 1, '远程副武器发射了自己的子弹（' + s207.projectiles.length + ' 发）');
+  assert(pl207.weapons.every(function (w) { return w.swingTime < 0.05; }),
+         '每把武器各自记录了出手时刻（渲染用来画出手余韵）');
+
+  // ---- 8. 挤掉旧武器后槽位重排，轨道不会歪 ----
+  var s208 = Game.Systems.createState('campaign', 'swordsman', 777007);
+  var pl208 = s208.player;
+  for (var i208 = 1; i208 < K.MAX_WEAPONS; i208++) pl208.weapons.push(Game.createWeapon('pistol', 1, i208));
+  Game.Systems.normalizeSlots(pl208);
+  assert(pl208.weapons.length === K.MAX_WEAPONS, '武器槽塞满');
+  var oldest208 = pl208.weapons[0].defId;
+  Game.Systems.applyChoice(s208, { kind: 'weapon', data: { weaponId: 'moon_sword' } });
+  assert(pl208.weapons.length === K.MAX_WEAPONS, '槽位上限不变');
+  assert(pl208.weapons.filter(function (w) { return w.defId === oldest208; }).length === 0,
+         '最旧的武器被挤掉（' + oldest208 + '）');
+  var slots208 = pl208.weapons.map(function (w) { return w.slot; }).join(',');
+  assert(slots208 === '0,1,2,3,4,5', '挤掉后槽位重排成 0..' + (K.MAX_WEAPONS - 1) + '（' + slots208 + '）');
+  // 重排后 6 把仍然互不重叠
+  var pts208 = pl208.weapons.map(function (w) { return w.posAt(pl208); });
+  var apart208 = true;
+  for (var a208 = 0; a208 < pts208.length; a208++)
+    for (var b208 = a208 + 1; b208 < pts208.length; b208++)
+      if (Game.util.dist(pts208[a208].x, pts208[a208].y, pts208[b208].x, pts208[b208].y) < 40) apart208 = false;
+  assert(apart208, '重排后 6 把武器仍然互不重叠');
+
+  // ---- 9. 存档回环：槽位由数组下标重建，老存档（无 slot 字段）也不会歪 ----
+  var s209 = Game.Systems.createState('campaign', 'swordsman', 777008);
+  var pl209 = s209.player;
+  pl209.weapons.push(Game.createWeapon('moon_sword', 3, 1));
+  pl209.weapons.push(Game.createWeapon('jade_crossbow', 2, 2));
+  Game.Systems.normalizeSlots(pl209);
+  var ids209 = pl209.weapons.map(function (w) { return w.defId; }).join(',');
+  var lvls209 = pl209.weapons.map(function (w) { return w.level; }).join(',');
+  var obj209 = Game.Systems.serialize(s209);
+  var gotSlots = obj209.player.weapons.filter(function (w) { return 'slot' in w; }).length;
+  assert(gotSlots === 0, '存档里不写 slot（下标就是唯一可信来源）');
+  var s209b = Game.Systems.deserialize(obj209);
+  var got209 = s209b.player.weapons.map(function (w) { return w.slot; }).join(',');
+  assert(got209 === '0,1,2', '存档回环后槽位按数组下标重建（' + got209 + '）');
+  assert(s209b.player.weapons.map(function (w) { return w.defId; }).join(',') === ids209,
+         '武器顺序不变（' + ids209 + '）');
+  assert(s209b.player.weapons.map(function (w) { return w.level; }).join(',') === lvls209,
+         '武器等级不变（' + lvls209 + '）');
+
+  // ---- 10. 面板如实显示系数，分解式对得上 ----
+  var s210x = Game.Systems.createState('campaign', 'archer', 777009);
+  var w210a = Game.createWeapon('pistol', 1, 0);
+  var w210b = Game.createWeapon('iron_sword', 1, 1);
+  s210x.player.weapons = [w210a, w210b];
+  var html210 = Game.UI.renderStatsHTML(s210x);
+  assert(html210.indexOf('× 远程 0.6') >= 0, '面板写出远程系数（本体 10 × 远程 0.6 才等于压过之后的伤害）');
+  assert(html210.indexOf('射程 82.5') >= 0, '面板显示近战有效射程（已含 ×1.25，不是表上的 66）');
+  assert(html210.indexOf('>' + w210a.damage(s210x.player).toFixed(2) + '<') >= 0,
+         '远程伤害栏的数字等于 WeaponInstance.damage() 算出的实际值');
+  assert(html210.indexOf('>' + w210b.damage(s210x.player).toFixed(2) + '<') >= 0,
+         '近战伤害栏的数字等于 WeaponInstance.damage()，不受远程系数影响');
+
+  // ---- 11. 渲染：每把武器画出自己的卫星，且不崩 ----
+  var s211 = Game.Systems.createState('campaign', 'swordsman', 777010);
+  var pl211 = s211.player;
+  pl211.weapons.push(Game.createWeapon('moon_sword', 2, 1));
+  pl211.weapons.push(Game.createWeapon('jade_crossbow', 3, 2));
+  Game.Systems.normalizeSlots(pl211);
+  assert(typeof Game.Renderer._drawOrbitWeapons === 'function', '渲染器有环绕武器绘制入口');
+  pl211.weapons.forEach(function (w) {
+    w.update(0.016, pl211, s211);   // 让逻辑先算好本帧位置
+    w.swingTime = 1;                // 移出挥砍余韵窗口，光晕半径固定为 11 便于断言
+  });
+  var ctx211 = Game.Renderer.ctx;
+  var arcs211 = [];
+  var origArc211 = ctx211.arc;
+  ctx211.arc = function () { arcs211.push([].slice.call(arguments)); };
+  Game.Renderer.render(s211, 0.016);
+  ctx211.arc = origArc211;
+  var satRings211 = arcs211.filter(function (a) {
+    if (Math.abs(a[2] - 11) > 0.5) return false;
+    for (var q211 = 0; q211 < pl211.weapons.length; q211++) {
+      var wq = pl211.weapons[q211];
+      if (Math.abs(a[0] - wq.x) < 1 && Math.abs(a[1] - wq.y) < 1) return true;
+    }
+    return false;
+  });
+  assert(satRings211.length === pl211.weapons.length,
+         '每把环绕武器都画出了自己的光晕圈（' + satRings211.length + ' 圈 / ' +
+         pl211.weapons.length + ' 把武器）');
+  // 每把武器的位置就是逻辑算好的那一个（不重算角度）
+  var allOnOrbit = arcs211.filter(function (a) {
+    return pl211.weapons.some(function (w) { return Math.abs(a[0] - w.x) < 1; });
+  }).length > 0;
+  assert(allOnOrbit, '卫星画在 WeaponInstance 本帧算好的 x/y 上');
+
+  // 没跑过 update 的武器没有位置，卫星要跳过而不是画半截
+  var s212 = Game.Systems.createState('campaign', 'swordsman', 777011);
+  s212.enemies.length = 0; s212.projectiles.length = 0;
+  Game.Renderer.render(s212, 0.016);
+  assert(true, '武器还没算过位置时渲染无异常（卫星跳过）');
+} catch (e) {
+  assert(false, '环绕武器/调参异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

@@ -42,9 +42,9 @@
       difficulty: 'normal',
       waveSeen: [],           // 本波已出过的卡 key（升级三选一 + 商店共用，startWave 重置）
     };
-    // 初始武器
+    // 初始武器（槽位 0 = 主武器，轨道最靠前的那个角度）
     var w = state.player.char.startWeapon;
-    state.player.weapons.push(Game.createWeapon(w, 1));
+    state.player.weapons.push(Game.createWeapon(w, 1, 0));
     // 回指：拾取物只拿到 player，但吸铁石要遍历整个 state.pickups
     state.player.state = state;
     return state;
@@ -541,9 +541,10 @@
     if (choice.kind === 'upgrade') {
       p.applyUpgrade(choice.data.apply);
     } else if (choice.kind === 'weapon') {
-      p.weapons.push(Game.createWeapon(choice.data.weaponId, 1));
+      p.weapons.push(Game.createWeapon(choice.data.weaponId, 1, p.weapons.length));
       // 槽位已满时挤掉最早加入的那把 —— Boss 奖励的专属武器允许替换旧武器
       if (p.weapons.length > CONST.MAX_WEAPONS) p.weapons.shift();
+      S.normalizeSlots(p);
     } else if (choice.kind === 'weaponUpgrade') {
       S.upgradeRandomWeapon(p);
     } else if (choice.kind === 'item') {
@@ -558,6 +559,12 @@
   S.upgradeRandomWeapon = function (p) {
     var notMax = p.weapons.filter(function (w) { return w.level < CONST.MAX_WEAPON_LEVEL; });
     if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
+  };
+
+  /** 槽位序号就是环绕轨道的角度（见 Game.orbitSlot）。增删武器后重排成 0..n-1，
+   *  否则挤掉一把武器后剩下的会各偏一段角度，整条轨道歪掉。 */
+  S.normalizeSlots = function (p) {
+    for (var i = 0; i < p.weapons.length; i++) p.weapons[i].slot = i;
   };
 
   /* ============================================================
@@ -672,7 +679,10 @@
     item.sold = true;
     shop.locked[index] = false; // 买掉了就不再需要锁定，避免残留标记污染下次商店
     if (item.type === 'item') p.applyItem(item.itemId, 1);
-    else if (item.type === 'weapon') p.weapons.push(Game.createWeapon(item.weaponId, 1));
+    else if (item.type === 'weapon') {
+      p.weapons.push(Game.createWeapon(item.weaponId, 1, p.weapons.length));
+      S.normalizeSlots(p);
+    }
     else if (item.type === 'weaponUpgrade') {
       S.upgradeRandomWeapon(p);
     }
@@ -787,8 +797,10 @@
     p.materials = obj.player.materials;
     for (var k in obj.player.stats) p.stats[k] = obj.player.stats[k];
     p.items = obj.player.items || {};
-    p.weapons = (obj.player.weapons || []).map(function (w) {
-      var wi = Game.createWeapon(w.defId, w.level);
+    // 槽位序号直接取数组下标，不信任存档里的 slot —— 老存档没有这个字段，
+    // 而且下标本来就是唯一可信来源。
+    p.weapons = (obj.player.weapons || []).map(function (w, i) {
+      var wi = Game.createWeapon(w.defId, w.level, i);
       wi.cooldownRemaining = w.cd || 0;
       return wi;
     });
