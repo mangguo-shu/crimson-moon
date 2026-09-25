@@ -40,16 +40,29 @@
 
       this._buildDebugPanel();
       this._bindPauseTouch();
+      this._statsFolded = false;
+      this._statsSig = '';
+      this._updatePanelInset();
+      var self = this;
+      window.addEventListener('resize', function () { self._updatePanelInset(); });
       console.log('[UI] 初始化完成');
     },
 
     /* ---------------- 面板显隐 ---------------- */
     _hideAll: function () {
-      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'stats', 'debug'];
+      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'debug'];
       for (var i = 0; i < ids.length; i++) el[ids[i]].classList.add('hidden');
       el.overlay.classList.add('hidden');
       el.hud.classList.add('hidden');
       el.btnPauseTouch.classList.add('hidden');
+      this._statsShow(false);
+    },
+
+    /** 人物面板显隐。用整体 className 写而不用 classList —— 测试 stub 里 classList
+     *  是 no-op，得让显隐状态能从 className 字符串读回来才好断言。 */
+    _statsShow: function (show) {
+      el.stats.className = 'stats-side' + (show ? '' : ' hidden') +
+                          (this._statsFolded ? ' folded' : '');
     },
 
     showScreen: function (name) {
@@ -57,16 +70,28 @@
       this._hideAll();
       switch (name) {
         case 'MENU': el.menu.classList.remove('hidden'); break;
-        case 'LEVEL_UP': el.levelup.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
-        case 'SHOP': el.shop.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
-        case 'PAUSED': el.pause.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
+        case 'LEVEL_UP':
+          el.levelup.classList.remove('hidden');
+          el.hud.classList.remove('hidden');
+          this._statsShow(true);      // 选卡时面板不用点开，就在旁边
+          break;
+        case 'SHOP':
+          el.shop.classList.remove('hidden');
+          el.hud.classList.remove('hidden');
+          this._statsShow(true);
+          break;
+        case 'PAUSED':
+          el.pause.classList.remove('hidden');
+          el.hud.classList.remove('hidden');
+          this._statsShow(true);
+          break;
         case 'GAME_OVER': el.gameover.classList.remove('hidden'); break;
         case 'VICTORY': el.victory.classList.remove('hidden'); break;
-        case 'STATS': el.stats.classList.remove('hidden'); el.hud.classList.remove('hidden'); break;
         case 'SETTINGS': el.settings.classList.remove('hidden'); break;
         case 'RECORDS': el.records.classList.remove('hidden'); break;
         case 'PLAYING':
           el.hud.classList.remove('hidden');
+          this._statsShow(true);
           if (Game.Input.touchMode) el.btnPauseTouch.classList.remove('hidden');
           break;
       }
@@ -162,17 +187,17 @@
                  '<span class="ws-lv">Lv' + w.level + '</span></div>';
       }
       el.weaponSlots.innerHTML = slots;
+
+      // 人物面板与 HUD 同一帧刷新；内容没变就跳过重建（见 renderStats 的签名判断），
+      // 这样玩家滚动面板时不会被逐帧重绘打断。
+      this.renderStats(state);
     },
 
     /* ---------------- 升级三选一 ---------------- */
     renderLevelUp: function (choices, title) {
       // title 可选：Boss 战利品复用同一面板但用不同标题。
-      // 「查看角色面板」盖在这张面板之上，关掉就回到这里 —— 卡片内容不清空，
-      // 所以不会丢掉当前这一轮的三选一。
-      var html = '<div class="lu-head">' +
-        '<h2>' + (title || '升级！选择一项') + '</h2>' +
-        '<button class="btn ghost" onclick="Game.Game.openStats()">查看角色面板</button>' +
-        '</div><div class="card-row">';
+      // 人物面板常驻在右侧，选卡时不用点开，所以这里不再放「查看角色面板」按钮。
+      var html = '<h2>' + (title || '升级！选择一项') + '</h2><div class="card-row">';
       for (var i = 0; i < choices.length; i++) {
         var c = choices[i];
         var rarity = 'common', name = '', desc = '';
@@ -279,18 +304,36 @@
       return html;
     },
 
-    /** 打开面板。from 记录关回去该回哪张面板（升级面板的卡片不能丢）。 */
-    showStats: function (state, from) {
-      this._statsFrom = from || 'PLAYING';
-      el.stats.innerHTML = '<h2>角色面板</h2>' + this.renderStatsHTML(state) +
-        '<button class="btn primary" onclick="Game.Game.closeStats()">关闭</button>';
-      el.stats.className = 'panel panel-top';
-      this.showScreen('STATS');
+    /** 人物面板内容。它常驻在右侧、不需要点开，所以这里只管画内容，
+     *  不冻结游戏。签名没变就跳过重建 —— 面板每帧都被 updateHUD 调，
+     *  全量重建会让玩家滚动时滚动位置被复位。 */
+    renderStats: function (state) {
+      var html = this.renderStatsHTML(state);
+      if (html === this._statsSig) return false;
+      this._statsSig = html;
+      el.stats.innerHTML =
+        '<button id="stats-fold" class="stats-fold" aria-label="收起或展开人物面板"' +
+        ' onclick="Game.UI.toggleStatsFold()">' + (this._statsFolded ? '▶' : '◀') + '</button>' +
+        '<h2>人物面板</h2>' + html;
+      return true;
     },
-    closeStats: function () {
-      var from = this._statsFrom || 'PLAYING';
-      this.showScreen(from);
-      if (from === 'PAUSED') this.renderPause();
+
+    /** 收起/展开侧栏。用 JS 标志而不是读 classList —— 测试 stub 里 classList 是
+     *  no-op，读不到真实状态，用标志位测试才断言得到。 */
+    toggleStatsFold: function () {
+      this._statsFolded = !this._statsFolded;
+      this._statsShow(true);
+      this._updatePanelInset();   // 收起来后相机把让出去的画面收回来
+      var btn = document.getElementById('stats-fold');
+      if (btn) btn.textContent = this._statsFolded ? '▶' : '◀';
+      return this._statsFolded;
+    },
+
+    /** 把面板实际挡住的可视宽度写进相机，相机据此让位（否则角色会走进面板底下、
+     *  面板右边的敌人看不见）。CSS 里 width=min(262px,34vw)，收起后只剩 26px 露出。 */
+    _updatePanelInset: function () {
+      var full = Math.min(262, window.innerWidth * 0.34);
+      Game.Renderer.setViewInset(this._statsFolded ? 26 : full);
     },
 
     /* ---------------- 商店 ---------------- */
@@ -324,7 +367,6 @@
       el.pause.innerHTML =
         '<h2>已暂停</h2>' +
         '<button class="btn primary" onclick="Game.Game.resume()">继续</button>' +
-        '<button class="btn" onclick="Game.Game.openStats()">查看角色面板</button>' +
         '<button class="btn" onclick="Game.Game.saveGame()">保存游戏</button>' +
         '<button class="btn" onclick="Game.Game.restartRun()">重新开始</button>' +
         '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>';

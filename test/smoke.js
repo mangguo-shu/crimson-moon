@@ -2166,44 +2166,96 @@ try {
   var st84 = Game.Systems.createState('campaign', 'swordsman', 65);
   assert(Game.UI.renderStatsHTML(st84).indexOf('还没有道具') >= 0, '无道具时显示占位文案');
 
-  // —— 选卡面板上有入口，且关掉后三选一不丢
+  // —— 选卡卡片里不再塞入口按钮（面板常驻右侧，不用点开）
   Game.UI.renderLevelUp([{ kind: 'weaponUpgrade', data: {} }]);
   var lu85 = document.getElementById('levelup').innerHTML;
-  assert(lu85.indexOf('查看角色面板') >= 0, '选卡面板上有「查看角色面板」入口');
   assert(lu85.indexOf('最高 ' + MAXLVL80 + ' 星') >= 0, '武器强化说明的上限跟随常量');
+  assert(lu85.indexOf('查看角色面板') < 0, '选卡卡片里不再放「查看角色面板」按钮');
 
-  // —— 开关面板：冻结世界、返回原面板、卡片内容不丢
+  // —— 常驻侧栏：内容画进侧栏即可，不切界面、不冻结世界
   var st86 = Game.Systems.createState('campaign', 'swordsman', 66);
   st86.screen = 'PLAYING';
   Game.state = st86;
-  Game.Game.openStats();
-  assert(st86.screen === 'PAUSED', '打开面板会冻结世界（PLAYING → PAUSED，看面板不该被打死）');
-  assert(Game.uiScreen === 'STATS', '当前界面切到角色面板');
-  assert(document.getElementById('stats').innerHTML.indexOf('角色面板') >= 0, '面板已渲染');
-  Game.Game.closeStats();
-  assert(st86.screen === 'PLAYING', '关闭面板后世界恢复（PAUSED → PLAYING）');
-  assert(Game.uiScreen === 'PLAYING', '回到游戏中界面');
+  var uiBefore = Game.uiScreen;
+  Game.UI.renderStats(st86);
+  assert(document.getElementById('stats').innerHTML.indexOf('人物面板') >= 0,
+         '面板内容已渲染进侧栏');
+  assert(st86.screen === 'PLAYING', '看面板不冻结世界');
+  assert(Game.uiScreen === uiBefore, '渲染面板不切换界面状态（不需要点开）');
 
+  // —— 四种对局界面下面板都在（选卡时尤其重要：不必关掉卡片看数据）
+  ['PLAYING', 'LEVEL_UP', 'SHOP', 'PAUSED'].forEach(function (scr) {
+    Game.UI.showScreen(scr);
+    var cn = document.getElementById('stats').className;
+    assert(cn.indexOf('stats-side') >= 0 && cn.indexOf('hidden') < 0,
+           scr + ' 下人物面板常驻可见');
+  });
+  ['MENU', 'GAME_OVER', 'VICTORY'].forEach(function (scr) {
+    Game.UI.showScreen(scr);
+    assert(document.getElementById('stats').className.indexOf('hidden') >= 0,
+           scr + ' 下人物面板收起');
+  });
+
+  // —— 收起/展开把手
+  Game.UI.showScreen('PLAYING');
+  Game.UI.toggleStatsFold();
+  assert(document.getElementById('stats').className.indexOf('folded') >= 0, '点把手后侧栏收起');
+  assert(document.getElementById('stats-fold').textContent === '▶', '把手箭头跟着翻向另一边');
+  Game.UI.toggleStatsFold();
+  var cn86 = document.getElementById('stats').className;
+  assert(cn86.indexOf('folded') < 0 && cn86.indexOf('hidden') < 0, '再点一次展开，且仍然可见');
+
+  // —— 相机给面板让位：挡住多少就让多少，收起来要还给玩家
+  var v8 = Game.Renderer.view;
+  Game.UI._updatePanelInset();
+  assert(Math.abs(Game.Renderer.sideInset - 262 / v8.scale) < 1e-9,
+         '展开时相机让出的宽度 = 面板宽度（逻辑 ' + Game.Renderer.sideInset.toFixed(0) + '）');
+  Game.UI.toggleStatsFold();
+  assert(Game.Renderer.sideInset === 26, '收起时相机只让出 26px 窄条，画面还给玩家');
+  Game.UI.toggleStatsFold();
+
+  var camSave = { x: Game.Renderer.camera.x, y: Game.Renderer.camera.y };
+  Game.Renderer.view = { w: 1200, h: 720, scale: 1, dpr: 1 };
+  Game.Renderer.setViewInset(300);
+  Game.Renderer.updateCamera({ x: 900, y: 360 });
+  assert(Math.abs((900 - Game.Renderer.camera.x) - (1200 - 300) / 2) < 1e-9,
+         '让位后角色落在可视区中央，不会被面板挡住');
+  Game.Renderer.setViewInset(0);
+  Game.Renderer.updateCamera({ x: 900, y: 360 });
+  assert(Math.abs((900 - Game.Renderer.camera.x) - 600) < 1e-9,
+         '面板宽度为 0 时相机行为与旧版完全一致');
+  Game.Renderer.view = v8;
+  Game.Renderer.camera.x = camSave.x;
+  Game.Renderer.camera.y = camSave.y;
+
+  // —— 内容没变就别重建：面板每帧都被 updateHUD 调，全量重建会打断玩家滚动
   var st87 = Game.Systems.createState('campaign', 'swordsman', 67);
-  Game.Systems.rollLevelUpChoices(st87);
-  st87.screen = 'LEVEL_UP';
-  Game.state = st87;
-  Game.UI.renderLevelUp(st87.levelUpChoices);
-  var before87 = document.getElementById('levelup').innerHTML;
-  Game.Game.openStats();
-  assert(st87.screen === 'LEVEL_UP', '升级面板上打开不会误切世界状态（本就冻结）');
-  Game.Game.closeStats();
-  assert(Game.uiScreen === 'LEVEL_UP', '关闭后回到升级面板');
-  assert(document.getElementById('levelup').innerHTML === before87,
-         '关闭面板后三选一原样保留（内容完全一致）');
+  Game.UI.renderStats(st87);
+  var sigA = document.getElementById('stats').innerHTML;
+  assert(Game.UI.renderStats(st87) === false, '内容没变时跳过重建（返回 false）');
+  st87.player.stats.hp -= 10;
+  assert(Game.UI.renderStats(st87) === true, '血量变了就重建');
+  assert(document.getElementById('stats').innerHTML !== sigA, '重建后面板内容已更新');
 
-  // 暂停面板也有入口
-  var st88 = Game.Systems.createState('campaign', 'swordsman', 68);
-  st88.screen = 'PAUSED';
+  // —— 常驻面板刷新不会动到选卡卡片
+  var st88 = Game.Systems.createState('campaign', 'archer', 68);
+  Game.Systems.rollLevelUpChoices(st88);
+  st88.screen = 'LEVEL_UP';
   Game.state = st88;
+  Game.UI.renderLevelUp(st88.levelUpChoices);
+  var before88 = document.getElementById('levelup').innerHTML;
+  Game.UI.showScreen('LEVEL_UP');
+  Game.UI.renderStats(st88);
+  assert(document.getElementById('levelup').innerHTML === before88,
+         '常驻面板刷新后三选一原样保留（内容完全一致）');
+
+  // —— 暂停面板也不再需要入口按钮
+  var st89 = Game.Systems.createState('campaign', 'swordsman', 69);
+  st89.screen = 'PAUSED';
+  Game.state = st89;
   Game.UI.renderPause();
-  assert(document.getElementById('pause').innerHTML.indexOf('查看角色面板') >= 0,
-         '暂停面板上也能查看角色面板');
+  assert(document.getElementById('pause').innerHTML.indexOf('查看角色面板') < 0,
+         '暂停面板不再放「查看角色面板」按钮');
 
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);

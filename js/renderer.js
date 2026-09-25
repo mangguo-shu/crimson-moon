@@ -138,12 +138,23 @@
   };
 
   /* ---------------- 相机 ---------------- */
+  /* 右侧常驻人物面板挡住的可视宽度（逻辑单位）。ui.js 按面板实际宽度写入；
+     相机把这块让出来，否则角色会走到面板底下、面板右边的敌人看不见。
+     上限 40%：面板再宽也不该吃掉超过四成画面。 */
+  R.sideInset = 0;
+  R.setViewInset = function (cssPx) {
+    var v = this.view;
+    if (!v || !v.scale || cssPx <= 0) { this.sideInset = 0; return; }
+    this.sideInset = Math.min(cssPx / v.scale, v.w * 0.4);
+  };
+
   R.updateCamera = function (player) {
     var vw = this.view.w, vh = this.view.h;
-    var cx = player.x - vw / 2;
+    var vx = vw - (this.sideInset || 0);      // 面板左侧的可视宽
+    var cx = player.x - vx / 2;               // 角色落在可视区中央
     var cy = player.y - vh / 2;
-    if (CONST.WORLD_W > vw) cx = util.clamp(cx, 0, CONST.WORLD_W - vw);
-    else cx = (CONST.WORLD_W - vw) / 2;
+    if (CONST.WORLD_W > vx) cx = util.clamp(cx, 0, CONST.WORLD_W - vx);
+    else cx = (CONST.WORLD_W - vx) / 2;
     if (CONST.WORLD_H > vh) cy = util.clamp(cy, 0, CONST.WORLD_H - vh);
     else cy = (CONST.WORLD_H - vh) / 2;
     this.camera.x = cx;
