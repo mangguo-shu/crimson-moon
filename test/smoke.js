@@ -183,10 +183,11 @@ const st4 = Game.Systems.createState('campaign', 'swordsman', 6);
 Game.Systems.startWave(st4, 1);
 const p4 = st4.player;
 p4.weapons.push(Game.createWeapon('pistol', 1));
-const far = new Game.Enemy('wizard', p4.x + 300, p4.y, 1);
+const pistol = p4.weapons[1];
+// 武器已改为固定朝外打，敌人必须摆在「武器外侧」的朝外扇形里才会被索到
+const far = atWeapon(pistol, p4, 300, 'wizard', 1);
 far.hp = 1000;
 st4.enemies.push(far);
-const pistol = p4.weapons[1];
 pistol.update(0.1, p4, st4); // 触发远程射击
 assert(st4.projectiles.length > 0, '远程武器发射投射物');
 const hpBefore = far.hp;
@@ -391,10 +392,11 @@ try {
   // ⑥ 集成：真实战斗路径必须触发动作，而不是只有直接调 playAttack 才动
   st10.enemies.length = 0;
   pl.attackAnim = null;
-  var target = new Game.Enemy('zombie', pl.x + 20, pl.y, 1); // 贴脸 → 在近战范围内
+  var sword = new Game.WeaponInstance('iron_sword', 1);
+  // 武器已改为固定朝外打：敌人要摆在「武器外侧」的朝外扇形里才算命中
+  var target = atWeapon(sword, pl, 40, 'zombie', 1);
   target.hp = target.maxHp = 1e9;                            // 打不死，便于断言
   st10.enemies.push(target);
-  var sword = new Game.WeaponInstance('iron_sword', 1);
   sword.cooldownRemaining = 0;
   sword.update(0.016, pl, st10);
   assert(pl.attackAnim !== null && pl.attackAnim.kind === 'melee',
@@ -1773,7 +1775,8 @@ try {
   var st56 = Game.Systems.createState('campaign', 'archer', 909);
   Game.state = st56;
   st56.player = p56; st56.enemies = []; st56.projectiles = [];
-  st56.enemies.push(new Game.Enemy('zombie', p56.x + 120, p56.y, 1));
+  // 武器固定朝外打：敌人摆在武器外侧，子弹才会打出去（朝外扇形内才有目标）
+  st56.enemies.push(atWeapon(p56.weapons[0], p56, 120, 'zombie', 1));
   p56.weapons[0].cooldownRemaining = 0;
   p56.weapons[0].update(0.016, p56, st56);
   for (var g56 = 0; g56 < 30; g56++) Game.Systems.updateProjectiles(st56, 0.016);
@@ -1797,7 +1800,7 @@ try {
   p57.weapons = [Game.createWeapon('jade_crossbow', 1)];
   var st57 = Game.Systems.createState('campaign', 'crossbowman', 4242);
   Game.state = st57; st57.player = p57; st57.enemies = []; st57.projectiles = [];
-  var e57 = new Game.Enemy('zombie', p57.x + 80, p57.y, 1);
+  var e57 = atWeapon(p57.weapons[0], p57, 80, 'zombie', 1);
   e57.hp = 1e9;
   st57.enemies.push(e57);
   p57.weapons[0].cooldownRemaining = 0;
@@ -1810,14 +1813,16 @@ try {
          '已构造到隧穿场景：终点离敌人 ' + gap57.toFixed(0) + 'px，大于判定半径 ' + rad57 + 'px');
   assert(u48.sweptHit(bp57.px, bp57.py, bp57.x, bp57.y, e57.x, e57.y, rad57) === true,
          '同一条轨迹的扫掠判定命中');
-  assert(bp57.px < bp57.x, 'px/py 记录的是本帧位移前位置（' + bp57.px.toFixed(0) + ' → ' + bp57.x.toFixed(0) + '）');
+  var moved57 = u48.dist(bp57.px, bp57.py, bp57.x, bp57.y);
+  assert(Math.abs(moved57 - 780 * 0.2) < 1,
+         'px/py 记录的是本帧位移前位置（位移 ' + moved57.toFixed(0) + 'px ≈ 780 × 0.2）');
 
   // 走真实路径：同一场景交给 updateProjectiles，敌人确实掉血、子弹确实被清除
   var p58 = new Game.Player('crossbowman');
   p58.weapons = [Game.createWeapon('jade_crossbow', 1)];
   var st58 = Game.Systems.createState('campaign', 'crossbowman', 4242);
   Game.state = st58; st58.player = p58; st58.enemies = []; st58.projectiles = [];
-  var e58 = new Game.Enemy('zombie', p58.x + 80, p58.y, 1);
+  var e58 = atWeapon(p58.weapons[0], p58, 80, 'zombie', 1);
   e58.hp = 1e9;
   st58.enemies.push(e58);
   p58.weapons[0].cooldownRemaining = 0;
@@ -1845,10 +1850,11 @@ try {
   p60.weapons = [Game.createWeapon('pistol', 1)];
   var st60 = Game.Systems.createState('campaign', 'archer', 666);
   Game.state = st60; st60.player = p60; st60.enemies = []; st60.projectiles = [];
-  // 环绕后子弹从武器所在的轨道位置出膛，「贴脸」要按武器位置摆敌人
+  // 环绕后子弹从武器所在的轨道位置出膛，「贴脸」要按武器位置摆敌人，
+  // 且必须落在朝外扇形里 —— 固定在出膛距离（玩家半径+6 = 20px）上，
+  // 子弹正好出生在敌人身上。
   var w60 = p60.weapons[0];
-  var pp60 = w60.posAt(p60);
-  var e60 = new Game.Enemy('zombie', pp60.x + 10, pp60.y, 1);
+  var e60 = atWeapon(w60, p60, 20, 'zombie', 1);
   e60.hp = 1e9;
   st60.enemies.push(e60);
   w60.cooldownRemaining = 0;
@@ -2623,21 +2629,39 @@ try {
          '武器数 ≤0 时角度退化为 0（不会越界，也不会除零）');
   // 时间项会让每次调用之间有微差（测试桩里 performance.now 是 Date.now，误差量级 1e-3 rad），
   // 所以这里比的是「相邻夹角差」而不是绝对值 —— 时间项在作差时被消掉。
+  // 相邻角度差要走 wrap：orbitSlot 把角度压回 [-π, π]，跨 ±π 的相邻槽
+  // 直接相减会读成 -2π，而实际上它们是紧挨着的。
+  var wrapDiff = function (a, b) {
+    var d = (a - b) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
   var ang202 = [];
   for (var k202 = 0; k202 < 4; k202++) ang202.push(Game.orbitSlot(4, k202));
   var even202 = true;
   for (var k202b = 1; k202b < 4; k202b++) {
-    if (Math.abs((ang202[k202b] - ang202[k202b - 1]) - Math.PI * 2 / 4) > 1e-3) even202 = false;
+    if (Math.abs(wrapDiff(ang202[k202b], ang202[k202b - 1]) - Math.PI * 2 / 4) > 1e-3) even202 = false;
   }
   assert(even202, '4 把武器在轨道上均分（相邻夹角 ≈ 2π/4）');
+  // 返回值必须在 [-π, π] 内：angDiff 拿去做 (a-b)%2π 时，角度越大 double 精度丢得越狠，
+  // 一旦返回 2π 量级的值，索敌就永远「背对」敌人，一刀砍不出去
+  var rng202 = true;
+  for (var k202c = 0; k202c < 8; k202c++) {
+    var v202 = Game.orbitSlot(k202c + 1, 0);
+    if (v202 < -Math.PI - 1e-9 || v202 > Math.PI + 1e-9) rng202 = false;
+  }
+  assert(rng202, 'orbitSlot 返回值归一化到 [-π, π]（角度差取模的前提）');
   // 单把武器也在转：基准相位为 0，位置落在半径 R 的圆上，不会叠在玩家身上
   var one202 = Game.createWeapon('pistol', 1, 0);
   var host202 = { weapons: [one202], x: 100, y: 100 };
   var pt202 = one202.posAt(host202);
   assert(Math.abs(Game.util.dist(pt202.x, pt202.y, 100, 100) - K.WEAPON_ORBIT_R) < 0.001,
          '单把武器同样挂在半径 ' + K.WEAPON_ORBIT_R + ' 的轨道上');
-  assert(Math.abs(Game.orbitSlot(6, 1) - Game.orbitSlot(4, 1)) > 0.4,
-         '武器数变化会重新均分整条轨道（4 把 → 6 把，第 1 槽位置跟着动）');
+  // 4 把时槽 1 在 π/2、6 把时在 π/3，位移 π/6。取绝对值：wrap 到 [-π, π] 后
+  // 朝向哪边是相位决定的，位移量才是「重新均分」这件事本身。
+  assert(Math.abs(Math.abs(wrapDiff(Game.orbitSlot(6, 1), Game.orbitSlot(4, 1))) - Math.PI / 6) < 1e-3,
+         '武器数变化会重新均分整条轨道（4 把 → 6 把，第 1 槽位移 π/6）');
 
   // ---- 3. 6 把武器互不重叠、且都挂在同一圈上 ----
   var s203 = Game.Systems.createState('campaign', 'swordsman', 777001);
@@ -2669,33 +2693,56 @@ try {
   sw204.update(0.016, pl204, s204);
   assert(far204.hp < 1e9, '径向 90px 的敌人被命中（原射程 66 差 24px，靠 ×1.25 补上）');
 
-  // 玩家身后的敌人也打得着：武器绕到身前，反向 30px 处距武器 62+30=92px
+  // 反过来：武器另一侧（玩家身后）的敌人打不着 —— 固定朝外打，只清自己的朝外扇形
   var pp204 = sw204.posAt(pl204);
   var ca204 = Math.cos(pp204.a), sa204 = Math.sin(pp204.a);
   var back204 = new Game.Enemy('zombie', pl204.x - ca204 * 30, pl204.y - sa204 * 30, 1);
   back204.hp = 1e9;
   s204.enemies.length = 0;
   s204.enemies.push(back204);
+  var swBefore204 = sw204.swingTime;
   sw204.cooldownRemaining = 0;
   sw204.update(0.016, pl204, s204);
-  assert(back204.hp < 1e9,
-         '玩家身后的敌人也打得着（武器在身前，反向 30px 处距武器 92px < 有效范围 97.5）');
+  assert(back204.hp === 1e9, '武器另一侧的敌人打不着：固定朝外打，只清朝外扇形');
+  assert(Math.abs(sw204.swingTime - (swBefore204 + 0.016)) < 1e-9,
+         '扇形里没有敌人就不空挥（余韵计时没被重置）');
 
-  // ---- 5. 击退方向从武器位置算，不是从玩家身上 ----
+  // 扇形边界：朝外偏 25° 的敌人打得着，偏 50° 的够不着
+  function atSide(owner, w, dist, phiDeg) {
+    var pp = w.posAt(owner);
+    var R = K.WEAPON_ORBIT_R;
+    var ca = Math.cos(pp.a + phiDeg * Math.PI / 180), sa = Math.sin(pp.a + phiDeg * Math.PI / 180);
+    return new Game.Enemy('zombie', owner.x + ca * dist, owner.y + sa * dist, 1);
+  }
+  var sideIn204 = atSide(pl204, sw204, 95, 25);
+  sideIn204.hp = 1e9;
+  s204.enemies.length = 0; s204.enemies.push(sideIn204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(sideIn204.hp < 1e9, '朝外偏 25° 的敌人在扇形内，被命中');
+  var sideOut204 = atSide(pl204, sw204, 95, 50);
+  sideOut204.hp = 1e9;
+  s204.enemies.length = 0; s204.enemies.push(sideOut204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(sideOut204.hp === 1e9, '朝外偏 50° 的敌人出扇形，打不着');
+
+  // ---- 5. 击退方向从武器位置指向敌人，不是从玩家身上 ----
   var s205 = Game.Systems.createState('campaign', 'swordsman', 777003);
   var pl205 = s205.player;
   s205.enemies.length = 0; s205.projectiles.length = 0;
   var sw205 = pl205.weapons[0];
-  var pp205 = sw205.posAt(pl205);
-  var cr205 = Math.cos(pp205.a), sr205 = Math.sin(pp205.a);
-  var mid205 = new Game.Enemy('zombie', pl205.x + cr205 * 30, pl205.y + sr205 * 30, 1);
-  mid205.hp = 1e9;   // 夹在玩家与武器之间
-  s205.enemies.push(mid205);
+  // 偏移 25° 摆敌人：若击退从玩家身上算，方向会偏成另一个角，点积对不上 60
+  var kb205 = atSide(pl205, sw205, 95, 25);
+  kb205.hp = 1e9;
+  s205.enemies.push(kb205);
   sw205.cooldownRemaining = 0;
   sw205.update(0.016, pl205, s205);
-  var kdot205 = mid205.knockbackX * cr205 + mid205.knockbackY * sr205;
-  assert(kdot205 < -10,
-         '击退方向从武器位置算：敌人被推回玩家这边（点积 ' + kdot205.toFixed(1) + '）');
+  var dx205 = kb205.x - sw205.x, dy205 = kb205.y - sw205.y;
+  var dl205 = Math.sqrt(dx205 * dx205 + dy205 * dy205);
+  var kdot205 = (kb205.knockbackX * dx205 + kb205.knockbackY * dy205) / dl205;
+  assert(Math.abs(kdot205 - 60) < 0.01,
+         '击退方向从武器位置指向敌人（沿该方向的点积 = knockback 60，实得 ' + kdot205.toFixed(2) + '）');
 
   // ---- 6. 只有主武器驱动玩家身上的动作与音效 ----
   var n206 = 0;
@@ -2853,7 +2900,7 @@ try {
   Game.Renderer.render(s212, 0.016);
   assert(true, '武器还没算过位置时渲染无异常（卫星跳过）');
 
-  // ---- 12. 武器和刀光要对得上：扇形是自己的，剑身指向敌人 ----
+  // ---- 12. 武器和刀光要对得上：扇形是自己的，朝向固定朝外 ----
   var slash213 = null;
   var origSlash213 = Game.FX.slash;
   Game.FX.slash = function (x, y, angle, range, color, arc) {
@@ -2879,16 +2926,25 @@ try {
   assert(slash213 &&
          Math.abs(slash213.x - wm213.x) < 0.001 && Math.abs(slash213.y - wm213.y) < 0.001,
          '刀光从武器所在的轨道位置发出，不是从玩家身上');
-  assert(wm213.lastAim === Game.util.angleTo(wm213.x, wm213.y, s213.enemies[0].x, s213.enemies[0].y),
-         '武器记录了出手朝向（渲染挥砍时让剑身指向敌人，不是沿径向朝外）');
+  // 固定朝外打：刀光朝向 = 剑身朝向 = 轨道径向，不再临时转向敌人
+  assert(Math.abs(slash213.angle - wm213.aimAngle) < 1e-9,
+         '刀光朝向 = 武器自己的朝外角度（和剑身同向，不临时转向敌人）');
+  assert(Math.abs(wm213.aimAngle - Game.util.angleTo(pl213.x, pl213.y, wm213.x, wm213.y)) < 1e-6,
+         '武器 aimAngle 是「玩家指向武器」的朝外方向（剑身与刀光都沿它）');
 
-  // 静止时剑身沿径向朝外：没出手的武器 lastAim 不应影响显示
+  // 没出手的武器也照样朝外站好：朝向只由轨道决定，不记出手方向
   var s214 = Game.Systems.createState('campaign', 'swordsman', 777013);
   var pl214 = s214.player;
   s214.enemies.length = 0;
-  pl214.weapons[0].update(0.016, pl214, s214);   // 无敌人，不出手
-  assert(pl214.weapons[0].lastAim === 0 && pl214.weapons[0].swingTime > 0,
-         '没出手的武器保持初始朝向，只累积余韵计时');
+  var w214 = pl214.weapons[0];
+  var swings214 = 0;
+  Game.FX.slash = function () { swings214++; };
+  w214.update(0.016, pl214, s214);   // 无敌人，不出手
+  Game.FX.slash = origSlash213;
+  assert(Math.abs(w214.aimAngle - Game.util.angleTo(pl214.x, pl214.y, w214.x, w214.y)) < 1e-6,
+         '没出手的武器朝向仍由轨道决定（恒定朝外，不再记录出手朝向）');
+  assert(w214.swingTime > 0 && swings214 === 0,
+         '扇形里没有敌人就空转：只累积余韵计时，不挥砍');
 } catch (e) {
   assert(false, '环绕武器/调参异常: ' + e.stack);
 }

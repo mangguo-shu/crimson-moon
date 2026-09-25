@@ -533,14 +533,15 @@
         fs(ctx, tint(c.accent), O, 1);
       },
       arms: function (ctx, p, c, armAng, tint, O) {
-        // 前臂 + 持剑手（绕肩关节摆动，驱动攻击动作）
+        // 前臂（徒手）：武器已改成环绕轨道的卫星，手上再画一把会和轨道上的
+        // 那把重叠，画面读不出来 —— 用户 2026-09-25 明确点名去掉。
+        // 手臂仍随攻击动作摆动，当作运功下劈的姿态。
         ctx.save();
         ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
         ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.6; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
         ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
         fs(ctx, tint(c.skin), O, 1.2);
-        R._drawSword(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#cfe0ea');
         ctx.restore();
       },
     },
@@ -593,13 +594,13 @@
         ctx.restore();
       },
       arms: function (ctx, p, c, armAng, tint, O) {
+        // 徒手：弩也挪到环绕轨道上去了，手上不再重复画一把
         ctx.save();
         ctx.translate(3, -2); ctx.rotate(armAng); ctx.translate(-3, 2);
         ctx.strokeStyle = tint(c.skin); ctx.lineWidth = 3.4; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6.5, -9); ctx.stroke();
         ctx.beginPath(); ctx.arc(6.8, -9.6, 2.2, 0, TAU);
         fs(ctx, tint(c.skin), O, 1.2);
-        R._drawCrossbow(ctx, 7, -10, p.weapons.length > 0 ? p.weapons[0].def.color : '#4fbfa0');
         ctx.restore();
       },
     },
@@ -827,9 +828,9 @@
       // 出手余韵：挥砍瞬间向外刷一道弧光，每把武器都有独立反馈
       var sw = (w.swingTime || 0);
       var swinging = sw >= 0 && sw < 0.22;
-      // 挥砍时剑身指向敌人，静止时沿径向朝外 —— 否则刀光朝敌人、
-      // 剑尖朝另一个方向，动作和特效对不上。
-      var rot = (swinging && w.lastAim !== undefined) ? w.lastAim : w.aimAngle;
+      // 剑身永远沿径向朝外 —— 和「固定朝外打」的出手方向一致，
+      // 所以攻击时武器和刀光是同一个方向，不需要临时转向。
+      var rot = w.aimAngle;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.30 + Math.sin(now * 0.004 + i * 1.3) * 0.09;

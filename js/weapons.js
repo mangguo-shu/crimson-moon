@@ -14,15 +14,31 @@
 
   function fx() { return Game.FX; }
 
+  /** 两角之差，wrap 到 [0, π]。环绕武器固定朝外打，索敌要按角度过滤。 */
+  function angDiff(a, b) {
+    return Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+  }
+
   /* ---------------- 环绕轨道 ----------------
    * 角度的唯一出处。渲染侧画卫星图标时调它取同一个角，不然逻辑在打那边、
    * 图标在另一边飘，一眼穿帮。index 取武器在 player.weapons 里的序号，
    * count 取当前武器数 —— 新拿一把武器整条轨道会重新均分，旧的不用记位置。
    * 慢速自转（WEAPON_ORBIT_SPEED）让它活起来；不用绝对角度，
-   * 因此存档里不需要存轨道位置。 */
+   * 因此存档里不需要存轨道位置。
+   *
+   * 返回值必须归一化到 [-π, π]：cos/sin 不在乎角度大小，但「角度差取模」在乎。
+   * 拿 Date.now() 量级的原始角度（~1e8 rad）去做 (a - b) % 2π，double 精度全丢，
+   * 结果不是差值而是随机垃圾 —— 表现为武器永远「背对」敌人、一刀砍不出去。
+   * 先在「秒」这个量级对整圈周期取模，再压到 [-π, π]。 */
   Game.orbitSlot = function (count, index) {
     if (!count || count < 1) return 0;
-    return (index / count) * Math.PI * 2 + Game.CONST.WEAPON_ORBIT_SPEED * performance.now() * 0.001;
+    var S = Game.CONST;
+    var period = Math.PI * 2 / S.WEAPON_ORBIT_SPEED;   // 整圈多少秒
+    var a = (index / count) * Math.PI * 2 + (performance.now() * 0.001 % period);
+    a %= Math.PI * 2;
+    if (a > Math.PI) a -= Math.PI * 2;
+    if (a < -Math.PI) a += Math.PI * 2;
+    return a;
   };
 
   function WeaponInstance(defId, level, slot) {
@@ -32,7 +48,6 @@
     this.cooldownRemaining = 0;
     this.slot = slot || 0;   // 槽位序号 → 轨道角度
     this.swingTime = 0;      // 距上次出手多久（渲染画出手余韵用；不持久化）
-    this.lastAim = 0;        // 上次出手的朝向：挥砍时让剑身指向敌人，而不是沿径向朝外
   }
 
   /** 本把武器挂在轨道上的位置。纯查询、不改状态：
@@ -57,20 +72,29 @@
     return this.def.range * Game.CONST.MELEE_RANGE_SCALE;
   };
 
-  /** 寻找最近的敌人（从 x,y 出发，不是从玩家身上） */
-  WeaponInstance.prototype.nearestEnemy = function (state, x, y) {
+  /** 只在「朝外扇形」里找最近的敌人（从 x,y 出发，不是从玩家身上）。
+   *  环绕武器固定围绕人物往外打，不做全场自动瞄准 —— 敌人得走进扇形里才被砍到；
+   *  扇形里没有就空转等它转过来，不空挥。 */
+  WeaponInstance.prototype.nearestInCone = function (state, x, y, aim, halfArc) {
     var best = null, bestD = Infinity;
     var es = state.enemies;
     for (var i = 0; i < es.length; i++) {
       var e = es[i];
       if (e.dead) continue;
       var d = util.dist2(x, y, e.x, e.y);
-      if (d < bestD) { bestD = d; best = e; }
+      if (d >= bestD) continue;
+      if (angDiff(util.angleTo(x, y, e.x, e.y), aim) > halfArc) continue;
+      bestD = d; best = e;
     }
     return { enemy: best, dist: best === null ? Infinity : Math.sqrt(bestD) };
   };
 
-  /** 每帧更新；自动攻击 */
+  /** 本把武器的扇形半角。近战用自己的 arc（冻结值），远程用统一常量。 */
+  WeaponInstance.prototype.halfArc = function () {
+    return (this.def.type === 'melee' ? this.def.arc : Game.CONST.RANGED_FIRE_ARC) / 2;
+  };
+
+  /** 每帧更新；自动攻击。出手方向固定朝外（沿轨道径向），不追全场目标。 */
   WeaponInstance.prototype.update = function (dt, owner, state) {
     var pos = this.posAt(owner);
     this.x = pos.x; this.y = pos.y; this.aimAngle = pos.a;  // 渲染与击退方向共用
@@ -78,20 +102,19 @@
     this.swingTime += dt;                                    // 出手余韵计时
     if (this.cooldownRemaining > 0) return;
 
-    var t = this.nearestEnemy(state, pos.x, pos.y);
+    var aim = pos.a;   // 朝外：玩家 → 武器 → 敌人
+    var t = this.nearestInCone(state, pos.x, pos.y, aim, this.halfArc());
     var enemy = t.enemy;
-    if (!enemy) return; // 无敌人则等待
+    if (!enemy) return;   // 扇形里没有敌人就空转
 
     var cd = this.cooldown(owner);
     if (this.def.type === 'melee') {
-      // 近战：范围内才出手
       if (t.dist <= this.range() + enemy.radius) {
-        this._meleeAttack(owner, state, enemy);
+        this._meleeAttack(owner, state, aim);
         this.cooldownRemaining = cd;
       }
     } else {
-      // 远程：自动瞄准最近敌人
-      this._rangedAttack(owner, state, enemy);
+      this._rangedAttack(owner, state, aim);
       this.cooldownRemaining = cd;
     }
   };
@@ -134,17 +157,12 @@
     return this.slot === 0;
   };
 
-  // 近战挥砍：以武器位置为圆心的扇形范围内所有敌人受伤
-  WeaponInstance.prototype._meleeAttack = function (owner, state, enemy) {
-    var facing = util.angleTo(this.x, this.y, enemy.x, enemy.y);
+  // 近战挥砍：以武器位置为圆心、朝外方向 aim 的扇形内所有敌人受伤。
+  // 扇形朝外而不是朝敌人 —— 环绕武器围绕人物往外打，敌人得走进扇形里。
+  WeaponInstance.prototype._meleeAttack = function (owner, state, aim) {
     var rng = this.range();
     this.swingTime = 0;
-    this.lastAim = facing;
-    if (this._primary()) {
-      // 视觉朝向仍以玩家为中心，别被轨道角度带偏
-      owner.aimFacing = util.angleTo(owner.x, owner.y, enemy.x, enemy.y);
-      if (owner.playAttack) owner.playAttack('melee');   // 纯表现：下劈动作
-    }
+    if (this._primary() && owner.playAttack) owner.playAttack('melee');
     var dmg = this.damage(owner);
     var halfArc = this.def.arc / 2;
     var es = state.enemies;
@@ -152,41 +170,33 @@
       var e = es[i];
       if (e.dead) continue;
       var d = util.dist(this.x, this.y, e.x, e.y);
-      if (d <= rng + e.radius) {
-        var ang = util.angleTo(this.x, this.y, e.x, e.y);
-        var diff = Math.abs(((ang - facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-        if (diff <= halfArc) {
-          this._applyHit(owner, state, e, dmg, e.x - this.x, e.y - this.y);
-        }
-      }
+      if (d > rng + e.radius) continue;
+      if (angDiff(util.angleTo(this.x, this.y, e.x, e.y), aim) > halfArc) continue;
+      this._applyHit(owner, state, e, dmg, e.x - this.x, e.y - this.y);
     }
-    if (fx()) fx().slash(this.x, this.y, facing, rng, this.def.color, this.def.arc);
+    if (fx()) fx().slash(this.x, this.y, aim, rng, this.def.color, this.def.arc);
     if (this._primary() && Game.Audio) Game.Audio.hit();
   };
 
-  // 远程射击：从武器所在的轨道位置出膛
-  WeaponInstance.prototype._rangedAttack = function (owner, state, enemy) {
-    var ang = util.angleTo(this.x, this.y, enemy.x, enemy.y);
+  // 远程射击：从武器所在的轨道位置沿朝外方向出膛，不自动追远处的敌人。
+  // 只有「朝外扇形」里有敌人时才开枪，不朝空处扫射。
+  WeaponInstance.prototype._rangedAttack = function (owner, state, aim) {
     this.swingTime = 0;
-    this.lastAim = ang;
-    if (this._primary()) {
-      owner.aimFacing = ang;
-      if (owner.playAttack) owner.playAttack('ranged');  // 纯表现：射击后坐
-    }
+    if (this._primary() && owner.playAttack) owner.playAttack('ranged');
     var crit = this._rollCrit(owner);
     var dmg = this.damage(owner) * (crit ? owner.stats.critMult : 1);
     var spd = this.def.projectileSpeed;
     var p = new Game.Projectile({
-      x: this.x + Math.cos(ang) * (owner.radius + 6),
-      y: this.y + Math.sin(ang) * (owner.radius + 6),
-      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      x: this.x + Math.cos(aim) * (owner.radius + 6),
+      y: this.y + Math.sin(aim) * (owner.radius + 6),
+      vx: Math.cos(aim) * spd, vy: Math.sin(aim) * spd,
       radius: 5, damage: dmg, crit: crit, fromPlayer: true,
       pierce: this.def.pierce || 0, life: 2.5,
       color: this.def.color, type: 'bullet', knockback: this.def.knockback || 0,
       owner: owner,
     });
     state.projectiles.push(p);
-    if (fx()) fx().muzzle(this.x, this.y, ang);
+    if (fx()) fx().muzzle(this.x, this.y, aim);
     if (this._primary() && Game.Audio) Game.Audio.shoot();
   };
 
