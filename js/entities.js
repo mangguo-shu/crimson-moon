@@ -36,8 +36,10 @@
       critMult: c.critMult,
       armor: c.armor,
       lifesteal: 0,            // 吸血（造成伤害百分比回血）
-      lifeOnHit: 0,            // 命中回血
-      lifeOnKill: 0,           // 击杀回血
+      lifeOnHit: 0,            // 命中回血（固定点数；旧存档残留键，仍生效）
+      lifeOnKill: 0,           // 击杀回血（固定点数；旧存档残留键，仍生效）
+      lifeOnHitPct: 0,         // 命中回血（按最大生命百分比，生机之种）
+      lifeOnKillPct: 0,        // 击杀回血（按最大生命百分比，夺命金铃）
       healingPower: 1.0,       // 治疗加成
       shield: 0, shieldMax: 0, // 护盾
       pickupSpeed: Game.DROP.pickupSpeed, // 掉落物被吸起时的初速（吸铁石会拉满）
@@ -115,7 +117,8 @@
                  k === 'critChance' || k === 'lifesteal') {
         s[k] += v; // 百分比/倍率类
       } else if (k === 'critMult' || k === 'armor' || k === 'lifeOnHit' ||
-                 k === 'lifeOnKill' || k === 'healingPower' || k === 'shieldMax') {
+                 k === 'lifeOnKill' || k === 'lifeOnHitPct' || k === 'lifeOnKillPct' ||
+                 k === 'healingPower' || k === 'shieldMax') {
         s[k] += v;
       }
     }
@@ -143,6 +146,20 @@
     if (fx() && opts.fx !== false) fx().heal(this.x, this.y);
     if (Game.Audio && opts.audio !== false) Game.Audio.heal();
     return toHp + (overflow > 0 ? Math.min(s.shieldMax, s.shield + overflow) - s.shield : 0);
+  };
+
+  /** 命中回血 / 击杀回血的取数统一走这两个方法，别在各处手写三遍。
+   *  百分比（生机之种 / 夺命金铃）优先；固定点数只在百分比为 0 时兜底，
+   *  这样改了表的老存档（stats 里还留着 lifeOnHit / lifeOnKill）不会白买。 */
+  Player.prototype.healForHit = function () {
+    var s = this.stats;
+    if (s.lifeOnHitPct > 0) return s.maxHp * s.lifeOnHitPct;
+    return s.lifeOnHit || 0;
+  };
+  Player.prototype.healForKill = function () {
+    var s = this.stats;
+    if (s.lifeOnKillPct > 0) return s.maxHp * s.lifeOnKillPct;
+    return s.lifeOnKill || 0;
   };
 
   /** 承受伤害（含护甲减伤、护盾、无敌帧）。返回实际扣血。

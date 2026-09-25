@@ -227,6 +227,7 @@
       var p = state.player, s = p.stats, c = p.char, MAXLVL = Game.CONST.MAX_WEAPON_LEVEL;
       var pct = function (v) { return v.toFixed(0) + '%'; };
       var num = function (v, d) { return v.toFixed(d === undefined ? 2 : d); };
+      var pct1 = function (v) { return (Math.round(v * 10) / 10) + '%'; };
       var stars = function (lv) {
         var out = '';
         for (var i = 1; i <= MAXLVL; i++) out += i <= lv ? '★' : '☆';
@@ -255,8 +256,10 @@
         row('护甲', Math.floor(s.armor) + '（减伤 ' + pct(red * 100) + '）') +
         row('移动速度', Math.round(s.speed)) +
         row('吸血', pct(s.lifesteal * 100)) +
-        row('命中回血', num(s.lifeOnHit, 0) + ' / 次') +
-        row('击杀回血', num(s.lifeOnKill, 0) + ' / 次') +
+        row('命中回血', s.lifeOnHitPct > 0 ? pct1(s.lifeOnHitPct * 100) + ' 最大生命'
+                                          : num(s.lifeOnHit, 0) + ' / 次') +
+        row('击杀回血', s.lifeOnKillPct > 0 ? pct1(s.lifeOnKillPct * 100) + ' 最大生命'
+                                          : num(s.lifeOnKill, 0) + ' / 次') +
         row('治疗强度', '×' + num(s.healingPower)) +
         row('击杀数', state.stats.kills) +
         '</div>';
@@ -446,10 +449,11 @@
 
     /* ---------------- 设置 ---------------- */
     renderSettings: function (settings) {
-      var s = settings || { sound: true, vibrate: true, quality: 'high' };
+      var s = settings || { sound: true, vibrate: true, music: true, quality: 'high' };
       el.settings.innerHTML =
         '<h2>设置</h2>' +
         '<button class="btn" onclick="Game.Game.toggleSound()">音效：' + (s.sound ? '开' : '关') + '</button>' +
+        '<button class="btn" onclick="Game.Game.toggleMusic()">背景音乐：' + (s.music !== false ? '开' : '关') + '</button>' +
         '<button class="btn" onclick="Game.Game.toggleVibrate()">震动：' + (s.vibrate ? '开' : '关') + '</button>' +
         '<div style="color:#fff;margin-top:8px">画质：</div>' +
         '<button class="btn ' + (s.quality === 'low' ? 'primary' : '') + '" onclick="Game.Game.setQuality(\'low\')">低</button>' +

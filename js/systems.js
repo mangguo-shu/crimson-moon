@@ -40,6 +40,7 @@
       lastLevel: 1,           // 用于检测升级
       levelUpsPending: 0,
       difficulty: 'normal',
+      waveSeen: [],           // 本波已出过的卡 key（升级三选一 + 商店共用，startWave 重置）
     };
     // 初始武器
     var w = state.player.char.startWeapon;
@@ -68,7 +69,9 @@
     var waveRng = Game.mulberry32(Game.hashSeed(state.seed + ':' + wave));
     // 刷新量。注意 dur 是硬上限：高波次区间密度（见下）会先把 t 顶穿 dur，
     // budget 只在低波次是瓶颈 —— 那里怪太稀，就是「没爽感」的根源。
-    var budget = 16 + wave * 8;
+    // 16+8w → 22+10w：第 1 波 24→32，5 波 56→72；高波次改由区间密度加成，
+    // 所以 10 波起 dur 变成瓶颈，仍逐波递增但增速放缓。
+    var budget = 22 + wave * 10;
     var dur = S.waveDuration(wave);
     var boss = S.isBossWave(wave);
 
@@ -84,7 +87,7 @@
     while (count < budget && t < dur) {
       schedule.push({ time: t, type: S.pickEnemyType(waveRng, wave), x: 0, y: 0, boss: false });
       count++;
-      t += 0.55 - Math.min(0.3, wave * 0.01); // 高波次刷新更密
+      t += 0.5 - Math.min(0.26, wave * 0.01); // 高波次刷新更密
       if (t < 0.1) t = 0.1;
     }
 
@@ -149,6 +152,7 @@
     state.bossSpawned = false;
     state.spawnSchedule = S.buildSpawnSchedule(state, wave);
     state.spawnIndex = 0;
+    state.waveSeen = [];      // 换波就换一批卡：上一波刷过的不再重复
     state.screen = 'PLAYING';
     console.log('[Wave] 开始波次 ' + wave + ' 时长=' + state.waveDuration +
                 ' 敌人预算=' + state.spawnSchedule.length + (state.isBossWave ? ' [Boss]' : ''));
@@ -311,9 +315,13 @@
             // 吸血 / 命中回血 / 击杀回血
             if (p.owner) {
               if (p.owner.stats.lifesteal > 0) p.owner.heal(pdmg * p.owner.stats.lifesteal);
-              if (p.owner.stats.lifeOnHit > 0) p.owner.heal(p.owner.stats.lifeOnHit);
+              var hitHeal = p.owner.healForHit();
+              if (hitHeal > 0) p.owner.heal(hitHeal);
               p.owner.damageDealt += pdmg;
-              if (dead && p.owner.stats.lifeOnKill > 0) p.owner.heal(p.owner.stats.lifeOnKill);
+              if (dead) {
+                var killHeal = p.owner.healForKill();
+                if (killHeal > 0) p.owner.heal(killHeal);
+              }
             }
             if (dead) e.die(state);
             // 穿透
@@ -347,43 +355,123 @@
   };
 
   /* ============================================================
-   * 升级三选一
+   * 卡片抽取（升级三选一 / Boss 奖励 / 商店共用）
+   *
+   * 同一波内不重复出卡：三处共用 state.waveSeen（startWave 清空）。
+   * 回血类道具（ITEMS.healing）按 CONST.HEAL_ITEM_WEIGHT 降权，
+   * healBuild 角色（掠影 / 回春 / 禅心）不降 —— 对他们续航就是核心玩法。
    * ============================================================ */
-  S.rollLevelUpChoices = function (state) {
+
+  /** 加权抽取：恰好消耗一次 rng()，与旧的等权抽取保持同样的随机流步数 */
+  function pickWeighted(rng, entries) {
+    var total = 0, i;
+    for (i = 0; i < entries.length; i++) total += entries[i].w;
+    var r = rng() * total;
+    for (i = 0; i < entries.length; i++) {
+      r -= entries[i].w;
+      if (r <= 0) return entries[i];
+    }
+    return entries[entries.length - 1];
+  }
+
+  /** 卡片的唯一 key。升级池里是 {kind,data}，商店里是 {type,itemId}，
+   *  两种形状都要对得上，才能跨界面去重。 */
+  S.cardKey = function (card) {
+    if (!card) return '';
+    if (card.kind === 'upgrade') return 'upgrade:' + card.data.label;
+    if (card.kind === 'item') return 'item:' + card.data.itemId;
+    if (card.kind === 'weapon') return 'weapon:' + card.data.weaponId;
+    if (card.type === 'item') return 'item:' + card.itemId;
+    if (card.type === 'weapon') return 'weapon:' + card.weaponId;
+    return String(card.kind || card.type);
+  };
+
+  /** 把本波已经出过的卡登记下来（去重依据，随存档持久化） */
+  S.markSeen = function (state, key) {
+    var seen = state.waveSeen || (state.waveSeen = []);
+    if (seen.indexOf(key) < 0) seen.push(key);
+    return key;
+  };
+
+  function seenFlags(state) {
+    var flags = {}, seen = state.waveSeen || [];
+    for (var i = 0; i < seen.length; i++) flags[seen[i]] = true;
+    return flags;
+  }
+
+  /** 回血道具的权重系数：healBuild 角色拿满权，其他人按 CONST.HEAL_ITEM_WEIGHT 降 */
+  function healWeight(state) {
+    return state.player.char.healBuild ? 1 : CONST.HEAL_ITEM_WEIGHT;
+  }
+
+  /** 道具候选 + 权重。回血道具降权，healBuild 角色拿满权 */
+  function itemCands(state) {
+    var down = healWeight(state);
+    var out = [], iids = Object.keys(Game.ITEMS);
+    for (var i = 0; i < iids.length; i++) {
+      var it = Game.ITEMS[iids[i]];
+      out.push({ key: 'item:' + iids[i], w: it.healing ? down : 1, itemId: iids[i], item: it });
+    }
+    return out;
+  }
+
+  /** 非专属武器 id（普通升级池与商店都能出的那几把） */
+  function commonWeaponIds() {
+    var out = [], ids = Object.keys(Game.WEAPONS);
+    for (var i = 0; i < ids.length; i++) {
+      if (!Game.WEAPONS[ids[i]].exclusive) out.push(ids[i]);
+    }
+    return out;
+  }
+
+  /** 抽三张互不重复的卡：先排除本波已出过的；排除完不够 3 张就放行。
+   *  放行不是为了刷重复卡好看 —— 候选池真会被抽干（Boss 奖励池总共才 6 张）。 */
+  S.pickThree = function (state, entries) {
     var rng = state.rng;
+    var flags = seenFlags(state);
+    var pool = entries.filter(function (e) { return !flags[e.key]; });
+    if (pool.length < 3) pool = entries.slice();
     var choices = [];
-    var pool = [];
-    var i;
-
-    // 属性升级
-    for (i = 0; i < Game.UPGRADES.length; i++) pool.push({ kind: 'upgrade', data: Game.UPGRADES[i] });
-
-    // 新武器（槽位未满）；exclusive 武器只从 Boss 奖励产出
-    if (state.player.weapons.length < CONST.MAX_WEAPONS) {
-      var wids = Object.keys(Game.WEAPONS);
-      for (i = 0; i < wids.length; i++) {
-        if (Game.WEAPONS[wids[i]].exclusive) continue;
-        pool.push({ kind: 'weapon', data: { weaponId: wids[i] } });
-      }
-    } else {
-      // 已有武器升级
-      pool.push({ kind: 'weaponUpgrade', data: {} });
-    }
-
-    // 道具
-    var iids = Object.keys(Game.ITEMS);
-    for (i = 0; i < iids.length; i++) {
-      pool.push({ kind: 'item', data: { itemId: iids[i] } });
-    }
-
-    // 随机取 3 个（去重）
     while (choices.length < 3 && pool.length > 0) {
-      var idx = Math.floor(rng() * pool.length);
-      choices.push(pool[idx]);
-      pool.splice(idx, 1);
+      var hit = pickWeighted(rng, pool);
+      choices.push(hit.entry);
+      pool.splice(pool.indexOf(hit), 1);   // 同一次三选一里也不重复
+      S.markSeen(state, hit.key);
     }
     state.levelUpChoices = choices;
     return choices;
+  };
+
+  /* ============================================================
+   * 升级三选一
+   * ============================================================ */
+  S.rollLevelUpChoices = function (state) {
+    var entries = [], i, c;
+
+    // 属性升级
+    for (i = 0; i < Game.UPGRADES.length; i++) {
+      entries.push({ key: 'upgrade:' + Game.UPGRADES[i].label, w: 1, entry: { kind: 'upgrade', data: Game.UPGRADES[i] } });
+    }
+
+    // 新武器（槽位未满）；exclusive 武器只从 Boss 奖励产出
+    var wids = commonWeaponIds();
+    if (state.player.weapons.length < CONST.MAX_WEAPONS) {
+      for (i = 0; i < wids.length; i++) {
+        entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
+      }
+    } else {
+      // 已有武器升级
+      entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
+    }
+
+    // 道具
+    var cands = itemCands(state);
+    for (i = 0; i < cands.length; i++) {
+      c = cands[i];
+      entries.push({ key: c.key, w: c.w, entry: { kind: 'item', data: { itemId: c.itemId } } });
+    }
+
+    return S.pickThree(state, entries);
   };
 
   /**
@@ -394,27 +482,31 @@
   S.bossRewardChoices = function (state) {
     var rng = state.rng;
     var p = state.player;
-    var pool = [];
+    var entries = [];
     var i;
 
     // 强力属性卡：只收 epic / legend，别把普通卡当奖励发出去
     for (i = 0; i < Game.UPGRADES.length; i++) {
       var u = Game.UPGRADES[i];
-      if (u.rarity === 'epic' || u.rarity === 'legend') pool.push({ kind: 'upgrade', data: u });
+      if (u.rarity === 'epic' || u.rarity === 'legend') {
+        entries.push({ key: 'upgrade:' + u.label, w: 1, entry: { kind: 'upgrade', data: u } });
+      }
     }
     // 史诗 / 传说道具
     for (var iid in Game.ITEMS) {
       var it = Game.ITEMS[iid];
-      if (it.rarity === 'epic' || it.rarity === 'legend') pool.push({ kind: 'item', data: { itemId: iid } });
+      if (it.rarity === 'epic' || it.rarity === 'legend') {
+        entries.push({ key: 'item:' + iid, w: it.healing ? healWeight(state) : 1,
+                       entry: { kind: 'item', data: { itemId: iid } } });
+      }
     }
-    pool.push({ kind: 'weaponUpgrade', data: {} });
+    entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
 
     // 普通武器（槽位未满时给）
+    var wids = commonWeaponIds();
     if (p.weapons.length < CONST.MAX_WEAPONS) {
-      var wids = Object.keys(Game.WEAPONS);
       for (i = 0; i < wids.length; i++) {
-        if (Game.WEAPONS[wids[i]].exclusive) continue;
-        pool.push({ kind: 'weapon', data: { weaponId: wids[i] } });
+        entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
       }
     }
 
@@ -423,10 +515,8 @@
       var exIds = [];
       for (var eid in Game.WEAPONS) if (Game.WEAPONS[eid].exclusive) exIds.push(eid);
       if (exIds.length > 0) {
-        pool.push({
-          kind: 'weapon',
-          data: { weaponId: exIds[Math.floor(rng() * exIds.length)] },
-        });
+        var exId = exIds[Math.floor(rng() * exIds.length)];
+        entries.push({ key: 'weapon:' + exId, w: 1, entry: { kind: 'weapon', data: { weaponId: exId } } });
       }
     }
 
@@ -439,16 +529,11 @@
       if (upg.type !== 'stat') continue;
       if (!tail || upg.rarity === 'epic') tail = upg;
     }
-    while (pool.length < 3) pool.push({ kind: 'upgrade', data: tail });
-
-    var choices = [];
-    while (choices.length < 3 && pool.length > 0) {
-      var idx = Math.floor(rng() * pool.length);
-      choices.push(pool[idx]);
-      pool.splice(idx, 1);
+    while (entries.length < 3) {
+      entries.push({ key: 'upgrade:' + tail.label, w: 1, entry: { kind: 'upgrade', data: tail } });
     }
-    state.levelUpChoices = choices;
-    return choices;
+
+    return S.pickThree(state, entries);
   };
 
   S.applyChoice = function (state, choice) {
@@ -495,6 +580,8 @@
       if (wasLocked && carry && !carry.sold) {
         shop.locked[i] = true;
         shop.items.push(carry);          // 锁定卡本体沿用，玩家锁的就是这一张
+        // 沿用来的卡要登记进本波记录，否则另外三格会再抽出一张一模一样的
+        S.markSeen(state, S.cardKey(carry));
       } else {
         // 未锁定，或上一波这张已买走 / 不存在 —— 重新抽，且不残留锁定标记
         // （后者兜底旧存档：买了卡但锁定标记没清掉的情况）
@@ -508,40 +595,54 @@
   };
 
   S.rollShopItem = function (state, rng) {
-    var roll = rng();
     var p = state.player;
-    // 权重：道具 50% / 武器 50%。治疗卡下线后原来的 45% 治疗权重平摊给两者。
-    if (roll < 0.50) {
-      // 道具
-      var iids = Object.keys(Game.ITEMS);
-      var itemId = iids[Math.floor(rng() * iids.length)];
-      var item = Game.ITEMS[itemId];
+    var entries = [], i, c;
+    // 道具 50% / 武器 50%（治疗卡下线后原 45% 治疗权重平摊给两者）：
+    // 12 件道具各 1/12、武器各 0.5 / 武器数，两半权重相等 —— 与旧的
+    // 「先掷 50% 再等权抽」同分布，只是抽的时候能顺手去重。
+    var down = healWeight(state);
+    var iids = Object.keys(Game.ITEMS);
+    for (i = 0; i < iids.length; i++) {
+      c = Game.ITEMS[iids[i]];
+      entries.push({ key: 'item:' + iids[i], w: (c.healing ? down : 1) / iids.length, item: c });
+    }
+    var wids = commonWeaponIds();   // 专属武器只在 Boss 奖励里出
+    if (p.weapons.length < CONST.MAX_WEAPONS) {
+      for (i = 0; i < wids.length; i++) {
+        entries.push({ key: 'weapon:' + wids[i], w: 0.5 / wids.length, weaponId: wids[i], weapon: Game.WEAPONS[wids[i]] });
+      }
+    } else {
+      entries.push({ key: 'weaponUpgrade', w: 0.5, weaponUpgrade: true });
+    }
+
+    // 本波已上架过的不再重复（含上一格刚抽出的）；真抽干才放行
+    var flags = seenFlags(state);
+    var pool = entries.filter(function (e) { return !flags[e.key]; });
+    if (pool.length === 0) pool = entries;
+    var hit = pickWeighted(rng, pool);
+    S.markSeen(state, hit.key);
+
+    if (hit.item) {
+      var item = hit.item;
       return {
-        type: 'item', itemId: itemId,
+        type: 'item', itemId: item.id,
         name: item.name, desc: item.desc, rarity: item.rarity,
         price: S.priceFor(item.rarity, state.wave),
       };
-    } else {
-      // 武器（新武器或升级）
-      if (p.weapons.length < CONST.MAX_WEAPONS) {
-        var wids = Object.keys(Game.WEAPONS).filter(function (id) {
-          return !Game.WEAPONS[id].exclusive;   // 专属武器只在 Boss 奖励里出
-        });
-        var wid = wids[Math.floor(rng() * wids.length)];
-        var wdef = Game.WEAPONS[wid];
-        return {
-          type: 'weapon', weaponId: wid,
-          name: wdef.name, desc: wdef.desc, rarity: 'rare',
-          price: S.priceFor('rare', state.wave),
-        };
-      } else {
-        return {
-          type: 'weaponUpgrade',
-          name: '武器强化', desc: '随机强化一把武器（最高 ' + CONST.MAX_WEAPON_LEVEL + ' 星）', rarity: 'rare',
-          price: S.priceFor('rare', state.wave),
-        };
-      }
     }
+    if (hit.weapon) {
+      var wdef = hit.weapon;
+      return {
+        type: 'weapon', weaponId: hit.weaponId,
+        name: wdef.name, desc: wdef.desc, rarity: 'rare',
+        price: S.priceFor('rare', state.wave),
+      };
+    }
+    return {
+      type: 'weaponUpgrade',
+      name: '武器强化', desc: '随机强化一把武器（最高 ' + CONST.MAX_WEAPON_LEVEL + ' 星）', rarity: 'rare',
+      price: S.priceFor('rare', state.wave),
+    };
   };
 
   /** 定价：同一稀有度 + 同一波次 → 同一个价格。
@@ -646,6 +747,7 @@
       }),
       stats: state.stats,
       shop: state.shop,
+      waveSeen: state.waveSeen,
       timestamp: Date.now(),
     };
   };
@@ -672,6 +774,7 @@
       stats: obj.stats || { kills: 0 },
       shop: obj.shop || null,
       levelUpChoices: [],
+      waveSeen: obj.waveSeen || [],
       lastLevel: obj.player.level || 1,
       levelUpsPending: 0,
       difficulty: obj.difficulty || 'normal',

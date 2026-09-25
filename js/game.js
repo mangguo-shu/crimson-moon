@@ -13,7 +13,7 @@
   Game.state = null;          // 当前运行状态
   Game.pendingMode = 'campaign'; // 角色选择后进入的模式：'campaign' | 'endless'
   Game.uiScreen = null;         // 当前显示的面板名（ui.js 写入）
-  Game.settings = { sound: true, vibrate: true, quality: 'high' };
+  Game.settings = { sound: true, vibrate: true, music: true, quality: 'high' };
 
   var G = Game.Game = {};
 
@@ -79,11 +79,16 @@
   /* ---------------- 设置 ---------------- */
   G._loadSettings = function () {
     var s = Game.Storage.getJSON('settings_v1');
-    if (s) Game.settings = s;
+    if (s) {
+      // 逐键合并，不整包替换：老存档里没有 music 这种后加的开关，
+      // 整包替换会让它变成 undefined，玩家会莫名其妙丢背景音乐。
+      for (var k in s) Game.settings[k] = s[k];
+    }
     G._applySettings();
   };
   G._applySettings = function () {
     Game.Audio.setEnabled(Game.settings.sound);
+    Game.Audio.setMusicEnabled(Game.settings.music !== false);
     Game.Native.haptics = Game.settings.vibrate;
     if (Game.Renderer.canvas) Game.Renderer.setQuality(Game.settings.quality);
   };
@@ -295,6 +300,7 @@
     }
   };
   G.toggleSound = function () { Game.settings.sound = !Game.settings.sound; G._applySettings(); G.openSettings(); };
+  G.toggleMusic = function () { Game.settings.music = !Game.settings.music; G._applySettings(); G.openSettings(); };
   G.toggleVibrate = function () { Game.settings.vibrate = !Game.settings.vibrate; G._applySettings(); G.openSettings(); };
   G.setQuality = function (q) { Game.settings.quality = q; G._applySettings(); G.openSettings(); };
 

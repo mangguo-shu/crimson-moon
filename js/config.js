@@ -22,6 +22,7 @@
     PARTICLE_MID: 500,
     PARTICLE_HIGH: 800,
     LOW_HP_RATIO: 0.3,    // 濒死阈值 30%
+    HEAL_ITEM_WEIGHT: 0.15, // 回血道具在商店/升级池里的相对权重（续航流角色不降权）
   };
 
   /* ---------------- 国风调色板 ---------------- */
@@ -148,6 +149,7 @@
     },
     {
       id: 'assassin',
+      healBuild: true,   // 续航流：回血卡是核心件，商店/升级池不给他降权
       name: '疾风刺客',
       category: '吸血近战',
       desc: '刀快得看不清影子，砍完就走。',
@@ -236,6 +238,7 @@
     },
     {
       id: 'nun',
+      healBuild: true,   // 续航流：回血卡是核心件，商店/升级池不给他降权
       name: '慈心尼师',
       category: '续航近战',
       desc: '青灯古佛旁的尼师，慢火养人。',
@@ -258,6 +261,7 @@
     },
     {
       id: 'ascetic',
+      healBuild: true,   // 续航流：回血卡是核心件，商店/升级池不给他降权
       name: '苦行僧',
       category: '苦修近战',
       desc: '苦修多年，肉身已近金刚不坏。',
@@ -580,7 +584,7 @@
   Game.DROP = {
     xpMult: 2.0,        // 经验倍数
     matMult: 2.5,       // 材料倍数
-    matChance: 0.6,     // 材料掉落概率
+    matChance: 0.8,     // 材料掉落概率（0.6→0.8：第 1 波材料要从 ~39 提到 ~80，否则首轮买不起一件装备）
     chestChance: 0.035, // 普通怪掉箱子的概率
     chestHeal: 30,      // 回血箱回复量
     chestMagnetChance: 0.35, // 掉箱子时其中是吸铁石的概率（否则是回血）
@@ -592,20 +596,22 @@
   /* ---------------- 道具（被动，可叠加） ---------------- */
   // MVP 提供少量被动道具，用于商店与升级池。
   Game.ITEMS = {
-    heart:      { id: 'heart',      name: '生命之心', rarity: 'common', desc: '最大生命 +15',        stat: { maxHp: 15 } },
-    boots:      { id: 'boots',      name: '疾风之靴', rarity: 'common', desc: '移动速度 +8%',        stat: { speed: 0.08 } },
-    blade:      { id: 'blade',      name: '锋锐磨石', rarity: 'rare',   desc: '伤害 +15%',           stat: { damage: 0.15 } },
-    trigger:    { id: 'trigger',    name: '轻灵扳机', rarity: 'rare',   desc: '攻击速度 +12%',        stat: { attackSpeed: 0.12 } },
-    armorplate: { id: 'armorplate', name: '铁甲片',   rarity: 'rare',   desc: '护甲 +2',             stat: { armor: 2 } },
-    critical:   { id: 'critical',   name: '致命宝石', rarity: 'epic',   desc: '暴击率 +10%',         stat: { critChance: 0.10 } },
+    heart:      { id: 'heart',      name: '生命之心', rarity: 'common', desc: '最大生命 +15',            stat: { maxHp: 15 } },
+    boots:      { id: 'boots',      name: '疾风之靴', rarity: 'common', desc: '移动速度 +8%',            stat: { speed: 0.08 } },
+    blade:      { id: 'blade',      name: '锋锐磨石', rarity: 'rare',   desc: '伤害 +15%',               stat: { damage: 0.15 } },
+    trigger:    { id: 'trigger',    name: '轻灵扳机', rarity: 'rare',   desc: '攻击速度 +12%',           stat: { attackSpeed: 0.12 } },
+    armorplate: { id: 'armorplate', name: '铁甲片',   rarity: 'rare',   desc: '护甲 +2',                 stat: { armor: 2 } },
+    critical:   { id: 'critical',   name: '致命宝石', rarity: 'epic',   desc: '暴击率 +10%',             stat: { critChance: 0.10 } },
     // 下面 6 件补的是此前根本买不到的数值 —— _applyStatDelta 早就支持这些键，
     // 只是没有道具用过（暴击伤害 / 护盾 / 吸血 / 击杀回血 / 治疗强度全都没入口）。
-    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +25%',        stat: { healingPower: 0.25 } },
-    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 5% 化为生命', stat: { lifesteal: 0.05 } },
-    shieldcharm:{ id: 'shieldcharm', name: '玄武纹章', rarity: 'rare',   desc: '护盾上限 +25',          stat: { shieldMax: 25 } },
-    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复 2 点生命',  stat: { lifeOnHit: 2 } },
-    critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',         stat: { critMult: 0.15 } },
-    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复 5 点生命',  stat: { lifeOnKill: 5 } },
+    // healing:true 的四件是续航来源：商店/升级池按 CONST.HEAL_ITEM_WEIGHT 降权，
+    // healBuild 角色（掠影/回春/禅心）不受降权。
+    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +25%',           stat: { healingPower: 0.25 }, healing: true },
+    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 5% 化为生命',   stat: { lifesteal: 0.05 }, healing: true },
+    shieldcharm:{ id: 'shieldcharm', name: '玄武纹章', rarity: 'rare',   desc: '护盾上限 +25',            stat: { shieldMax: 25 } },
+    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 1.2%', stat: { lifeOnHitPct: 0.012 }, healing: true },
+    critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',           stat: { critMult: 0.15 } },
+    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 3%',  stat: { lifeOnKillPct: 0.03 }, healing: true },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */

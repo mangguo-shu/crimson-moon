@@ -77,7 +77,8 @@
     if (owner.stats.lifesteal > 0) {
       owner.heal(dmg * owner.stats.lifesteal);
     }
-    if (owner.stats.lifeOnHit > 0) owner.heal(owner.stats.lifeOnHit);
+    var hitHeal = owner.healForHit();
+    if (hitHeal > 0) owner.heal(hitHeal);
     // 击退方向（从玩家指向敌人）
     var dx = enemy.x - owner.x, dy = enemy.y - owner.y;
     var dd = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -86,7 +87,8 @@
     var dead = enemy.takeDamage(dmg, crit, dx / dd * kb, dy / dd * kb, owner);
     if (dead) {
       enemy.die(state);
-      if (owner.stats.lifeOnKill > 0) owner.heal(owner.stats.lifeOnKill);
+      var killHeal = owner.healForKill();
+      if (killHeal > 0) owner.heal(killHeal);
     }
     return dead;
   };

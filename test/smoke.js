@@ -143,7 +143,7 @@ assert(state.player.xpNext === 9, '升级经验公式 5+1*4=9');
 console.log('\n== 波次生成 ==');
 Game.Systems.startWave(state, 1);
 assert(state.wave === 1, '波次=1');
-assert(state.spawnSchedule.length === 24, '敌人预算 16+1*8=24，实际 ' + state.spawnSchedule.length);
+assert(state.spawnSchedule.length === 32, '敌人预算 22+1*10=32，实际 ' + state.spawnSchedule.length);
 assert(state.isBossWave === false, '第1波非Boss');
 const sch1 = Game.Systems.buildSpawnSchedule({ seed: 999, wave: 3 }, 3);
 const sch2 = Game.Systems.buildSpawnSchedule({ seed: 999, wave: 3 }, 3);
@@ -1175,12 +1175,12 @@ try {
     for (var sd33 = 1; sd33 <= 30; sd33++) {
       var sch33 = Game.Systems.buildSpawnSchedule({ seed: sd33, wave: w33 }, w33);
       var rngRef = Game.mulberry32(Game.hashSeed(sd33 + ':' + w33));
-      var budget33 = 16 + w33 * 8;
+      var budget33 = 22 + w33 * 10;
       if (Game.Systems.isBossWave(w33)) budget33 = Math.max(10, Math.floor(budget33 * 0.6));
       var seq33 = [], t33 = 0.5, n33 = 0;
       while (n33 < budget33 && t33 < Game.Systems.waveDuration(w33)) {
         seq33.push(refPick(rngRef, w33));
-        n33++; t33 += 0.55 - Math.min(0.3, w33 * 0.01);
+        n33++; t33 += 0.5 - Math.min(0.26, w33 * 0.01);
         if (t33 < 0.1) t33 = 0.1;
       }
       var got33 = [];
@@ -1886,8 +1886,8 @@ try {
     var st61 = Game.ITEMS[i62].stat;
     for (var k64 in st61) used61[k64] = true;
   }
-  var noEntry61 = ['healingPower', 'lifesteal', 'shieldMax', 'lifeOnHit', 'critMult',
-                   'lifeOnKill'].filter(function (k) { return !used61[k]; });
+  var noEntry61 = ['healingPower', 'lifesteal', 'shieldMax', 'lifeOnHitPct', 'critMult',
+                   'lifeOnKillPct'].filter(function (k) { return !used61[k]; });
   assert(noEntry61.length === 0,
          '暴击伤害/护盾/吸血/击杀回血/治疗强度都有道具入口了（缺: ' + noEntry61.join(',') + '）');
 
@@ -2259,6 +2259,323 @@ try {
 
 } catch (e) {
   assert(false, '职业姿态/新角色异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉖ 每波不重卡 / 加量 / 回血卡百分比化+降权 / 背景音乐 / 前期金币
+ * ============================================================ */
+console.log('\n== ㉖ 每波不重卡 + 加量 + 回血卡改造 + 背景音乐 + 前期金币 ==');
+try {
+  // ---- 1. 卡片 key：升级池 {kind,data} 与商店 {type,itemId} 必须算成同一个 ----
+  assert(Game.Systems.cardKey({ kind: 'item', data: { itemId: 'heart' } }) ===
+         Game.Systems.cardKey({ type: 'item', itemId: 'heart' }),
+         '升级池与商店的同一张卡算同一个 key（跨界面才能去重）');
+  assert(Game.Systems.cardKey({ kind: 'weapon', data: { weaponId: 'pistol' } }) ===
+         Game.Systems.cardKey({ type: 'weapon', weaponId: 'pistol' }),
+         '武器卡在两种形状下同 key');
+
+  // ---- 2. 同一次三选一内不重复；同一波连续多次三选一也不重卡 ----
+  var dupInOffer = 0, dupInWave = 0, N90 = 300;
+  for (var t90 = 0; t90 < N90; t90++) {
+    var s90 = Game.Systems.createState('campaign', 'swordsman', 200000 + t90);
+    Game.Systems.startWave(s90, 3);
+    var seen90 = [];
+    for (var r90 = 0; r90 < 5; r90++) {
+      var cs90 = Game.Systems.rollLevelUpChoices(s90);
+      var local90 = [];
+      for (var a90 = 0; a90 < cs90.length; a90++) {
+        var k90 = Game.Systems.cardKey(cs90[a90]);
+        if (local90.indexOf(k90) >= 0) dupInOffer++;
+        local90.push(k90);
+        if (seen90.indexOf(k90) >= 0) dupInWave++;
+        seen90.push(k90);
+      }
+    }
+  }
+  assert(dupInOffer === 0, '同一次三选一里无重复卡（' + N90 + ' 轮 × 5 次抽取）');
+  assert(dupInWave === 0, '同一波连续 5 次三选一也不重卡（' + N90 + ' 轮）');
+
+  // ---- 3. 商店 4 格不重复，且不与本波升级卡撞 ----
+  var dupShop = 0, crossSeen = 0;
+  for (var t91 = 0; t91 < 300; t91++) {
+    var s91 = Game.Systems.createState('campaign', 'archer', 210000 + t91);
+    Game.Systems.startWave(s91, 2);
+    var ups91 = Game.Systems.rollLevelUpChoices(s91);
+    var upKeys91 = ups91.map(function (c) { return Game.Systems.cardKey(c); });
+    Game.Systems.openShop(s91);
+    var ks91 = [];
+    for (var b91 = 0; b91 < s91.shop.items.length; b91++) {
+      var kk91 = Game.Systems.cardKey(s91.shop.items[b91]);
+      if (ks91.indexOf(kk91) >= 0) dupShop++;
+      if (upKeys91.indexOf(kk91) >= 0) crossSeen++;
+      ks91.push(kk91);
+    }
+  }
+  assert(dupShop === 0, '同一次商店 4 格无重复卡（300 轮）');
+  assert(crossSeen === 0, '商店不与本波升级三选一撞卡（300 轮 × 4 格）');
+
+  // ---- 4. 连续刷新后 4 格仍不重复 ----
+  // 商店候选池总共才 12 道具 + 2 武器 = 14 张，刷新 3 次以上必然抽干、
+  // 只能开始重复，所以这里只验池子还没抽干的次数（抽干时的行为见下面的断言）。
+  var dupRefresh = 0;
+  for (var t92 = 0; t92 < 200; t92++) {
+    var s92 = Game.Systems.createState('campaign', 'swordsman', 250000 + t92);
+    s92.player.materials = 1e9;
+    Game.Systems.startWave(s92, 3);
+    Game.Systems.openShop(s92);
+    for (var r92 = 0; r92 < 2; r92++) {
+      Game.Systems.refreshShop(s92);
+      var ks92 = [];
+      for (var b92 = 0; b92 < s92.shop.items.length; b92++) {
+        var k92 = Game.Systems.cardKey(s92.shop.items[b92]);
+        if (ks92.indexOf(k92) >= 0) dupRefresh++;
+        ks92.push(k92);
+      }
+    }
+  }
+  assert(dupRefresh === 0, '连续刷新后 4 格仍无重复卡（200 轮 × 2 次刷新）');
+
+  // 池子真的抽干时也要有话说：4 格永远填满，不出现空槽
+  var emptySlot92 = 0;
+  for (var tR = 0; tR < 50; tR++) {
+    var sR = Game.Systems.createState('campaign', 'swordsman', 270000 + tR);
+    sR.player.materials = 1e9;
+    Game.Systems.startWave(sR, 3);
+    Game.Systems.openShop(sR);
+    for (var rR = 0; rR < 8; rR++) {
+      Game.Systems.refreshShop(sR);
+      for (var bR = 0; bR < sR.shop.items.length; bR++) {
+        var itR = sR.shop.items[bR];
+        if (!itR || !itR.type || typeof itR.price !== 'number') emptySlot92++;
+      }
+    }
+  }
+  assert(emptySlot92 === 0, '候选池抽干时 4 格仍然填满（不出现空槽）');
+
+  // ---- 5. 换波重置：上一波出过的卡下一波能再出 ----
+  var s93 = Game.Systems.createState('campaign', 'swordsman', 215000);
+  Game.Systems.startWave(s93, 1);
+  Game.Systems.rollLevelUpChoices(s93);
+  assert(s93.waveSeen.length > 0, '本波抽过的卡被登记（' + s93.waveSeen.length + ' 张）');
+  Game.Systems.startWave(s93, 2);
+  assert(s93.waveSeen.length === 0, '换波清空记录，同一张卡下一波能再出');
+
+  // ---- 6. 候选池被抽干时仍然凑满 3 张（Boss 奖励池总共才 6 张）----
+  var short94 = 0;
+  for (var t94 = 0; t94 < 200; t94++) {
+    var s94 = Game.Systems.createState('campaign', 'swordsman', 220000 + t94);
+    for (var r94 = 0; r94 < 10; r94++) {
+      if (Game.Systems.bossRewardChoices(s94).length !== 3) short94++;
+    }
+  }
+  assert(short94 === 0, 'Boss 奖励池抽干时仍凑满 3 张（200 轮 × 10 次，缺张 ' + short94 + ' 次）');
+
+  // ---- 7. 回血道具改成按最大生命百分比 ----
+  assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.15, '回血卡权重系数集中在 CONST');
+  var healIds95 = [];
+  for (var i95 in Game.ITEMS) if (Game.ITEMS[i95].healing) healIds95.push(i95);
+  assert(healIds95.length === 4, '4 件回血道具被标记（' + healIds95.length + '）');
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.012 &&
+         typeof Game.ITEMS.lifeluck.stat.lifeOnHit === 'undefined',
+         '生机之种改成按最大生命百分比');
+  assert(Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.03 &&
+         typeof Game.ITEMS.deathbell.stat.lifeOnKill === 'undefined',
+         '夺命金铃改成按最大生命百分比');
+  assert(/最大生命/.test(Game.ITEMS.lifeluck.desc) && /最大生命/.test(Game.ITEMS.deathbell.desc),
+         '道具文案跟着改成百分比');
+
+  var p96 = new Game.Player('swordsman');
+  p96.applyItem('lifeluck', 1);
+  assert(Math.abs(p96.healForHit() - p96.stats.maxHp * 0.012) < 1e-9,
+         '命中回血 = 最大生命 × 1.2%');
+  var p97 = new Game.Player('swordsman');
+  p97.applyItem('deathbell', 1);
+  assert(Math.abs(p97.healForKill() - p97.stats.maxHp * 0.03) < 1e-9,
+         '击杀回血 = 最大生命 × 3%');
+  var hp97 = p97.stats.maxHp;
+  p97.applyUpgrade({ maxHp: 40 });
+  assert(Math.abs(p97.healForKill() - (hp97 + 40) * 0.03) < 1e-9,
+         '最大生命涨了回血量跟着涨（固定点数做不到）');
+  // 老存档里残留的固定点数仍生效 —— 改表不该让玩家白买
+  var p98 = new Game.Player('swordsman');
+  p98.stats.lifeOnHit = 2; p98.stats.lifeOnKill = 5;
+  assert(p98.healForHit() === 2 && p98.healForKill() === 5,
+         '老存档里固定的命中/击杀回血仍生效');
+
+  // ---- 8. 近战与远程两条命中路径都走这套取数 ----
+  var s99 = Game.Systems.createState('campaign', 'swordsman', 230000);
+  s99.player.applyItem('lifeluck', 1);
+  s99.player.applyItem('deathbell', 1);
+  var e99 = new Game.Enemy('bat', s99.player.x + 30, s99.player.y, 1);
+  s99.enemies.push(e99);
+  var calls99 = [];
+  s99.player.heal = function (v) { calls99.push(v); return 0; };
+  var wp99 = s99.player.weapons[0];
+  wp99.cooldownRemaining = 0;
+  wp99.update(0.016, s99.player, s99);
+  assert(calls99.length === 2,
+         '一次近战命中触发命中回血 + 击杀回血（' + calls99.length + ' 次）');
+  assert(Math.abs(calls99[0] - s99.player.stats.maxHp * 0.012) < 1e-9 &&
+         Math.abs(calls99[1] - s99.player.stats.maxHp * 0.03) < 1e-9,
+         '近战路径按最大生命百分比回血（' + calls99[0].toFixed(2) + ' / ' + calls99[1].toFixed(2) + '）');
+
+  var s100 = Game.Systems.createState('campaign', 'swordsman', 305000);
+  s100.player.applyItem('lifeluck', 1);
+  s100.player.applyItem('deathbell', 1);
+  var e100 = new Game.Enemy('bat', s100.player.x + 200, s100.player.y, 1);
+  s100.enemies.push(e100);
+  s100.projectiles.push(new Game.Projectile({
+    x: e100.x, y: e100.y, vx: 0, vy: 0, radius: 5, damage: 50, crit: false,
+    fromPlayer: true, pierce: 0, life: 1, color: '#fff', type: 'bullet',
+    knockback: 0, owner: s100.player,
+  }));
+  var calls100 = [];
+  s100.player.heal = function (v) { calls100.push(v); return 0; };
+  Game.Systems.updateProjectiles(s100, 0.016);
+  assert(calls100.length === 2 &&
+         Math.abs(calls100[0] - s100.player.stats.maxHp * 0.012) < 1e-9 &&
+         Math.abs(calls100[1] - s100.player.stats.maxHp * 0.03) < 1e-9,
+         '远程弹道路径同样按最大生命百分比回血');
+
+  // ---- 9. 面板上显示成百分比 ----
+  var s101 = Game.Systems.createState('campaign', 'swordsman', 306000);
+  s101.player.applyItem('lifeluck', 1);
+  s101.player.applyItem('deathbell', 1);
+  var html101 = Game.UI.renderStatsHTML(s101);
+  assert(html101.indexOf('1.2% 最大生命') >= 0, '面板显示命中回血百分比');
+  assert(html101.indexOf('3% 最大生命') >= 0, '面板显示击杀回血百分比');
+  assert(!/回血<\/span><span class="v">[^<]*\/ 次<\/span>/.test(html101),
+         '百分比生效时不再显示固定的「/ 次」');
+
+  // ---- 10. 回血卡降权；healBuild 角色不降 ----
+  function healShare(charId, n102, rolls102) {
+    var heals102 = 0, total102 = 0;
+    for (var t102 = 0; t102 < n102; t102++) {
+      var s102 = Game.Systems.createState('campaign', charId, 260000 + t102);
+      for (var r102 = 0; r102 < rolls102; r102++) {
+        var cs102 = Game.Systems.rollLevelUpChoices(s102);
+        for (var a102 = 0; a102 < cs102.length; a102++) {
+          if (cs102[a102].kind !== 'item') continue;
+          total102++;
+          if (Game.ITEMS[cs102[a102].data.itemId].healing) heals102++;
+        }
+      }
+    }
+    return { heals: heals102, total: total102 };
+  }
+  // 每次只抽一次：抽多了去重会把普通道具过滤光，回血卡的相对占比反而回升
+  var share103 = healShare('swordsman', 500, 1);
+  var share104 = healShare('assassin', 500, 1);
+  assert(share103.heals / share103.total < 0.15,
+         '非续航角色回血卡占比 ' + (share103.heals / share103.total * 100).toFixed(1) +
+         '%（' + share103.heals + '/' + share103.total + '，等权应为 33.3%）');
+  assert(share104.heals / share104.total > share103.heals / share103.total + 0.08,
+         'healBuild 角色（掠影）拿满权，回血卡占比 ' +
+         (share104.heals / share104.total * 100).toFixed(1) + '%，明显高于普通角色');
+
+  // healBuild 标记在三个续航角色上
+  var healChars105 = ['assassin', 'nun', 'ascetic'].filter(function (id) {
+    var c105 = null, chars105 = Game.CHARACTERS;
+    for (var i105 = 0; i105 < chars105.length; i105++) if (chars105[i105].id === id) c105 = chars105[i105];
+    return !!(c105 && c105.healBuild);
+  });
+  assert(healChars105.length === 3, '三个续航角色都标了 healBuild（' + healChars105.length + '）');
+
+  // ---- 11. 存档回环：本波记录 + 新属性键 ----
+  var s106 = Game.Systems.createState('campaign', 'swordsman', 300000);
+  Game.Systems.startWave(s106, 4);
+  Game.Systems.rollLevelUpChoices(s106);
+  s106.player.applyItem('lifeluck', 2);
+  var rt106 = Game.Systems.deserialize(Game.Systems.serialize(s106));
+  assert(JSON.stringify(rt106.waveSeen) === JSON.stringify(s106.waveSeen),
+         '本波已出过的卡随存档往返');
+  assert(rt106.player.stats.lifeOnHitPct === s106.player.stats.lifeOnHitPct &&
+         rt106.player.stats.lifeOnKillPct === s106.player.stats.lifeOnKillPct,
+         '百分比回血属性随存档往返');
+  assert(rt106.player.healForHit() === s106.player.healForHit(), '读档后回血量不变');
+
+  // ---- 12. 怪量：对上一版预算（16+8w）逐波不许回落 ----
+  function countWith(budgetFn, intervalFn, wave107) {
+    var dur107 = Game.Systems.waveDuration(wave107);
+    var bud107 = budgetFn(wave107), t107 = 0.5, c107 = 0;
+    if (Game.Systems.isBossWave(wave107)) bud107 = Math.max(10, Math.floor(bud107 * 0.6));
+    while (c107 < bud107 && t107 < dur107) {
+      c107++; t107 += intervalFn(wave107);
+      if (t107 < 0.1) t107 = 0.1;
+    }
+    return c107;
+  }
+  var drop107 = [];
+  for (var w107 = 1; w107 <= 20; w107++) {
+    if (countWith(function (w) { return 22 + w * 10; }, function (w) { return 0.5 - Math.min(0.26, w * 0.01); }, w107) <
+        countWith(function (w) { return 16 + w * 8; }, function (w) { return 0.55 - Math.min(0.3, w * 0.01); }, w107)) {
+      drop107.push(w107);
+    }
+  }
+  assert(drop107.length === 0, '1~20 波怪量对上一版（16+8w）零回落（少量波次: ' + (drop107.join(',') || '无') + '）');
+  assert(countWith(function (w) { return 22 + w * 10; }, function (w) { return 0.5 - Math.min(0.26, w * 0.01); }, 1) >=
+         countWith(function (w) { return 16 + w * 8; }, function (w) { return 0.55 - Math.min(0.3, w * 0.01); }, 1) * 1.3,
+         '第 1 波怪量 +33% 以上（' +
+         countWith(function (w) { return 16 + w * 8; }, function (w) { return 0.55 - Math.min(0.3, w * 0.01); }, 1) +
+         ' → ' + countWith(function (w) { return 22 + w * 10; }, function (w) { return 0.5 - Math.min(0.26, w * 0.01); }, 1) + '）');
+
+  // ---- 13. 前期金币：第 1 波期望材料够买稀有 + 普通各一件 ----
+  assert(Game.DROP.matChance === 0.8, '材料掉落率提到 0.8');
+  var sch108 = Game.Systems.buildSpawnSchedule({ seed: 777, wave: 1 }, 1);
+  var expMat108 = 0;
+  for (var i108 = 0; i108 < sch108.length; i108++) {
+    expMat108 += Math.ceil(Game.ENEMIES[sch108[i108].type].material * Game.DROP.matMult) *
+                 Game.DROP.matChance;
+  }
+  var need108 = Game.Systems.priceFor('rare', 1) + Game.Systems.priceFor('common', 1);
+  assert(expMat108 >= need108,
+         '第 1 波期望材料 ' + expMat108.toFixed(0) + ' ≥ 稀有 ' + Game.Systems.priceFor('rare', 1) +
+         ' + 普通 ' + Game.Systems.priceFor('common', 1) + '，首轮买得起装备');
+
+  // ---- 14. 背景音乐 ----
+  assert(Game.Audio.isMusicEnabled() === true, '背景音乐默认开');
+  Game.Audio.setMusicEnabled(false);
+  assert(Game.Audio.isMusicEnabled() === false, '能关掉背景音乐');
+  Game.Audio.setMusicEnabled(true);
+  assert(Game.Audio.isMusicEnabled() === true, '能重新打开背景音乐');
+  Game.Audio.unlock();   // 无 AudioContext 环境下必须安全返回
+  assert(true, '无 AudioContext 时 unlock / startMusic 不抛异常');
+
+  assert(Game.settings.music === true, '设置默认开启背景音乐');
+  assert(Game.Audio.isMusicEnabled() === Game.settings.music, '设置与音频模块一致');
+  Game.Game.toggleMusic();
+  assert(Game.settings.music === false && Game.Audio.isMusicEnabled() === false,
+         'toggleMusic 翻转设置并同步音频模块');
+  Game.Game.toggleMusic();
+  assert(Game.settings.music === true && Game.Audio.isMusicEnabled() === true, '再翻一次回来');
+
+  Game.Game.openSettings();
+  var setHtml109 = document.getElementById('settings').innerHTML;
+  assert(setHtml109.indexOf('背景音乐') >= 0, '设置面板有背景音乐开关');
+  assert(setHtml109.indexOf('Game.Game.toggleMusic') >= 0, '背景音乐开关绑定了 toggleMusic');
+  Game.Game.toggleMusic();                 // 关掉
+  Game.Game.openSettings();                // 重画，面板应如实显示「关」
+  var setHtml110 = document.getElementById('settings').innerHTML;
+  assert(/背景音乐：关/.test(setHtml110), '关掉后设置面板如实显示「关」');
+  Game.Game.toggleMusic();                 // 翻回来，别影响后面的断言
+  Game.Game.openSettings();
+  assert(/背景音乐：开/.test(document.getElementById('settings').innerHTML),
+         '打开时设置面板显示「开」');
+
+  // 音效开关与背景音乐互不牵连
+  Game.Audio.setEnabled(false);
+  assert(Game.Audio.isEnabled() === false && Game.Audio.isMusicEnabled() === true,
+         '关音效不影响背景音乐开关');
+  Game.Audio.setEnabled(true);
+
+  // 老存档缺 music 字段时不会把背景音乐悄悄关掉
+  var saved110 = Game.settings;
+  Game.settings = { sound: true, vibrate: true, quality: 'high' };   // 老存档形状
+  Game.Game._applySettings();
+  assert(Game.Audio.isMusicEnabled() === true, '老存档没有 music 字段时背景音乐仍然开');
+  Game.settings = saved110;
+} catch (e) {
+  assert(false, '每波不重卡/加量/回血卡改造异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */
