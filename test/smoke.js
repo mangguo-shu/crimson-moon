@@ -2894,6 +2894,62 @@ try {
     return Math.sqrt(a[0] * a[0] + a[1] * a[1]) > K.WEAPON_ORBIT_R * 0.9;
   }), '卫星确实挂在轨道上，不是叠在玩家身上');
 
+  // 朝向：剑尖/箭头必须沿径向朝外（剑柄朝玩家），近战远程都一样。
+  // 追变换矩阵把「武器局部空间的上」映射到世界方向再断言 —— 只盯 rotate 的角度值
+  // 得先理解「武器在局部空间朝哪」才作数，断言写反会顺着 bug 一起变绿。
+  // 卫星笔画的唯一特征是 scale 0.62（玩家身体与怪物都是 1.0），拿它筛。
+  var mx211 = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  var stk211 = [];
+  var fills211 = [];
+  var tr211 = function (n) {
+    mx211 = {
+      a: mx211.a * n.a + mx211.c * n.b, b: mx211.b * n.a + mx211.d * n.b,
+      c: mx211.a * n.c + mx211.c * n.d, d: mx211.b * n.c + mx211.d * n.d,
+      e: mx211.a * n.e + mx211.c * n.f + mx211.e,
+      f: mx211.b * n.e + mx211.d * n.f + mx211.f,
+    };
+  };
+  var o211 = {};
+  ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) {
+    o211[m] = ctx211[m];
+  });
+  ctx211.save = function () {
+    stk211.push({ a: mx211.a, b: mx211.b, c: mx211.c, d: mx211.d, e: mx211.e, f: mx211.f });
+  };
+  ctx211.restore = function () { if (stk211.length) mx211 = stk211.pop(); };
+  ctx211.translate = function (x, y) { tr211({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); };
+  ctx211.rotate = function (t) {
+    tr211({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 });
+  };
+  ctx211.scale = function (x, y) { tr211({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); };
+  ctx211.fill = function () {
+    fills211.push({ a: mx211.a, b: mx211.b, c: mx211.c, d: mx211.d });
+  };
+  Game.Renderer.render(s211, 0.016);
+  ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) {
+    ctx211[m] = o211[m];
+  });
+  // 局部 (0,-1)（剑尖/箭头那一端）经矩阵后的世界方向 = (−c, −d)
+  var orbitFills211 = fills211.filter(function (f) {
+    return Math.abs(Math.sqrt(f.a * f.a + f.c * f.c) - 0.62) < 0.01;
+  });
+  assert(orbitFills211.length >= pl211.weapons.length,
+         '3 把卫星武器的本体笔画都被采到（' + orbitFills211.length + ' 笔 / ' +
+         pl211.weapons.length + ' 把）');
+  var facingIn211 = [];
+  orbitFills211.forEach(function (f) {
+    var dx = -f.c, dy = -f.d;
+    var dl = Math.sqrt(dx * dx + dy * dy) || 1;
+    dx /= dl; dy /= dl;
+    var match = pl211.weapons.some(function (w) {
+      return Math.abs(dx - Math.cos(w.aimAngle)) < 0.02 && Math.abs(dy - Math.sin(w.aimAngle)) < 0.02;
+    });
+    if (!match) facingIn211.push('(' + dx.toFixed(2) + ', ' + dy.toFixed(2) + ')');
+  });
+  assert(facingIn211.length === 0,
+         '卫星武器沿径向朝外、柄端朝玩家（有 ' + facingIn211.length +
+         ' 处背离：' + (facingIn211.join(' ') || '无') + '）');
+
   // 没跑过 update 的武器没有位置，卫星要跳过而不是画半截
   var s212 = Game.Systems.createState('campaign', 'swordsman', 777011);
   s212.enemies.length = 0; s212.projectiles.length = 0;

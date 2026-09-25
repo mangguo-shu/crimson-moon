@@ -840,8 +840,11 @@
       ctx.restore();
       ctx.save();
       ctx.translate(x, y);
-      // 武器头朝外：轨道角度 a 是「玩家指向武器」，剑身沿径向指出去
-      ctx.rotate(rot - Math.PI / 2);
+      // 武器头朝外：剑尖/箭头在局部空间指 −y，要把它转到径向朝外方向 rot 上。
+      // 局部 (0,-1) 经 rotate(θ) 后是 (sinθ, −cosθ)，要等于 (cos rot, sin rot)，
+      // 解出 θ = rot + π/2 —— 写成 rot − π/2 会整整差 180°，剑尖指向玩家自己，
+      // 用户 2026-09-25 真机指出「剑尖还是朝人物了，需要剑柄朝人物」。
+      ctx.rotate(rot + Math.PI / 2);
       ctx.scale(0.62, 0.62);
       if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
       else this._drawCrossbow(ctx, 0, 0, w.def.color);
