@@ -116,8 +116,9 @@ assert(!!Game.Systems && !!Game.Renderer && !!Game.UI && !!Game.Storage, '系统
 // 而且轨道角度随 performance.now() 转，写死「player.x + 40」会随进程耗时漂移成 flaky
 // （进程跑得慢一点角度就转开，最坏情况武器正好在敌人背后，够不着）。
 const atWeapon = function (w, owner, dist, type, wave) {
-  // 索敌圆心是玩家（不是武器），所以「摆进这把武器的扇形」= 沿该武器的固定角、
-  // 离玩家 dist 那么远。武器自己挂在半径 62 的圈上，只是这块扇形的标记。
+  // 索敌圆心是玩家（不是武器），所以「摆进这把武器的扇形」= 沿该武器当前
+  // 的轨道角、离玩家 dist 那么远。武器自己挂在半径 62 的圈上，只是这块
+  // 扇形朝向的标记。读取时刻必须紧跟 update（时钟钉住时二者恰好同值）。
   const a = w.posAt(owner).a;
   return new Game.Enemy(type, owner.x + Math.cos(a) * dist, owner.y + Math.sin(a) * dist, wave);
 };
@@ -2604,12 +2605,15 @@ try {
 console.log('\n== ㉗ 环绕武器 + 远程降伤 + 近战加范围 ==');
 try {
   var K = Game.CONST;
+  // 轨道随时间转，几何断言需要确定性 —— 把时钟钉在 0，phase 恰好为 0。
+  // 本文件后面没有依赖真实时间戳的段落了，所以钉住即可，不必恢复。
+  global.performance.now = function () { return 0; };
 
   // ---- 1. 调参开关就位，且 WEAPONS 表本体未被改动（冻结区保持原样）----
   assert(K.WEAPON_ORBIT_R === 62 && Math.abs(K.WEAPON_ORBIT_OFFSET - (-Math.PI / 2)) < 1e-9,
          '布置半径/基准角就位（R=' + K.WEAPON_ORBIT_R + ' / 第一把在玩家正上方）');
-  assert(K.WEAPON_ORBIT_SPEED === undefined,
-         '不再有轨道转速：武器固定在等分角上，不转圈');
+  assert(K.WEAPON_ORBIT_SPEED === 0.25 && Math.abs(K.RANGED_FIRE_ARC - Math.PI * 0.75) < 1e-9,
+         '轨道转速 0.25 rad/s 与远程扇形 135° 两个开关就位');
   assert(K.RANGED_DMG_SCALE === 0.6 && K.MELEE_RANGE_SCALE === 1.25,
          '远程伤害 ×0.6 / 近战范围 ×1.25 两个开关就位');
   assert(Game.WEAPONS.pistol.damage === 10 && Game.WEAPONS.iron_sword.range === 66,
@@ -2633,7 +2637,8 @@ try {
          '武器数 ≤0 时角度退化为 0（不会越界，也不会除零）');
   // 相邻角度差要走 wrap：orbitSlot 把角度压回 [-π, π]，跨 ±π 的相邻槽
   // 直接相减会读成 -2π，而实际上它们是紧挨着的。
-  // 角度现在是纯确定式（不取 performance.now），所以容差可以收到浮点极限。
+  // 本段把时钟钉在常量上，phase 对同一时刻的所有槽都是同一个值，
+  // 相邻差里它被完全消掉，所以容差可以收到浮点极限。
   var wrapDiff = function (a, b) {
     var d = (a - b) % (Math.PI * 2);
     if (d > Math.PI) d -= Math.PI * 2;
@@ -2662,10 +2667,21 @@ try {
   assert(Math.abs(Game.util.dist(pt202.x, pt202.y, 100, 100) - K.WEAPON_ORBIT_R) < 0.001,
          '单把武器同样挂在半径 ' + K.WEAPON_ORBIT_R + ' 的布置圈上');
   assert(Math.abs(pt202.a - K.WEAPON_ORBIT_OFFSET) < 1e-9,
-         '唯一一把武器停在基准角上（不转圈，也没有多余相位）');
+         '时钟钉在 0 时唯一一把武器恰好在基准角上（没有多余相位）');
   // 4 把时槽 1 在 π/2、6 把时在 π/3，位移 π/6。
   assert(Math.abs(Math.abs(wrapDiff(Game.orbitSlot(6, 1), Game.orbitSlot(4, 1))) - Math.PI / 6) < 1e-9,
          '武器数变化会重新均分整条圈（4 把 → 6 把，第 1 槽位移 π/6）');
+  // 轨道真的在转 —— 这是「武器多了攻击范围变大」的前提：武器转到哪儿就朝哪儿打
+  global.performance.now = function () { return 0; };
+  var r202a = Game.orbitSlot(2, 0);
+  global.performance.now = function () { return 1000; };
+  var r202b = Game.orbitSlot(2, 0);
+  // 期望值写死成字面量，不用 K.WEAPON_ORBIT_SPEED —— 那样 speed 取 0 时两边都是 0，
+  // 断言自证为真（反验抓出来的空断言）
+  assert(Math.abs(wrapDiff(r202b, r202a) - 0.25) < 1e-9,
+         '轨道在转：推进 1 秒转过 0.25 rad（实得 ' +
+         wrapDiff(r202b, r202a).toFixed(4) + '）');
+  global.performance.now = function () { return 0; };   // 后面的几何断言继续用 0
 
   // ---- 3. 6 把武器互不重叠、且都挂在同一圈上 ----
   var s203 = Game.Systems.createState('campaign', 'swordsman', 777001);
@@ -2685,7 +2701,7 @@ try {
     }
   assert(apart203, '6 把武器在轨道上互不重叠（最近两把间距 ' + minGap203.toFixed(0) + 'px）');
 
-  // ---- 4. 命中范围是「以玩家为圆心的扇形」，扇形宽 = 360° / 武器数 ----
+  // ---- 4. 命中范围是「以玩家为圆心的扇形」，扇形宽 = 武器自己的 arc ----
   function atSide(owner, w, dist, phiDeg) {
     var pp = w.posAt(owner);
     var ca = Math.cos(pp.a + phiDeg * Math.PI / 180), sa = Math.sin(pp.a + phiDeg * Math.PI / 180);
@@ -2695,8 +2711,8 @@ try {
   var pl204 = s204.player;
   s204.enemies.length = 0; s204.projectiles.length = 0;
   var sw204 = pl204.weapons[0];
-  assert(Math.abs(sw204.halfArc(pl204) - Math.PI) < 1e-9,
-         '一把武器负责全场 360°（半角 180°）');
+  assert(Math.abs(sw204.arcHalf() - Game.WEAPONS.iron_sword.arc / 2) < 1e-9,
+         '铁剑半角 = 自己的 arc 的一半（135°/2 = ' + (sw204.arcHalf() * 180 / Math.PI).toFixed(0) + '°）');
 
   var far204 = atWeapon(sw204, pl204, 90, 'zombie', 1);   // 距玩家 90px
   far204.hp = 1e9;
@@ -2705,14 +2721,14 @@ try {
   sw204.update(0.016, pl204, s204);
   assert(far204.hp < 1e9, '径向 90px 的敌人被命中（原射程 66 差 24px，靠 ×1.25 补上）');
 
-  // 武器正后方（原「玩家身后」）的敌人现在打得着 —— 360° 覆盖就是为修这个
+  // 武器正后方（180° 之外）的敌人打不着 —— 转过去才能打到
   var back204 = atSide(pl204, sw204, 90, 180);
   back204.hp = 1e9;
   s204.enemies.length = 0;
   s204.enemies.push(back204);
   sw204.cooldownRemaining = 0;
   sw204.update(0.016, pl204, s204);
-  assert(back204.hp < 1e9, '武器正后方的敌人也打得着：一把武器覆盖全场 360°');
+  assert(back204.hp === 1e9, '武器正后方（180° 之外）的敌人打不着：转过去才打得到');
 
   // 内环：贴着玩家、落在布置圈（半径 62）之内的敌人打得着。
   // 索敌圆心是玩家而不是武器 —— 以武器为圆心时这类敌人全在武器背后，内环永远打不到。
@@ -2732,27 +2748,70 @@ try {
   assert(Math.abs(sw204.swingTime - (swBefore204 + 0.016)) < 1e-9,
          '扇形里没有敌人就不空挥（余韵计时没被重置）');
 
-  // 扇形宽度真的随武器数收窄：两把各 180°，边界在 ±90°
-  var s204b = Game.Systems.createState('campaign', 'swordsman', 777009);
-  var pl204b = s204b.player;
-  s204b.enemies.length = 0; s204b.projectiles.length = 0;
-  pl204b.weapons.push(Game.createWeapon('pistol', 1, 1));
-  Game.Systems.normalizeSlots(pl204b);
-  var sw204b = pl204b.weapons[0];
-  assert(Math.abs(sw204b.halfArc(pl204b) - Math.PI / 2) < 1e-9,
-         '两把武器各负责 180°（半角 90°）');
-  var sideIn204 = atSide(pl204b, sw204b, 95, 50);
+  // 扇形边界：偏 50° 在 67.5° 半角内打得着，偏 100° 出扇形打不着
+  var sideIn204 = atSide(pl204, sw204, 95, 50);
   sideIn204.hp = 1e9;
-  s204b.enemies.length = 0; s204b.enemies.push(sideIn204);
-  sw204b.cooldownRemaining = 0;
-  sw204b.update(0.016, pl204b, s204b);
-  assert(sideIn204.hp < 1e9, '偏 50° 的敌人还在 90° 半角内，被命中');
-  var sideOut204 = atSide(pl204b, sw204b, 95, 110);
+  s204.enemies.length = 0; s204.enemies.push(sideIn204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(sideIn204.hp < 1e9, '偏 50° 的敌人还在 67.5° 半角内，被命中');
+  var sideOut204 = atSide(pl204, sw204, 95, 100);
   sideOut204.hp = 1e9;
-  s204b.enemies.length = 0; s204b.enemies.push(sideOut204);
-  sw204b.cooldownRemaining = 0;
-  sw204b.update(0.016, pl204b, s204b);
-  assert(sideOut204.hp === 1e9, '偏 110° 的敌人出这把武器的扇形，打不着');
+  s204.enemies.length = 0; s204.enemies.push(sideOut204);
+  sw204.cooldownRemaining = 0;
+  sw204.update(0.016, pl204, s204);
+  assert(sideOut204.hp === 1e9, '偏 100° 的敌人出这把武器的扇形，打不着');
+
+  // 总覆盖面 = 武器数 × 扇形宽，武器越多打得的面越广（不能按 360°/武器数均分）
+  function cover204(n) {
+    var s = Game.Systems.createState('campaign', 'swordsman', 777020 + n);
+    var p = s.player;
+    for (var i = 1; i < n; i++) p.weapons.push(Game.createWeapon('iron_sword', 1, i));
+    Game.Systems.normalizeSlots(p);
+    var c = 0;
+    p.weapons.forEach(function (w) { c += w.arcHalf() * 2; });
+    return c;
+  }
+  assert(Math.abs(cover204(1) - Math.PI * 0.75) < 1e-9,
+         '一把武器覆盖 135°');
+  assert(Math.abs(cover204(2) - Math.PI * 1.5) < 1e-9,
+         '两把武器覆盖 270°（比一把多一倍，不是恒定 360°）');
+  assert(Math.abs(cover204(6) - 6 * Math.PI * 0.75) < 1e-9,
+         '六把武器覆盖 ' + (cover204(6) * 180 / Math.PI).toFixed(0) + '°（超过一圈，全方向都有武器在看）');
+
+  // 两把武器左右各来一个怪，同帧各打各的 —— 用户 2026-09-25 描述的核心场景
+  var s204c = Game.Systems.createState('campaign', 'swordsman', 777029);
+  var pl204c = s204c.player;
+  s204c.enemies.length = 0; s204c.projectiles.length = 0;
+  pl204c.weapons.push(Game.createWeapon('iron_sword', 1, 1));
+  Game.Systems.normalizeSlots(pl204c);
+  var wA204 = pl204c.weapons[0], wB204 = pl204c.weapons[1];
+  var pa204 = wA204.posAt(pl204c).a, pb204 = wB204.posAt(pl204c).a;
+  assert(Math.abs(Math.abs(wrapDiff(pb204, pa204)) - Math.PI) < 1e-9,
+         '两把武器在轨道上正对（相隔 180°）');
+  var left204 = atSide(pl204c, wA204, 90, 40);
+  var right204 = atSide(pl204c, wB204, 90, 40);
+  left204.hp = 1e9; right204.hp = 1e9;
+  s204c.enemies.push(left204, right204);
+  wA204.cooldownRemaining = 0; wB204.cooldownRemaining = 0;
+  wA204.update(0.016, pl204c, s204c);
+  wB204.update(0.016, pl204c, s204c);
+  assert(left204.hp < 1e9 && right204.hp < 1e9,
+         '左右同时来怪，两把武器同帧各自出手（残血 ' +
+         left204.hp.toFixed(0) + ' / ' + right204.hp.toFixed(0) + '）');
+
+  // 冷却互相独立：A 在冷却时 B 照常出手
+  s204c.enemies.length = 0;
+  var solo204 = atSide(pl204c, wB204, 90, 40);
+  solo204.hp = 1e9;
+  s204c.enemies.push(solo204);
+  wA204.cooldownRemaining = 5;               // 长期冷却
+  wB204.cooldownRemaining = 0;
+  wA204.update(0.016, pl204c, s204c);
+  var before204 = solo204.hp;
+  wB204.update(0.016, pl204c, s204c);
+  assert(solo204.hp < 1e9,
+         '一把武器在冷却时另一把照常出手（冷却互相独立）');
 
   // ---- 5. 击退方向从玩家指向敌人，不是从武器位置 ----
   var s205 = Game.Systems.createState('campaign', 'swordsman', 777003);
@@ -2999,8 +3058,9 @@ try {
   wm213.cooldownRemaining = 0;
   wm213.update(0.016, pl213, s213);
   Game.FX.slash = origSlash213;
-  assert(slash213 && Math.abs(slash213.arc - Math.PI) < 1e-9,
-         '刀光扇形 = 360°/武器数（2 把各 180°），不是表里那个已作废的 arc 字段');
+  assert(slash213 && Math.abs(slash213.arc - Game.WEAPONS.moon_sword.arc) < 1e-9,
+         '刀光扇形 = 这把武器自己的 arc（赤月斩 ' + (Game.WEAPONS.moon_sword.arc * 180 / Math.PI).toFixed(0) +
+         '°，不是旁边铁剑的 ' + (Game.WEAPONS.iron_sword.arc * 180 / Math.PI).toFixed(0) + '°）');
   assert(slash213 &&
          Math.abs(slash213.range - Game.WEAPONS.moon_sword.range * K.MELEE_RANGE_SCALE) < 1e-9,
          '刀光半径用有效射程（已含 ×' + K.MELEE_RANGE_SCALE + '）');

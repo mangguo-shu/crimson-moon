@@ -3,10 +3,11 @@
  * 负责自动攻击：冷却计时、索敌、近战挥砍 / 远程射击、暴击与吸血结算。
  * 合成/星级系统留到后续轮次，当前用 level 表示强化等级。
  *
- * 多把武器的表现：每把武器固定在玩家身边，按槽位序号等分角度（不转圈），
- * 各负责 360°/武器数 的一块扇形。索敌与命中的圆心是**玩家**、半径是近战射程，
- * 武器只是「这块扇形归谁」的标记 —— 以武器为圆心时贴着玩家的敌人全落在武器
- * 背后，内环永远打不到。
+ * 多把武器的表现：每把武器挂在玩家身边一圈上，整圈慢速旋转，各管自己扇形
+ * 宽的一块。扇形越窄越多，武器越多打得的面越广（武器数 × 扇形宽）。
+ * 索敌与命中的圆心是**玩家**、半径是近战射程，武器只是「指向哪个方向」的
+ * 标记 —— 以武器为圆心时贴着玩家的敌人全落在武器背后，内环永远打不到。
+ * 每把武器的冷却互不影响：两把武器左右同时来怪，各打各的。
  * ============================================================ */
 (function () {
   'use strict';
@@ -25,16 +26,18 @@
    * 图标在另一边飘，一眼穿帮。index 取武器在 player.weapons 里的序号，
    * count 取当前武器数 —— 新拿一把武器整圈重新均分，旧的不用记位置。
    *
-   * 武器固定在等分角度上，不转圈（用户 2026-09-25「武器不要转圈，可以固定在
-   * 一个地方，多个武器进行等比例固定」）。每把武器负责 360°/武器数 的扇形，
-   * 一把就是全场 360°，两把各 180°。扇形圆心是玩家，见 halfArc() / update()。
+   * 整圈按 WEAPON_ORBIT_SPEED 慢速旋转：武器转过去哪儿，就往哪儿打。
    *
    * 返回值必须归一化到 [-π, π]：cos/sin 不在乎角度大小，但「角度差取模」在乎。
    * 取模一旦吃掉大数目的周期，double 精度全丢，结果不是差值而是随机垃圾 ——
-   * 表现为武器永远「背对」敌人、一刀砍不出去。 */
+   * 表现为武器永远「背对」敌人、一刀砍不出去。
+   * 时间项先按「整圈周期」取模再换算弧度，让参与运算的量始终在 [0, 2π) 内。 */
   Game.orbitSlot = function (count, index) {
     if (!count || count < 1) return 0;
-    var a = (index / count) * Math.PI * 2 + Game.CONST.WEAPON_ORBIT_OFFSET;
+    var K = Game.CONST;
+    var t = performance.now();
+    var phase = ((t / 1000 % (Math.PI * 2 / K.WEAPON_ORBIT_SPEED)) * K.WEAPON_ORBIT_SPEED);
+    var a = (index / count) * Math.PI * 2 + phase + K.WEAPON_ORBIT_OFFSET;
     a %= Math.PI * 2;
     if (a > Math.PI) a -= Math.PI * 2;
     if (a < -Math.PI) a += Math.PI * 2;
@@ -87,12 +90,15 @@
     return { enemy: best, dist: best === null ? Infinity : Math.sqrt(bestD) };
   };
 
-  /** 本把武器负责的扇形半角 = 180° / 武器数。
-   *  一把武器全场 360°，两把各 180°，六把各 60° —— 合计恒为 360°，
-   *  加武器加的是输出不是覆盖面。 */
-  WeaponInstance.prototype.halfArc = function (owner) {
-    var n = (owner && owner.weapons && owner.weapons.length) || 1;
-    return Math.PI / Math.max(1, n);
+  /** 本把武器负责的扇形半角 = 自己那个扇形宽的一半。
+   *  近战用自己的 arc（冻结值：铁剑 135°、赤月斩 171°）；远程表里 arc 是 0，
+   *  用统一开关 RANGED_FIRE_ARC（135°，和铁剑同手感）。
+   *  总覆盖 = 武器数 × 扇形宽，武器越多打得的面越广 —— 这是「多把武器能
+   *  体现出来」的来源。不能按 360°/武器数均分：那样合计恒定 360°，加武器
+   *  只加输出，玩家感知不到手里多了什么。 */
+  WeaponInstance.prototype.arcHalf = function () {
+    var a = this.def.arc > 0 ? this.def.arc : Game.CONST.RANGED_FIRE_ARC;
+    return a / 2;
   };
 
   /** 每帧更新；自动攻击。扇形圆心是玩家（半径 = 近战射程），不是武器 ——
@@ -104,8 +110,8 @@
     this.swingTime += dt;                                    // 出手余韵计时
     if (this.cooldownRemaining > 0) return;
 
-    var aim = pos.a;                 // 扇形对称轴 = 这把武器的固定角
-    var halfArc = this.halfArc(owner);
+    var aim = pos.a;                 // 扇形对称轴 = 这把武器当前的轨道角
+    var halfArc = this.arcHalf();
     var t = this.nearestInCone(state, owner.x, owner.y, aim, halfArc);
     var enemy = t.enemy;
     if (!enemy) return;   // 扇形里没有就空转，不空挥
@@ -126,8 +132,8 @@
     return Math.random() < owner.stats.critChance;
   };
 
-  /** 命中结算。kx0/ky0 是击退方向，从「武器位置」指向敌人 ——
-   *  环绕后如果还从玩家身上算，敌人会被往错误的方向弹。 */
+  /** 命中结算。kx0/ky0 是击退方向，从**玩家**指向敌人 ——
+   *  和索敌同圆心，敌人被往远离玩家的方向推开。 */
   WeaponInstance.prototype._applyHit = function (owner, state, enemy, baseDmg, kx0, ky0) {
     var crit = this._rollCrit(owner);
     var dmg = baseDmg * (crit ? owner.stats.critMult : 1);
@@ -160,7 +166,7 @@
     return this.slot === 0;
   };
 
-  // 近战挥砍：以**玩家**为圆心、扇形宽 360°/武器数、半径 = 有效射程。
+  // 近战挥砍：以**玩家**为圆心、扇形宽 = 武器自己的 arc、半径 = 有效射程。
   // 圆心是玩家而不是武器 —— 武器在半径 62 的圈上，以它为圆心时贴着玩家的
   // 敌人全落在它背后，内环永远打不到。刀光也画在玩家身上，特效和真实命中
   // 范围必须同圆心，否则又是一次「特效和武器对不上」。
