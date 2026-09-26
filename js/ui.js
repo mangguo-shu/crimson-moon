@@ -22,6 +22,7 @@
       el.victory = document.getElementById('victory');
       el.settings = document.getElementById('settings');
       el.records = document.getElementById('records');
+      el.codex = document.getElementById('codex');
       el.stats = document.getElementById('stats');
       el.debug = document.getElementById('debug');
       el.btnPauseTouch = document.getElementById('btn-pause-touch');
@@ -50,7 +51,7 @@
 
     /* ---------------- 面板显隐 ---------------- */
     _hideAll: function () {
-      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'debug'];
+      var ids = ['menu', 'levelup', 'shop', 'pause', 'gameover', 'victory', 'settings', 'records', 'codex', 'debug'];
       for (var i = 0; i < ids.length; i++) el[ids[i]].classList.add('hidden');
       el.overlay.classList.add('hidden');
       el.hud.classList.add('hidden');
@@ -89,6 +90,7 @@
         case 'VICTORY': el.victory.classList.remove('hidden'); break;
         case 'SETTINGS': el.settings.classList.remove('hidden'); break;
         case 'RECORDS': el.records.classList.remove('hidden'); break;
+        case 'CODEX': el.codex.classList.remove('hidden'); break;
         case 'PLAYING':
           el.hud.classList.remove('hidden');
           this._statsShow(true);
@@ -111,6 +113,7 @@
         ' onclick="Game.Game.continueCampaign()">继续闯关</button>' +
         '<button class="btn" onclick="Game.Game.startEndless()">' + endlessLabel + '</button>' +
         '<button class="btn" onclick="Game.Game.openRecords()">纪录榜</button>' +
+        '<button class="btn" onclick="Game.Game.openCodex()">图鉴</button>' +
         '<button class="btn ghost" onclick="Game.Game.openSettings()">设置</button>' +
         '<button class="btn ghost" ' + ((hasCampaignSave || hasEndlessSave) ? '' : 'disabled') +
         ' onclick="Game.Game.deleteSave()">删除存档</button>' +
@@ -220,6 +223,16 @@
           '<div class="card-desc">' + desc + '</div></div>';
       }
       html += '</div>';
+      // 图鉴：把屏幕上真正亮出来的卡记成「见过」。Boss 战利品复用这一个函数，
+      // 所以登记点只此一处 —— 没进三选一的卡不算见过。
+      if (Game.Codex) {
+        for (var j = 0; j < choices.length; j++) {
+          var ch = choices[j];
+          if (ch.kind === 'item') Game.Codex.mark('card', 'item:' + ch.data.itemId);
+          else if (ch.kind === 'upgrade') Game.Codex.mark('card', 'upgrade:' + ch.data.label);
+          else if (ch.kind === 'weapon') Game.Codex.mark('weapon', ch.data.weaponId);
+        }
+      }
       el.levelup.innerHTML = html;
     },
 
@@ -378,6 +391,15 @@
            继续闯关会从这一波重新开打。 */
         '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>' +
         '</div>';
+      // 图鉴：商店架子上摆出来的卡也算见过。被锁定的卡同样是玩家看见的。
+      if (Game.Codex) {
+        for (var k = 0; k < shop.items.length; k++) {
+          var si = shop.items[k];
+          if (!si) continue;
+          if (si.type === 'item') Game.Codex.mark('card', 'item:' + si.itemId);
+          else if (si.type === 'weapon') Game.Codex.mark('weapon', si.weaponId);
+        }
+      }
       el.shop.innerHTML = html;
     },
 
@@ -388,6 +410,8 @@
         '<button class="btn primary" onclick="Game.Game.resume()">继续</button>' +
         '<button class="btn" onclick="Game.Game.saveGame()">保存游戏</button>' +
         '<button class="btn" onclick="Game.Game.restartRun()">重新开始</button>' +
+        /* 暂停时查图鉴：下一只 Boss 的躲法就写在 BOSS 图鉴里，比靠记性靠谱 */
+        '<button class="btn" onclick="Game.Game.openCodex()">图鉴</button>' +
         '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>';
     },
 
@@ -461,6 +485,69 @@
       // 满 10 条时 20 行明细 + 标题 + 按钮必定超高；.panel 的垂直居中会把
       // 溢出部分的顶端裁掉、滚不上去，而溢出的恰恰是最靠前的名次。
       el.records.className = 'panel panel-top';
+    },
+
+    /* ---------------- 图鉴 ---------------- */
+    /** 五个页签共用这一张面板，切页签整体重建（不保留滚动位置 —— 页签本身不长，
+     *  重建比维护两套 DOM 便宜得多）。条目由 codex.js 从 config 表构建，
+     *  这里只管排版与「未收录」的遮罩样式。 */
+    renderCodex: function (tabId) {
+      var cx = Game.Codex;
+      var tabs = cx.TABS;
+      var cur = null;
+      for (var i = 0; i < tabs.length; i++) if (tabs[i].id === tabId) cur = tabs[i];
+      if (!cur) { cur = tabs[0]; tabId = cur.id; }
+      var prog = cx.progress(cur.id);
+
+      var html = '<h2>' + cur.title + '</h2><div class="cx-tabs">';
+      for (var t = 0; t < tabs.length; t++) {
+        html += '<button class="cx-tab' + (tabs[t].id === cur.id ? ' on' : '') +
+                '" onclick="Game.Game.showCodexTab(\'' + tabs[t].id + '\')">' + tabs[t].label + '</button>';
+      }
+      html += '</div>' +
+        '<div class="cx-hint">' + cur.hint + '</div>' +
+        '<div class="cx-prog">收录 ' + prog.got + ' / ' + prog.total + '</div>';
+
+      var secs = cx.sections(cur.id);
+      for (var s = 0; s < secs.length; s++) {
+        var sec = secs[s];
+        html += '<div class="cx-sec">' +
+                (sec.title ? '<div class="cx-sec-title">' + sec.title + '</div>' : '') +
+                '<div class="cx-grid">';
+        for (var j = 0; j < sec.entries.length; j++) {
+          var e = sec.entries[j];
+          var un = cx.entryUnlocked(cur.id, e);
+          var slain = cur.id === 'boss' && cx.bossSlain(e.key);
+          html += '<div class="cx-card' + (un ? '' : ' locked') + '"' +
+                  (e.color ? ' style="border-color:' + e.color + '"' : '') + '>';
+          if (un) {
+            html += '<div class="cx-tag">' + (e.tag || '') + '</div>' +
+              '<div class="cx-name">' + e.name +
+                (slain ? ' <span class="cx-kill">★ 已击败</span>' : '') + '</div>';
+            if (e.desc) html += '<div class="cx-desc">' + e.desc + '</div>';
+            if (e.note) html += '<div class="cx-note">' + e.note + '</div>';
+            if (e.rows && e.rows.length) {
+              html += '<div class="cx-rows">';
+              for (var r = 0; r < e.rows.length; r++) {
+                html += '<div class="cx-row"><span>' + e.rows[r][0] + '</span><b>' + e.rows[r][1] + '</b></div>';
+              }
+              html += '</div>';
+            }
+          } else {
+            html += '<div class="cx-tag">' + (e.color ? '' : '未收录') + '</div>' +
+                    '<div class="cx-name">??</div>' +
+                    '<div class="cx-lock">' + (cur.locked || '未遇到') + '</div>';
+          }
+          html += '</div>';
+        }
+        html += '</div></div>';
+      }
+
+      var tot = cx.total();
+      html += '<div class="cx-total">全部收录 ' + tot.got + ' / ' + tot.total + '</div>' +
+              '<button class="btn ghost" onclick="Game.Game.closeCodex()">返回</button>';
+      el.codex.innerHTML = html;
+      el.codex.className = 'panel';
     },
 
     /* ---------------- 设置 ---------------- */

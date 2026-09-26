@@ -54,6 +54,7 @@
   <div id="victory" class="panel hidden"></div>
   <div id="settings" class="panel hidden"></div>
   <div id="records" class="panel hidden"></div>
+  <div id="codex" class="panel hidden"></div>
   <!-- 人物面板：开局从右侧滑入，常驻不需要点开；左侧小把手可收起腾出画面 -->
   <aside id="stats" class="stats-side hidden"></aside>
   <div id="debug" class="debug-panel hidden"></div>
@@ -80,6 +81,8 @@
 
   <script src="js/config.js"></script>
   <script src="js/storage.js"></script>
+  <!-- 图鉴要在 entities/weapons 之前：Enemy 构造与 createWeapon 登记收录时 Game.Codex 得已就绪 -->
+  <script src="js/codex.js"></script>
   <script src="js/nativeBridge.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/input.js"></script>

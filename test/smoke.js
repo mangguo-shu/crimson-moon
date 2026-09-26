@@ -14,7 +14,7 @@ const vm = require('vm');
 
 const JS_DIR = path.join(__dirname, '..', 'js');
 const ORDER = [
-  'config.js', 'storage.js', 'nativeBridge.js', 'audio.js', 'input.js',
+  'config.js', 'storage.js', 'codex.js', 'nativeBridge.js', 'audio.js', 'input.js',
   'entities.js', 'weapons.js', 'renderer.js', 'systems.js', 'records.js', 'ui.js', 'game.js',
 ];
 
@@ -4312,6 +4312,237 @@ try {
   }
 } catch (e) {
   assert(false, '第三轮反馈异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉛ 图鉴（英雄 / 怪物 / BOSS / 装备 / 卡组）
+ * ============================================================ */
+function before5(src, a, b) { return src.indexOf(a) > -1 && src.indexOf(a) < src.indexOf(b); }
+
+console.log('\n== 图鉴（5 栏） ==');
+try {
+  var CX = Game.Codex;
+  var idxHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+  // —— 1. 模块与接线 ——
+  assert(!!CX, 'Game.Codex 模块已挂载');
+  assert(CX.TABS.length === 5, '5 个页签（' + CX.TABS.length + '）');
+  var ids5 = CX.TABS.map(function (t) { return t.id; }).join(',');
+  assert(ids5 === 'hero,monster,boss,weapon,card',
+         '页签顺序 英雄/怪物/BOSS/装备/卡组（' + ids5 + '）');
+  assert(before5(idxHtml, 'js/codex.js', 'js/entities.js') &&
+         before5(idxHtml, 'js/storage.js', 'js/codex.js'),
+         'codex.js 排在 storage 之后、entities 之前（Enemy 构造要登记收录）');
+  assert(idxHtml.indexOf('id="codex"') > 0, 'index.html 有 #codex 面板');
+  assert(Game.Storage.keys.codex === 'codex_v1', '存档键 codex_v1 已登记');
+
+  // —— 2. 覆盖完整性：config 里每个条目在图鉴里都得有位置 ——
+  CX.clear(); CX.invalidate();
+  var heroIds5 = CX.all('hero').map(function (e) { return e.key; });
+  var monIds5 = CX.all('monster').map(function (e) { return e.key; });
+  var bosIds5 = CX.all('boss').map(function (e) { return e.key; });
+  var wpnIds5 = CX.all('weapon').map(function (e) { return e.key; });
+  var cardIds5 = CX.all('card').map(function (e) { return e.key; });
+  assert(heroIds5.length === 11, '英雄栏 11 位（' + heroIds5.length + '）');
+  assert(monIds5.length === 6 && bosIds5.length === 4,
+         '怪物栏 6 / BOSS 栏 4（' + monIds5.length + '/' + bosIds5.length + '）');
+  assert(wpnIds5.length === 4, '装备栏 4 把（' + wpnIds5.length + '）');
+  assert(cardIds5.length === 20,
+         '卡组图鉴 20 张：7 属性 + 1 通用强化 + 12 道具（' + cardIds5.length + '）');
+  assert(CX.total().total === 45, '全部条目 45（' + CX.total().total + '）');
+
+  var missHero = Game.CHARACTERS.filter(function (c) { return heroIds5.indexOf(c.id) < 0; });
+  var missWpn = Object.keys(Game.WEAPONS).filter(function (k) { return wpnIds5.indexOf(k) < 0; });
+  var missItem = Object.keys(Game.ITEMS).filter(function (k) { return cardIds5.indexOf('item:' + k) < 0; });
+  var missUp = Game.UPGRADES.filter(function (u) { return cardIds5.indexOf('upgrade:' + u.label) < 0; });
+  assert(missHero.length === 0 && missWpn.length === 0 && missItem.length === 0 && missUp.length === 0,
+         '角色/武器/道具/属性卡无漏收');
+
+  // 串栏：isBoss 是唯一分流依据，两栏互不串
+  var leak5 = monIds5.filter(function (k) { return !!Game.ENEMIES[k].boss; });
+  var leak6 = bosIds5.filter(function (k) { return !Game.ENEMIES[k].boss; });
+  assert(leak5.length === 0 && leak6.length === 0, '怪物栏与 BOSS 栏互不串');
+
+  var dup5 = cardIds5.filter(function (k, i) { return cardIds5.indexOf(k) !== i; });
+  assert(dup5.length === 0, '卡组图鉴无重复条目');
+
+  assert(bosIds5.join(',') === 'boss,boss_brute,boss_mage,boss_spider',
+         'BOSS 栏按出场顺序排（' + bosIds5.join(',') + '）');
+
+  // —— 3. 登记点：每条收录路径都要真的写进去 ——
+  CX.clear(); CX.invalidate();
+  assert(CX.total().got === 1,
+         '清空后只剩 1 条：武器强化是通用卡，天生算已收录');
+
+  new Game.Enemy('zombie', 0, 0, 1);
+  assert(CX.isUnlocked('monster', 'zombie'), '跳尸刷进画面即收录');
+  assert(!CX.isUnlocked('boss', 'zombie'), '小怪不会误登记进 BOSS 栏');
+  assert(!CX.isUnlocked('monster', 'bat'), '没刷过的怪仍然是锁定状态');
+  new Game.Enemy('boss_spider', 0, 0, 10);
+  assert(CX.isUnlocked('boss', 'boss_spider'), 'BOSS 刷进画面即收录进 BOSS 栏');
+  assert(!CX.isUnlocked('bossKill', 'boss_spider'), '见过不等于打过：未击杀时不打星');
+
+  var cxSt = Game.Systems.createState('campaign', 'swordsman', 7001);
+  var bd5 = new Game.Enemy('boss_brute', 400, 300, 20);
+  assert(CX.bossSlain('boss_brute') === false, '击杀前不打星');
+  bd5.die(cxSt);
+  assert(CX.isUnlocked('boss', 'boss_brute'), 'BOSS 阵亡走收录');
+  assert(CX.bossSlain('boss_brute') === true, 'BOSS 阵亡打星');
+  assert(!CX.isUnlocked('bossKill', 'zombie'), '小怪阵亡不写 bossKill');
+
+  assert(!CX.isUnlocked('weapon', 'moon_sword'), '专属武器未到手前是锁定的');
+  Game.createWeapon('moon_sword', 1, 0);
+  assert(CX.isUnlocked('weapon', 'moon_sword'), '发到手上即收录');
+  assert(!CX.isUnlocked('weapon', 'jade_crossbow') && !CX.isUnlocked('weapon', 'pistol'),
+         '没到手的武器不会自己解锁');
+  assert(CX.isUnlocked('weapon', 'iron_sword'),
+         '开局配置的武器也算见过（createState 走 createWeapon）');
+
+  // 卡组 key 的命名空间必须和条目 key 完全对齐 —— 拿条目列表逐个登记，应该正好收满
+  CX.clear(); CX.invalidate();
+  var unmarked5 = 0;
+  CX.all('card').forEach(function (e) {
+    if (e.always) return;
+    CX.mark('card', e.key) || unmarked5++;
+  });
+  assert(unmarked5 === 0, '卡组图鉴的条目 key 与登记 key 完全对齐');
+  assert(CX.progress('card').got === 20,
+         '逐张登记后收满 20 张（19 张登记 + 1 张通用强化天生收录）');
+
+  var gen5 = CX.all('card').filter(function (e) { return e.key === 'weaponUpgrade'; })[0];
+  assert(!!gen5 && gen5.always === true, '武器强化卡没有 id，标记为天生已收录');
+  assert(CX.entryUnlocked('card', gen5) === true, 'entryUnlocked 把 always 当成已收录');
+
+  // —— 4. mark 的健壮性 ——
+  assert(CX.mark('card', 'item:heart') === false, '已收录的条目再次登记返回 false');
+  var ok5 = true;
+  try { CX.mark('not_a_tab', 'x'); CX.mark('card', ''); CX.mark('card', null); } catch (e) { ok5 = false; }
+  assert(ok5, '未知分栏 / 空 key 不抛错');
+  assert(CX.isUnlocked('not_a_tab', 'x') === false, '未知分栏不会凭空造出数据');
+  assert(CX.all('not_a_tab').length === 0, '未知分栏查不到条目');
+
+  // —— 5. 存档回环 ——
+  CX.clear(); CX.invalidate();
+  CX.mark('hero', 'nun');
+  CX.mark('bossKill', 'boss_mage');
+  CX.mark('card', 'item:critical');
+  var raw5 = Game.Storage.get('codex_v1');
+  var parsed5 = JSON.parse(raw5);
+  assert(parsed5.hero.nun === 1 && parsed5.bossKill.boss_mage === 1 &&
+         parsed5.card['item:critical'] === 1, '收录记录写入 codex_v1');
+
+  // 丢掉内存缓存，模拟另一个进程读到同一个存档
+  CX.invalidate();
+  assert(CX.isUnlocked('hero', 'nun') && CX.bossSlain('boss_mage') &&
+         CX.isUnlocked('card', 'item:critical'), 'invalidate 后从盘上重读，收录状态仍在');
+
+  // 旧存档里多出来的未知分栏键不带进内存
+  var dirty5 = JSON.parse(raw5);
+  dirty5.hacked = { x: 1 };
+  Game.Storage.setJSON('codex_v1', dirty5);
+  CX.invalidate();
+  assert(CX.isUnlocked('hero', 'nun') === true, '已知分栏的数据仍然读得回');
+  assert(CX.isUnlocked('hacked', 'x') === false, '旧存档里的未知分栏被忽略');
+  assert(CX.all('hacked').length === 0, '未知分栏不会出现在图鉴里');
+
+  // 清档不动图鉴（lifetime 进度，两个对局槽才归 deleteSave 管）
+  CX.mark('hero', 'brute');
+  Game.Game.deleteSave();
+  assert(CX.isUnlocked('hero', 'brute') && CX.isUnlocked('hero', 'nun'),
+         'deleteSave 只清对局存档，图鉴收录保留');
+
+  // —— 6. 界面渲染 ——
+  CX.clear(); CX.invalidate();
+  Game.Game._codexTab = 'boss';
+  Game.Game.openCodex();
+  assert(Game.uiScreen === 'CODEX', '打开图鉴切到 CODEX 界面');
+  assert(document.getElementById('codex').className === 'panel', '图鉴面板用标准 panel 排版');
+  var cxHtml = document.getElementById('codex').innerHTML;
+  // 只数 5 个 <button class="cx-tab"> / <button class="cx-tab on">：
+  // cx-tab 后面必须是空格或引号，这样不会把外层 <div class="cx-tabs"> 算进来。
+  var tabBtns = cxHtml.match(/class="cx-tab(?: |")/g) || [];
+  assert(tabBtns.length === 5, '页面上画了 5 个页签按钮（' + tabBtns.length + '）');
+  assert(cxHtml.indexOf('<button class="cx-tab on"') > 0, '当前页签高亮');
+  assert(cxHtml.indexOf('BOSS图鉴') > 0, '内容区标题用的是完整名字');
+  assert(cxHtml.indexOf('收录 0 / 4') > 0, '显示本页收录进度');
+  assert(cxHtml.indexOf('全部收录 1 / 45') > 0,
+         '底部整体进度：清空后那张通用强化卡仍算已收录');
+
+  // 未收录：名字盖成 ??，不泄露是什么
+  assert(cxHtml.indexOf('class="cx-card locked"') > 0, '未收录条目画成锁定卡');
+  assert(cxHtml.indexOf('??') > 0, '锁定卡的名字盖成 ??');
+  assert(cxHtml.indexOf('未遇到') > 0, '锁定卡给一句说明而不是空着');
+  assert(cxHtml.indexOf('蛮荒冲兽') < 0 && cxHtml.indexOf('赤月年兽') < 0,
+         '锁定状态不泄露 BOSS 名字');
+  assert(cxHtml.indexOf('★ 已击败') < 0, '没打过不给星');
+
+  Game.Game.showCodexTab('hero');
+  var heroHtml = document.getElementById('codex').innerHTML;
+  assert(heroHtml.indexOf('英雄图鉴') > 0, '切到英雄栏');
+  assert(heroHtml.indexOf('流浪剑客') < 0 && heroHtml.indexOf('未使用') > 0,
+         '未使用的角色仍锁定，提示语换成「未使用」');
+  assert(heroHtml.indexOf('收录 0 / 11') > 0, '英雄栏进度 0 / 11');
+  assert(Game.Game._codexTab === 'hero', '页签状态记在控制器上，退出再进来还在原页签');
+
+  CX.all('hero').forEach(function (e) { CX.mark('hero', e.key); });
+  CX.all('boss').forEach(function (e) { CX.mark('boss', e.key); });
+  CX.mark('bossKill', 'boss');
+  Game.Game.showCodexTab('boss');
+  var fullHtml = document.getElementById('codex').innerHTML;
+  assert(fullHtml.indexOf('class="cx-card locked"') < 0 && fullHtml.indexOf('??') < 0,
+         '全部见过后不再有锁定卡');
+  assert(fullHtml.indexOf('赤月年兽') > 0 && fullHtml.indexOf('★ 已击败') > 0,
+         '已收录显示真名，打过的那只亮星');
+  assert(fullHtml.indexOf('收录 4 / 4') > 0, '本页进度收满');
+  assert(fullHtml.indexOf('全部收录 16 / 45') > 0,
+         '整体进度 = 11 英雄 + 4 BOSS + 1 张通用强化卡');
+  assert(fullHtml.indexOf('★ 已击败') < fullHtml.indexOf('赤月年兽') + 200, '打星只加在打过的那只身上');
+
+  // BOSS 图鉴得给出躲法线索：四种攻击的中文名都在页面上
+  ['扇形弹幕 + 召唤', '蓄力预警 + 冲撞', '360° 环绕弹排', '连续螺旋弹幕'].forEach(function (s) {
+    assert(fullHtml.indexOf(s) > 0, 'BOSS 图鉴写明攻击方式：' + s);
+  });
+  // 卡组图鉴的稀有度边框要跟着卡走
+  CX.all('card').forEach(function (e) { CX.mark('card', e.key); });
+  Game.Game.showCodexTab('card');
+  var cardHtml = document.getElementById('codex').innerHTML;
+  assert(cardHtml.indexOf('属性强化') > 0 && cardHtml.indexOf('被动道具') > 0,
+         '卡组图鉴分成属性强化与被动道具两节');
+  assert(cardHtml.indexOf('border-color:#b06bff') > 0 && cardHtml.indexOf('border-color:#4fa3ff') > 0,
+         '卡片边框按稀有度上色（史诗紫 / 稀有蓝）');
+
+  // —— 7. 进出与返回键 ——
+  Game.Game.toMenu();
+  assert(document.getElementById('menu').innerHTML.indexOf('openCodex()') > 0, '主菜单有图鉴入口');
+
+  // 从暂停进图鉴，返回得回暂停而不是主菜单
+  Game.Game._exitConfirmOpen = false;
+  Game.state = cxSt;
+  cxSt.screen = 'PAUSED';
+  Game.UI.renderPause();
+  assert(document.getElementById('pause').innerHTML.indexOf('openCodex()') > 0, '暂停面板有图鉴入口');
+  Game.Game.openCodex();
+  assert(Game.uiScreen === 'CODEX', '暂停时能打开图鉴');
+  var back5 = Game.Game._handleBack();
+  assert(back5 && back5.handled === true, '图鉴上按返回被拦下（不把 App 退掉）');
+  assert(Game.uiScreen === 'PAUSED' && cxSt.screen === 'PAUSED',
+         '返回回到暂停，而不是主菜单');
+
+  // 主菜单进图鉴，返回回主菜单
+  Game.state = null;
+  Game.uiScreen = 'MENU';
+  Game.Game.openCodex();
+  var back6 = Game.Game._handleBack();
+  assert(back6 && back6.handled === true && Game.uiScreen === 'MENU',
+         '主菜单上按返回回主菜单');
+
+  // 收尾：别把这次跑出来的收录记录留给别的进程语义
+  CX.clear(); CX.invalidate();
+  Game.state = null;
+  Game.uiScreen = null;
+  Game.Game._codexTab = 'hero';
+} catch (e) {
+  assert(false, '图鉴异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

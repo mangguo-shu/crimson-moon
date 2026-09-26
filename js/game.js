@@ -290,6 +290,28 @@
     console.log('[Game] 清空纪录');
   };
 
+  /* ---------------- 图鉴 ---------------- */
+  // 页签记在控制器上而不是 ui 里：切页签只重建内容，退出再进来还停在原页签
+  G.openCodex = function () {
+    this._codexTab = this._codexTab || 'hero';
+    Game.UI.renderCodex(this._codexTab);
+    Game.UI.showScreen('CODEX');
+  };
+  G.showCodexTab = function (tabId) {
+    this._codexTab = tabId;
+    Game.UI.renderCodex(tabId);
+  };
+  // 关图鉴回到进来的地方 —— 暂停时进去查的不能被直接弹回主菜单
+  G.closeCodex = function () {
+    if (Game.state) {
+      if (Game.state.screen === 'PAUSED') { Game.UI.renderPause(); Game.UI.showScreen('PAUSED'); }
+      else if (Game.state.screen === 'PLAYING') Game.UI.showScreen('PLAYING');
+      else G.toMenu();
+    } else {
+      G.toMenu();
+    }
+  };
+
   // 人物面板常驻右侧、不需要点开（ui.js 的 renderStats / toggleStatsFold），
   // 所以控制器层没有开关方法。
 
@@ -355,7 +377,8 @@
    * 返回键的完整去向：
    *   游戏中 → 暂停      暂停中 → 确认退出    商店 → 回主菜单（波次已结束，进度已存）
    *   结算 → 回主菜单    升级三选一 → 忽略（必须选，跳过会让奖励消失）
-   *   纪录榜/设置 → 回主菜单    选角色 → 回主菜单    主菜单 → 交给系统（退出 App）
+   *   纪录榜/设置 → 回主菜单    图鉴 → 回到进来的地方（暂停 / 主菜单）
+   *   选角色 → 回主菜单         主菜单 → 交给系统（退出 App）
    * 有对局时一律拦下（handled:true）；只有主菜单上没得保存，才让系统接管——
    * 玩家在这个位置按返回就是要退 App，拦了反而变成退不出去的死角。 */
   G._handleBack = function () {
@@ -367,6 +390,8 @@
     if (Game.uiScreen === 'RECORDS' || Game.uiScreen === 'SETTINGS') {
       G.toMenu(); return { handled: true };
     }
+    // 图鉴可能从暂停里进来查，返回得回到暂停而不是主菜单
+    if (Game.uiScreen === 'CODEX') { G.closeCodex(); return { handled: true }; }
     if (!Game.state) {
       if (Game.inCharSelect) { Game.inCharSelect = false; G.toMenu(); return { handled: true }; }
       return { handled: false };

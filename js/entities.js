@@ -239,6 +239,11 @@
     // 大血条、宝箱、奖励面板、波次结算都靠这个布尔值，旧怪恒为 false 行为不变。
     this.isBoss = !!def.boss;
 
+    // 图鉴：刷进画面就算遇到。走构造函数而不是刷怪计划，是因为 Boss 召唤的小怪
+    // 也从这里进来 —— 登记点只此一处，两条路径都不会漏。
+    // 读档还原也会经过这里，等于「存档里出现过的怪早就见过」，行为一致。
+    if (Game.Codex) Game.Codex.mark(def.boss ? 'boss' : 'monster', type);
+
     // 波次成长系数
     var w = Math.max(1, wave);
     var hpScale = 1 + 0.18 * (w - 1);
@@ -580,7 +585,11 @@
     if (fx()) fx().death(this.x, this.y, this.isBoss);
     if (this.isBoss && fx()) fx().shake(18);
     // Boss 阵亡先给奖励面板，再结算波次（见 G._triggerBossReward）
-    if (this.isBoss) state.bossRewardPending = true;
+    if (this.isBoss) {
+      state.bossRewardPending = true;
+      // 图鉴打星：见到 ≠ 打过，这一格是单独记的
+      if (Game.Codex) Game.Codex.mark('bossKill', this.type);
+    }
     // 角色被动：onKill（吸血、叠 buff 等）
     if (state.player) Game.invokePassive(state.player, 'onKill', this, state);
     state.stats.kills++;

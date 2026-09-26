@@ -384,6 +384,96 @@ html, body {
 .stat-line { font-size: 15px; color: #eee; margin: 4px 0; }
 .stat-line b { color: var(--color-gold); }
 
+/* ===== 图鉴 =====
+   五个页签并排：手机上 5 个 4 字按钮会挤，所以页签用两字短标签，
+   完整名字放在内容区的 h2。页签本身不滚，内容区跟着 .panel 滚。 */
+.cx-tabs {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: min(900px, 96vw);
+  margin-bottom: 8px;
+}
+.cx-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 4px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #ccc;
+  background: rgba(30,12,12,0.8);
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 7px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.cx-tab:active { transform: scale(0.96); }
+.cx-tab.on {
+  color: #fff;
+  border-color: var(--color-gold);
+  background: linear-gradient(180deg, #5a1414, #3a0c0c);
+  box-shadow: 0 0 10px rgba(255,207,94,0.35);
+}
+.cx-hint { font-size: 12px; color: #8a7a7a; margin-bottom: 10px; }
+.cx-prog {
+  font-size: 13px;
+  color: var(--color-gold);
+  margin-bottom: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cx-total {
+  font-size: 12px;
+  color: #8a7a7a;
+  text-align: center;
+  margin: 4px 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+.cx-sec { width: 100%; max-width: min(900px, 96vw); margin-bottom: 16px; }
+.cx-sec-title {
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: var(--color-gold);
+  margin-bottom: 9px;
+}
+/* 卡片交给 grid 分宽，跟选卡页同一个思路（见 .char-grid 的注释） */
+.cx-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+  width: 100%;
+}
+.cx-card {
+  padding: 10px;
+  min-height: 148px;
+  border-radius: 10px;
+  background: rgba(30,12,12,0.9);
+  border: 2px solid var(--color-common);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+}
+.cx-tag { font-size: 11px; letter-spacing: 1px; color: #bbb; margin-bottom: 3px; }
+.cx-name { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.cx-desc { font-size: 12px; color: #ddd; line-height: 1.35; margin-bottom: 6px; }
+.cx-note { font-size: 11px; color: #d8b4fe; line-height: 1.35; margin-bottom: 6px; }
+.cx-kill { font-size: 11px; color: var(--color-gold); font-weight: 400; }
+/* 属性行钉在卡片底部：文案长短不一，靠它让所有卡的属性块对齐 */
+.cx-rows { margin-top: auto; }
+.cx-row {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 11px; color: #ccc; padding: 1px 0;
+}
+.cx-row b { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* 未收录：占位不占信息 —— 边框压暗、名字换成 ??，不提示到底是什么 */
+.cx-card.locked {
+  opacity: 0.5;
+  border-color: #3a2a2a;
+  box-shadow: none;
+}
+.cx-card.locked .cx-name { color: #6a5a5a; letter-spacing: 3px; }
+.cx-card.locked .cx-tag { color: #5a4a4a; }
+.cx-lock { margin-top: auto; font-size: 11px; color: #7a6a6a; }
+
 /* ===== 调试面板 ===== */
 .debug-panel {
   position: fixed;
@@ -468,4 +558,13 @@ html, body {
   .stats-side > h2 { font-size: 15px; }
   .stats-row { font-size: 11px; }
   .stats-wname { font-size: 12px; }
+
+  /* 竖屏可视宽只有 358px，5 个页签压到两字短标签，卡片退回 2 列（同 .char-grid） */
+  .cx-tabs { gap: 4px; }
+  .cx-tab { padding: 7px 2px; font-size: 12px; letter-spacing: 0; }
+  .cx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .cx-card { min-height: 130px; padding: 9px; }
+  .cx-name { font-size: 15px; }
+  .cx-desc { font-size: 11.5px; }
+  .cx-row { font-size: 10.5px; }
 }

@@ -39,6 +39,7 @@
       endless:  'endless_v1',    // 无限存档
       profile:  'profile_v1',    // 全局档案
       settings: 'settings_v1',   // 设置
+      codex:    'codex_v1',      // 图鉴收录记录（lifetime 进度，deleteSave 不动它）
     },
 
     /** 初始化：检测环境，预载缓存 */
@@ -49,7 +50,7 @@
         prefs = window.Capacitor.Plugins.Preferences;
       }
       // 预载缓存
-      var names = ['campaign_v1', 'endless_v1', 'profile_v1', 'settings_v1'];
+      var names = ['campaign_v1', 'endless_v1', 'profile_v1', 'settings_v1', 'codex_v1'];
       for (var i = 0; i < names.length; i++) {
         var v = lsGet(names[i]);
         if (v !== null) cache[names[i]] = v;

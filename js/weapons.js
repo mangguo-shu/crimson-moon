@@ -235,5 +235,10 @@
 
   // 导出
   Game.WeaponInstance = WeaponInstance;
-  Game.createWeapon = function (defId, level, slot) { return new WeaponInstance(defId, level, slot); };
+  // createWeapon 是武器唯一的入口：开局配置、升级池换武器、商店买武器、读档还原
+  // 全走这一个函数，所以图鉴在这里登记就不会漏 —— 读档还原顺带补登，行为一致。
+  Game.createWeapon = function (defId, level, slot) {
+    if (Game.Codex) Game.Codex.mark('weapon', defId);
+    return new WeaponInstance(defId, level, slot);
+  };
 })();
