@@ -11,11 +11,11 @@
 |---|---|---|---|
 | [1](#1-角色) | 角色 + 字段说明 | 11 | config.js:88 |
 | [2](#2-角色被动) | 被动技能 + 5 个挂点 | 11 | config.js:363 |
-| [3](#3-武器) | 武器 | 4 | config.js:516 |
+| [3](#3-武器) | 武器 | 5 | config.js:516 |
 | [4](#4-敌人) | 小怪 + Boss | 10 | config.js:551 |
 | [5](#5-稀有度) | 稀有度 | 4 | config.js:78 |
-| [6](#6-道具) | 被动道具 | 12 | config.js:669 |
-| [7](#7-属性卡) | 属性强化卡 | 7 | config.js:694 |
+| [6](#6-道具) | 被动道具 | 17 | config.js:669 |
+| [7](#7-属性卡) | 属性强化卡 | 11 | config.js:694 |
 | [8](#8-卡三选一--商店卡) | 卡的四种 kind + 三个出货口 | — | systems.js |
 | [9](#9-全局常量与调参系数) | CONST | 20 | config.js:14 |
 | [10](#10-掉落调参) | DROP | 9 | config.js:654 |
@@ -113,6 +113,7 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
 | id | 名称 | 类型 | 星 | CD | 伤害 | 射程 | 穿透 | 弹速 | 击退 | 专属 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | iron_sword | 铁剑 | melee | 1 | 0.70 | 14 | 66 | 1 | — | 60 | |
+| spear | 龙胆枪 | melee | 1 | 0.85 | 20 | 130 | 4 | — | 90 | |
 | pistol | 手枪 | ranged | 1 | 0.55 | 10 | — | 0 | 620 | 20 | |
 | moon_sword | 赤月斩 | melee | 3 | 0.50 | 30 | 86 | 3 | — | 140 | ✓ |
 | jade_crossbow | 青玉连弩 | ranged | 3 | 0.34 | 9 | — | 2 | 780 | 10 | ✓ |
@@ -120,6 +121,10 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
 - `Game.BOSS_EXCLUSIVE_CHANCE = 0.45`：Boss 奖励里出现专属武器的概率。
 - 武器等级倍率 `def.damage × (1 + 0.5 × (level - 1))`，上限 `MAX_WEAPON_LEVEL = 4`。
 - 弹体造型**不在表里**，按武器 id 派生：`weapons.js:22 PROJ_SHAPE`（pistol → bullet，jade_crossbow → arrow）。
+- 环绕卫星的**图标造型也不在表里**，按武器 id 派生：`renderer.js ORBIT_ICON`。每把武器一套：
+  `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
+  `pistol → _drawPistol`、`jade_crossbow → _drawCrossbow`。
+  漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）—— 龙胆枪就这样顶着剑的造型出场过。
 - 远程伤害 ×0.6、近战射程 ×1.25 —— 走 CONST 系数，表本体不动。
 
 ---
@@ -179,10 +184,10 @@ counter: 0.15      // 反伤比例（坦克），被命中时反弹该次伤害
 
 | key | 名称 | 主色 | 定价基线 | 在用条目数 |
 |---|---|---|---|---|
-| common | 普通 | `#d8d8d8` | 15 | 道具 6 · 卡 3 |
-| rare | 稀有 | `#4fa3ff` | 35 | 道具 4 · 卡 3 |
-| epic | 史诗 | `#b06bff` | 55 | 道具 2 · 卡 1 |
-| legend | 传奇 | `#ffcf5e` | 85 | **0（定义了但没人用）** |
+| common | 普通 | `#d8d8d8` | 15 | 道具 3 · 卡 3 |
+| rare | 稀有 | `#4fa3ff` | 35 | 道具 6 · 卡 3 |
+| epic | 史诗 | `#b06bff` | 55 | 道具 7 · 卡 5 |
+| legend | 传奇 | `#ffcf5e` | 85 | 道具 1 · 卡 0 |
 
 商店里的武器和「武器强化」卡固定按 `rare` 定价。
 
@@ -213,6 +218,11 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | lifeluck | 生机之种 | rare | 每次命中回复最大生命 0.3% | `lifeOnHitPct: 0.003` | ✓ |
 | critemerald | 破军翠玉 | epic | 暴击伤害 +15% | `critMult: 0.15` | |
 | deathbell | 夺命金铃 | epic | 每次击杀回复最大生命 0.5% | `lifeOnKillPct: 0.005` | ✓ |
+| bloodmoon_heart | 赤月之心 | **legend** | 造成伤害的 3% 化为生命 | `lifesteal: 0.03` | ✓ |
+| war_god_bracer | 战神护腕 | epic | 伤害 +12%，攻击速度 +8% | `damage: 0.12, attackSpeed: 0.08` | |
+| shadow_cloak | 疾影披风 | epic | 移动速度 +12%，暴击率 +5% | `speed: 0.12, critChance: 0.05` | |
+| bulwark_core | 玄武核心 | epic | 最大生命 +30，护甲 +3 | `maxHp: 30, armor: 3` | |
+| greedy_fang | 贪狼之牙 | epic | 命中回最大生命 0.4%，伤害的 0.8% 化生命 | `lifeOnHitPct: 0.004, lifesteal: 0.008` | ✓ |
 
 **`desc` 是写死文案** —— 改 `stat` 必须同步改 `desc`，否则面板写的和实际不一样。
 回血四项被砍过两轮（2026-09-26），基线是「每次事件回复最大生命的 0.x%」。
@@ -232,6 +242,10 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | 致命直觉 | rare | 暴击率 +8% | `critChance: 0.08` |
 | 厚实护甲 | rare | 护甲 +2 | `armor: 2` |
 | 血气旺盛 | epic | 最大生命 +35 | `maxHp: 35` |
+| 迅影步伐 | epic | 移动速度 +12% | `speed: 0.12` |
+| 狂暴之刃 | epic | 伤害 +18% | `damage: 0.18` |
+| 疾风连击 | epic | 攻击速度 +18% | `attackSpeed: 0.18` |
+| 战神之躯 | epic | 护甲 +4 | `armor: 4` |
 
 即时回血卡（急救包）**已下线** —— 治疗只来自角色被动与吸血，不由一张卡瞬间补齐。
 
@@ -364,7 +378,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | `codex_v1` | 图鉴收录（lifetime 进度，`deleteSave` **不动它**） | storage.js:42 |
 
 - 游戏模式：`campaign`（20 波）/ `endless`（无尽），`Game.pendingMode` 在角色选择后写入。
-- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **45 条**（11 角色 + 6 怪 + 4 Boss + 4 武器 + 20 张卡）。记「见过」不记「拥有」。
+- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **55 条**（11 角色 + 6 怪 + 4 Boss + 5 武器 + 29 张卡）。总数是 `Codex.total()` 运行时从 config 表累加的，**没有写死在 codex.js 里**；写死的是 `test/smoke.js` 的断言。记「见过」不记「拥有」。
 - 纪录榜 `js/records.js`：`TOP_N = 10`。
 - **随机数一律走 `state.rng`**（`Game.mulberry32`，config.js:708）。刷新计划用 `hashSeed(seed + ':' + wave)` 绑定的独立 RNG，保证读档一致。用裸 `Math.random()` 会让存档不可复现。`pickBossType` 是纯查表，不消耗随机流。
 
@@ -383,6 +397,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | entities.js:432 | `BOSS_ATK_METHOD` | Boss 套路 → 方法名映射，**新套路必须登记**（缺省回落 `fan`） |
 | entities.js:460 起 | `_bossAtkFan/Charge/Ring/Spiral` | 各套路实现 |
 | weapons.js:22 | `PROJ_SHAPE` | 弹体造型按武器 id 派生 |
+| renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**） |
 | renderer.js:507 | `R._PLAYER_BODY` | 4 套姿态绘制 |
 | renderer.js:1001 | `_drawEnemy` 的 `switch(e.type)` | **新怪不加 case 会画成跳尸** |
 | renderer.js | `FOOT_Y` | 各怪的脚底支点（缺省 `FOOT_Y_DEFAULT`） |
@@ -415,9 +430,14 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 5. **push 进 `Game.BOSSES`** —— 只写进 ENEMIES 不会被刷出来，`pickBossType` 只查 BOSSES 表
 
 **加武器**
-1. `WEAPONS` 加一条
-2. 远程弹补 `PROJ_SHAPE`
-3. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
+1. `WEAPONS` 加一条（记得带 `color` —— 刀光特效 `renderer.js` 的 slash 和弹体颜色都读它，缺了画成 `undefined`）
+2. 远程弹补 `weapons.js PROJ_SHAPE`
+3. **`renderer.js ORBIT_ICON` 登记图标**（漏了不报错，会静默顶着剑或弩的造型出场）
+4. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
+
+`commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
+商店武器权重是 `0.5 / 武器数` —— **多一把非专属武器会摊薄所有武器在商店的出现率**，
+加武器等于在调这个隐性的期望值。
 
 **加道具**：`ITEMS` 加一条即可，三个出货口自动收录。**`desc` 与 `stat` 同步改**。
 
@@ -437,3 +457,8 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 - `ITEMS` **不在冻结范围**
 
 前提：**没有界面在显示那个原始值**。ITEMS 的 `desc` 是写死文案，有文案就只能整条改 `stat` + `desc`。
+
+**冻结约束的是「改已有条目的数值」，不是「加新条目」。** 表本体新增是另一回事，要单独授权
+（2026-09-26 那批武器/道具/卡就是明确授权的新增）。而且 `ITEMS` 一直不在冻结范围。
+判据：如果改动会让某个已经在跑的存档或界面出现不一致，那就是调参，得走系数层；
+如果只是一个全新的、此前不存在的条目，那就是扩展。

@@ -3155,7 +3155,7 @@ try {
   Game.Renderer.render(s212, 0.016);
   assert(true, '武器还没算过位置时渲染无异常（卫星跳过）');
 
-  // ---- 11b. 卫星会动手：剑挥向目标、弩机朝目标放箭，不是原地贴图 ----
+  // ---- 11b. 卫星会动手：剑挥向目标、枪口朝目标放枪，不是原地贴图 ----
   // 动画时钟复用 weapons.js 的 swingTime（出手瞬间归零），这里手动拨它到各个
   // 相位来断言朝向。采样方式和 11 段一样：矩阵乘起来看 0.62 缩放笔画的方向。
   // 顺手把笔画数带出来 —— 挥砍时应该有主图标 + 一两帧拖影，静止时只有一笔。
@@ -3232,7 +3232,7 @@ try {
          '挥砍中带拖影、静止时不带（挥砍 ' + mid21b.count + ' 笔 / 静止 ' +
          dEnd21b.count + ' 笔）');
 
-  // 远程：弩机朝目标放箭，箭头方向跟着变
+  // 远程：手枪朝目标放枪，枪口方向跟着变
   var s211c = Game.Systems.createState('campaign', 'swordsman', 7770102);
   var pl211c = s211c.player;
   s211c.enemies.length = 0; s211c.projectiles.length = 0;
@@ -3240,7 +3240,7 @@ try {
   Game.Systems.normalizeSlots(pl211c);
   var rg211c = pl211c.weapons[1];
   // 两把武器时第二把挂在玩家正下方（轨道角 π/2，静止位朝下），所以把怪摆在
-  // 正左方：弩机确实要转过去才能把箭射出去，不是本来就朝那。
+  // 正左方：手枪确实要转过去才能把子弹打出去，不是本来就朝那。
   s211c.enemies.push(new Game.Enemy('zombie', pl211c.x - 50, pl211c.y, 1));
   rg211c.cooldownRemaining = 0;
   rg211c.update(0.016, pl211c, s211c);
@@ -3252,32 +3252,32 @@ try {
   vx21b /= vl21b; vy21b /= vl21b;
   assert(Math.abs(wrapDiff(rg211c.swingAim, Math.atan2(vy21b, vx21b))) < 1e-9,
          '远程武器记下的放箭朝向 = 武器指向敌人（实得 ' + rg211c.swingAim.toFixed(4) + '）');
-  // 目标方向和弩机静止位（朝玩家正下方 (0,1)）确实不同，否则下一条断言没意义
+  // 目标方向和手枪静止位（朝玩家正下方 (0,1)）确实不同，否则下一条断言没意义
   assert(vx21b < -0.3 && vy21b < -0.3,
          '目标方向不在弩机的静止位上（' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) + '）');
-  // 弩机放箭不能只是把图标转个角度 —— 弩弦回弹、箭飞出都得靠 fire 进度驱动。
+  // 手枪放枪不能只是把图标转个角度 —— 枪口焰、后坐亮线都得靠 fire 进度驱动。
   // 分两相采样：中点看朝向（正弦峰值正好对准目标），初期看 fire 有没有真的
   // 从大往小衰减 —— 写死成常量的实现两相一样大，会被抓住。
   function fireAt21c(tSec) {
     rg211c.swingTime = tSec;
     var fs21c = [];
-    Game.Renderer._drawCrossbow = function (ctx, hx, hy, color, fire) {
+    Game.Renderer._drawPistol = function (ctx, hx, hy, color, fire) {
       fs21c.push(fire);
-      return origCb21c.call(this, ctx, hx, hy, color, fire);
+      return origPi21c.call(this, ctx, hx, hy, color, fire);
     };
     var r = orbitSat21b(s211c);
-    Game.Renderer._drawCrossbow = origCb21c;
+    Game.Renderer._drawPistol = origPi21c;
     return { dir: r.dir, fire: fs21c.length ? Math.max.apply(null, fs21c) : 0 };
   }
-  var origCb21c = Game.Renderer._drawCrossbow;
+  var origPi21c = Game.Renderer._drawPistol;
   var rgEarly21c = fireAt21c(0.04);   // t ≈ 0.18
   var rgMid21c = fireAt21c(0.11);     // t = 0.5，正弦峰值
   assert(rgMid21c.dir && Math.abs(rgMid21c.dir.x - vx21b) < 0.02 &&
          Math.abs(rgMid21c.dir.y - vy21b) < 0.02,
-         '弩机放箭中点箭头正对目标（期望 (' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) +
+         '手枪放枪中点枪口正对目标（期望 (' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) +
          ')，实得 (' + rgMid21c.dir.x.toFixed(2) + ', ' + rgMid21c.dir.y.toFixed(2) + ')）');
   assert(rgEarly21c.fire > 0.8,
-         '放箭初期 fire 进度接近满（弩弦回弹/箭飞出才有画面，实得 ' +
+         '放枪初期 fire 进度接近满（枪口焰/后坐亮线才有画面，实得 ' +
          rgEarly21c.fire.toFixed(2) + '）');
   assert(rgEarly21c.fire > rgMid21c.fire + 0.2,
          'fire 随余韵衰减（初期 ' + rgEarly21c.fire.toFixed(2) + ' → 中点 ' +
@@ -3286,6 +3286,67 @@ try {
   // swingAim 是运行期动画状态，不能进存档
   assert(!JSON.stringify(Game.Systems.serialize(s211c)).includes('swingAim'),
          'swingAim 不进存档（和 swingTime 一样是纯运行期）');
+
+  // ---- 11c. 每把武器有自己的图标（ORBIT_ICON 登记表不能漏）----
+  // 漏登记的武器会静默回落到 type 默认（近战画剑 / 远程画弩），画面上看不出错 ——
+  // 龙胆枪就是这么顶着铁剑的造型出场一整个阶段的。
+  var wantIcon21d = {
+    iron_sword: '_drawSword', spear: '_drawSpear', moon_sword: '_drawGreatsword',
+    pistol: '_drawPistol', jade_crossbow: '_drawCrossbow'
+  };
+  var missIcon21d = Object.keys(Game.WEAPONS).filter(function (k) { return !wantIcon21d[k]; });
+  assert(missIcon21d.length === 0,
+         '每把武器都登记了图标（漏: ' + missIcon21d.join(',') + '）');
+
+  var hits21d = {}, origIcon21d = {};
+  var iconFns21d = ['_drawSword', '_drawGreatsword', '_drawSpear', '_drawPistol', '_drawCrossbow'];
+  iconFns21d.forEach(function (fn) {
+    hits21d[fn] = 0;
+    origIcon21d[fn] = Game.Renderer[fn];
+    Game.Renderer[fn] = function () { hits21d[fn]++; return origIcon21d[fn].apply(this, arguments); };
+  });
+  var s21d = Game.Systems.createState('campaign', 'swordsman', 7770301);
+  s21d.enemies.length = 0; s21d.projectiles.length = 0;
+  Object.keys(wantIcon21d).forEach(function (wid, i) {
+    s21d.player.weapons.length = 0;
+    s21d.player.weapons.push(Game.createWeapon(wid, 1, i));
+    Game.Systems.normalizeSlots(s21d.player);
+    for (var z21d = 0; z21d < 30; z21d++) s21d.player.weapons[0].update(1 / 60, s21d.player, s21d);
+    var base21d = {};
+    iconFns21d.forEach(function (fn) { base21d[fn] = hits21d[fn]; });
+    Game.Renderer.render(s21d, 0.016);
+    var used21d = iconFns21d.filter(function (fn) { return hits21d[fn] > base21d[fn]; });
+    assert(used21d.length === 1 && used21d[0] === wantIcon21d[wid],
+           wid + ' 的环绕图标走 ' + wantIcon21d[wid] + '（实得 ' + used21d.join(',') + '）');
+  });
+  // 未登记的 id 回落 type 默认：老存档里的武器不会画成空的
+  var ghost21d = { def: { id: 'ghost_weapon', type: 'melee', color: '#fff' } };
+  iconFns21d.forEach(function (fn) { hits21d[fn] = 0; });
+  Game.Renderer._drawOrbitIcon(Game.Renderer.ctx, ghost21d, 0, 0, 0, 0);
+  assert(hits21d._drawSword > 0, '未登记的近战武器回落画剑（不落空）');
+  var ghost21e = { def: { id: 'ghost_ranged', type: 'ranged', color: '#fff' } };
+  iconFns21d.forEach(function (fn) { hits21d[fn] = 0; });
+  Game.Renderer._drawOrbitIcon(Game.Renderer.ctx, ghost21e, 0, 0, 0, 0.5);
+  assert(hits21d._drawCrossbow > 0, '未登记的远程武器回落画弩（不落空）');
+  // 几何：图标必须朝前伸（局部 -y 端比 +y 端长）。矩阵断言只能证明「整个图标
+  // 沿径向朝外」，形状本身要是朝反画（柄朝前、尖朝后），矩阵断言一样是绿的。
+  var ctxIco21d = Game.Renderer.ctx;
+  iconFns21d.forEach(function (fn) {
+    var ys21d = [];
+    var oMv = ctxIco21d.moveTo, oLn = ctxIco21d.lineTo, oRc = ctxIco21d.rect;
+    ctxIco21d.moveTo = function (x, y) { ys21d.push(y); return oMv.apply(this, arguments); };
+    ctxIco21d.lineTo = function (x, y) { ys21d.push(y); return oLn.apply(this, arguments); };
+    ctxIco21d.rect = function (x, y, w, h) { ys21d.push(y, y + h); return oRc.apply(this, arguments); };
+    Game.Renderer[fn](ctxIco21d, 0, 0, '#fff', 0.5);
+    ctxIco21d.moveTo = oMv; ctxIco21d.lineTo = oLn; ctxIco21d.rect = oRc;
+    assert(ys21d.length > 0, fn + ' 真的画了形状（' + ys21d.length + ' 个坐标点）');
+    var mn21d = Math.min.apply(null, ys21d), mx21d = Math.max.apply(null, ys21d);
+    assert(mn21d < -mx21d,
+           fn + ' 朝前伸（局部 y ' + mn21d.toFixed(1) + ' ~ ' + mx21d.toFixed(1) +
+           '，前端要比后端长，不然玩家看到柄朝前）');
+  });
+  iconFns21d.forEach(function (fn) { Game.Renderer[fn] = origIcon21d[fn]; });
+  s21d.player.weapons.length = 0;
 
   // ---- 12. 刀光和真实命中范围要对得上：同圆心（玩家）、同扇形宽 ----
   var slash213 = null;

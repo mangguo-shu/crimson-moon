@@ -839,8 +839,21 @@
    * 的错位。t = 0 刚出手，t = 1 余韵放完、回到静止位。 */
   var SWING_DUR = 0.22;
 
+  /* 环绕武器图标按武器 id 派生，和 weapons.js 的 PROJ_SHAPE 一个路数 —— 造型不进
+   * WEAPONS 表（那张表是冻结区），renderer 侧认 id。
+   * 没登记的 id 回落到 type 默认：近战画剑、远程画弩，老存档里任何未登记的武器
+   * 都不会画成空的。加新武器时这里必须登记一行，否则它会顶着别人的造型出场
+   * （2026-09-26 龙胆枪就是这样画成了剑）。 */
+  var ORBIT_ICON = {
+    iron_sword:    '_drawSword',
+    moon_sword:    '_drawGreatsword',
+    spear:         '_drawSpear',
+    pistol:        '_drawPistol',
+    jade_crossbow: '_drawCrossbow',
+  };
+
   // 画一把卫星武器。th 是它当前朝向（静止时 = 径向朝外，挥砍时绕过去）。
-  // fire 是放箭进度（1 = 刚扣弦），弩机后坐 + 弩弦回弹 + 箭飞出都挂在这上面。
+  // fire 是放箭进度（1 = 刚扣扳机/扣弦），枪口焰、弩弦回弹、箭飞出都挂在这上面。
   // 支点在剑柄/弩身上（局部 +2.5y），挥砍是绕着手转的，不是原地飘。
   R._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
     ctx.save();
@@ -849,8 +862,12 @@
     if (fire > 0) ctx.translate(0, fire * 3.4);
     ctx.scale(0.62, 0.62);
     ctx.translate(0, 2.5);
-    if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
-    else this._drawCrossbow(ctx, 0, 0, w.def.color, fire);
+    var fn = ORBIT_ICON[w.def.id];
+    if (w.def.type === 'melee') {
+      this[fn || '_drawSword'](ctx, 0, 0, w.def.color);
+    } else {
+      this[fn || '_drawCrossbow'](ctx, 0, 0, w.def.color, fire);
+    }
     ctx.restore();
   };
 
@@ -936,6 +953,106 @@
     // 剑脊反光
     ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9;
     ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, -23); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 赤月斩：双手巨剑，刃更宽更长，刃口一圈自发光。
+  // 和铁剑同框对比（都挂在同一圈轨道上），靠体量和光效卖出「星 3 专属」。
+  R._drawGreatsword = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 双手长柄
+    ctx.beginPath(); ctx.rect(-1.6, -2, 3.2, 10);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 十字护手（鎏金，比铁剑的宽一倍）
+    ctx.beginPath(); ctx.rect(-6.4, -4.4, 12.8, 3);
+    fs(ctx, PAL.gold, O, 1.2);
+    // 宽剑身（根部 ±3.4，尖部收窄到 ±1.4）
+    ctx.beginPath();
+    ctx.moveTo(-3.4, -4.4); ctx.lineTo(-1.4, -33); ctx.lineTo(1.4, -33);
+    ctx.lineTo(3.4, -4.4); ctx.closePath();
+    fs(ctx, color, O, 1.4);
+    // 剑身血槽
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, -28); ctx.stroke();
+    // 赤月之力：刃口自发光，lighter 叠加，不压住底下的刀光特效
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-2.2, -12); ctx.lineTo(-1.1, -29); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(2.2, -12); ctx.lineTo(1.1, -29); ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+  };
+
+  // 龙胆枪：长柄 + 细尖。靠「长」而不是「大」卖出突刺感 —— 全长 44 单位，
+  // 是铁剑 31 单位的 1.4 倍，和它 range 66 → 130 的量级差对得上。
+  R._drawSpear = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 长柄（木纹）
+    ctx.beginPath(); ctx.rect(-1.1, -17, 2.2, 26);
+    fs(ctx, PAL.wood, O, 1.1);
+    // 缠绳护手
+    ctx.beginPath(); ctx.rect(-1.9, -1, 3.8, 7);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 枪尾镦
+    ctx.beginPath();
+    ctx.moveTo(-1.6, 9); ctx.lineTo(0, 12); ctx.lineTo(1.6, 9); ctx.closePath();
+    fs(ctx, PAL.woodDark, O, 1);
+    // 铁箍（尖与柄的接口）
+    ctx.beginPath(); ctx.rect(-2, -18.5, 4, 3);
+    fs(ctx, '#9aa0a6', O, 1);
+    // 枪尖（薄片）
+    ctx.beginPath();
+    ctx.moveTo(-1.7, -18); ctx.lineTo(0, -36); ctx.lineTo(1.7, -18); ctx.closePath();
+    fs(ctx, color, O, 1.2);
+    // 尖部反光
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(0, -22); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 手枪：握把 + 套筒 + 枪管。整体后坐由 _drawOrbitIcon 统一平移（+fire*3.4），
+  // 这里只吃 fire 画枪口焰。
+  // 枪口焰故意用冷白而不是 def.color —— 手枪的 color 是 #ffd76e，用户 2026-09-26
+  // 点名去掉的就是子弹黄光，造型颜色不该在这个位置把黄光再带回来。
+  R._drawPistol = function (ctx, hx, hy, color, fire) {
+    var O = this.outline;
+    fire = fire || 0;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 握把
+    ctx.beginPath(); ctx.rect(-1.7, 0, 3.4, 6.4);
+    fs(ctx, PAL.woodDark, O, 1.2);
+    // 套筒
+    ctx.beginPath(); ctx.rect(-4.2, -2.6, 8.4, 3.4);
+    fs(ctx, '#8f979f', O, 1.2);
+    // 枪管（前指）
+    ctx.beginPath(); ctx.rect(-0.9, -7.6, 1.8, 5.2);
+    fs(ctx, '#6b7379', O, 1.1);
+    // 套筒高光
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-3.4, -1.7); ctx.lineTo(3.4, -1.7); ctx.stroke();
+    // 枪口焰：只在刚出手的余韵里亮
+    if (fire > 0.02) {
+      var FLASH = '#e6ecf2';
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fire;
+      ctx.fillStyle = FLASH;
+      ctx.beginPath();
+      ctx.moveTo(-3.2, -8); ctx.lineTo(0, -8 - fire * 11); ctx.lineTo(3.2, -8);
+      ctx.closePath();
+      ctx.fill();
+      // 亮线残影：把「击发」拉成一条可看见的轨迹
+      ctx.strokeStyle = FLASH; ctx.lineWidth = 2.2 * fire; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, -fire * 26); ctx.lineTo(0, -fire * 46); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   };
 
