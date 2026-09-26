@@ -266,9 +266,10 @@
     if (p.counterFlash > 0) p.counterFlash -= dt;
     p.tickAttackAnim(dt);
 
-    // 护盾缓慢回复
+    // 护盾缓慢回复。系数走 CONST.SHIELD_REGEN_SCALE：2 HP/秒 等于白送一层血，
+    // 玩家破盾毫无代价（2026-09-26「盾恢复的太快了，大砍一刀」→ 0.5/秒）。
     if (p.stats.shieldMax > 0 && p.stats.shield < p.stats.shieldMax) {
-      p.stats.shield = Math.min(p.stats.shieldMax, p.stats.shield + 2 * dt);
+      p.stats.shield = Math.min(p.stats.shieldMax, p.stats.shield + 2 * dt * CONST.SHIELD_REGEN_SCALE);
     }
 
     // 武器自动攻击。每帧先清「本帧已被处理」的目标集合 —— 多把武器按顺序各挑
@@ -462,8 +463,8 @@
       for (i = 0; i < wids.length; i++) {
         entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
       }
-    } else {
-      // 已有武器升级
+    } else if (S.anyWeaponUpgradable(state.player)) {
+      // 已有武器升级。全部满星时不给 —— 选了等于空过一轮升级，还不如拿属性卡
       entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
     }
 
@@ -503,7 +504,10 @@
                        entry: { kind: 'item', data: { itemId: iid } } });
       }
     }
-    entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
+    // 全部满星时不给强化卡：Boss 奖励只有三格，空过一格比多发一张属性卡糟
+    if (S.anyWeaponUpgradable(p)) {
+      entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
+    }
 
     // 普通武器（槽位未满时给）
     var wids = commonWeaponIds();
@@ -557,11 +561,22 @@
     if (Game.Audio) Game.Audio.levelup();
   };
 
-  /** 随机把一把未满级武器升一级。升级卡与商店强化共用 ——
-   *  上限写在 CONST.MAX_WEAPON_LEVEL，面板显示的 Lv.3/4 从这里取。 */
-  S.upgradeRandomWeapon = function (p) {
+  /** 还有没有能升星的武器。满星时别再卖强化卡 —— 扣了钱却什么都没发生，
+   *  比「今天没有强化卡」糟糕得多（2026-09-26 玩家反馈「随机四星武器没生效」就是这个）。 */
+  S.anyWeaponUpgradable = function (p) {
+    return p.weapons.some(function (w) { return w.level < CONST.MAX_WEAPON_LEVEL; });
+  };
+
+  /** 随机把一把未满星武器升一级。升级卡与商店强化共用 ——
+   *  上限写在 CONST.MAX_WEAPON_LEVEL，面板显示的 Lv.3/4 从这里取。
+   *  返回 false = 所有武器都已满星，这一发没有任何效果。
+   *  rng 传 state.rng：用 Math.random 会让同一种子跑出的武器星数对不上，存档不可复现。 */
+  S.upgradeRandomWeapon = function (p, rng) {
     var notMax = p.weapons.filter(function (w) { return w.level < CONST.MAX_WEAPON_LEVEL; });
-    if (notMax.length > 0) notMax[Math.floor(Math.random() * notMax.length)].level++;
+    if (notMax.length === 0) return false;
+    var r = rng ? rng() : Math.random();
+    notMax[Math.floor(r * notMax.length)].level++;
+    return true;
   };
 
   /** 槽位序号就是环绕轨道的角度（见 Game.orbitSlot）。增删武器后重排成 0..n-1，
@@ -621,7 +636,9 @@
       for (i = 0; i < wids.length; i++) {
         entries.push({ key: 'weapon:' + wids[i], w: 0.5 / wids.length, weaponId: wids[i], weapon: Game.WEAPONS[wids[i]] });
       }
-    } else {
+    } else if (S.anyWeaponUpgradable(p)) {
+      // 槽位满 → 强化卡。但所有武器都已满星时不给：那是张「扣钱没效果」的死卡。
+      // 此时武器半区为空，权重自然全落道具上，玩家的钱有地方花。
       entries.push({ key: 'weaponUpgrade', w: 0.5, weaponUpgrade: true });
     }
 
@@ -687,7 +704,15 @@
       S.normalizeSlots(p);
     }
     else if (item.type === 'weaponUpgrade') {
-      S.upgradeRandomWeapon(p);
+      // 老存档可能残留「所有武器已满星」的强化卡。池子早已不再出这张，但读档回来的
+      // 存档里它还在 —— 那就退钱、别标记 sold，让玩家能改买别的。
+      if (!S.upgradeRandomWeapon(p, state.rng)) {
+        p.materials += item.price;
+        item.sold = false;
+        console.log('[Shop] 武器已满星，强化卡无法生效，已退回材料');
+        if (Game.Audio) Game.Audio.hurt();
+        return false;
+      }
     }
     if (Game.Audio) Game.Audio.buy();
     console.log('[Shop] 购买:', item.name, '价格=', item.price);

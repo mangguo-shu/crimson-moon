@@ -15,6 +15,15 @@
   var Game = window.Game;
   var util = Game.util;
 
+  // 弹体造型按武器 id 派生，**不加进 WEAPONS 表** —— 武器表本体在冻结区，
+  // 只准通过 CONST 系数调（见 RANGED_DMG_SCALE 那一块的说明）。
+  // renderer._drawProjectile 按这个键分支：'arrow' 画箭矢，其余按子弹画。
+  // 之前所有远程弹共用一条金色胶囊，手枪 #ffd76e 打出来是一串铜钱。
+  var PROJ_SHAPE = {
+    pistol: 'bullet',
+    jade_crossbow: 'arrow',
+  };
+
   function fx() { return Game.FX; }
 
   /** 两角之差，wrap 到 [0, π]。近战挥砍用它判断敌人有没有落进这道扇形。 */
@@ -215,7 +224,8 @@
       vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       radius: 5, damage: dmg, crit: crit, fromPlayer: true,
       pierce: this.def.pierce || 0, life: 2.5,
-      color: this.def.color, type: 'bullet', knockback: this.def.knockback || 0,
+      color: this.def.color, type: PROJ_SHAPE[this.defId] || 'bullet',
+      knockback: this.def.knockback || 0,
       owner: owner,
     });
     state.projectiles.push(p);

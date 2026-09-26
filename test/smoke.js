@@ -1917,12 +1917,12 @@ try {
   assert(pl62.stats.pickupSpeed === D61.pickupSpeed,
          '拾取速度挂在属性表上（' + pl62.stats.pickupSpeed + '）');
   var st63 = Game.Systems.createState('campaign', 'swordsman', 31337);
-  st63.pickups.push(new Game.Pickup('heal', D61.chestHeal, 111, 222));
+  st63.pickups.push(new Game.Pickup('heal', D61.chestHealPct, 111, 222));
   st63.pickups.push(new Game.Pickup('magnet', 0, 333, 444));
   st63.pickups[0].vx = 5; st63.pickups[0].life = 40;
   var rt63 = Game.Systems.deserialize(Game.Systems.serialize(st63));
   assert(rt63.pickups.length === 2, '箱子类拾取物能存档回环（' + rt63.pickups.length + ' 件）');
-  assert(rt63.pickups[0].type === 'heal' && rt63.pickups[0].value === D61.chestHeal,
+  assert(rt63.pickups[0].type === 'heal' && rt63.pickups[0].value === D61.chestHealPct,
          '回血箱回环后类型与数值不变（' + rt63.pickups[0].type + '/' + rt63.pickups[0].value + '）');
   assert(rt63.pickups[1].type === 'magnet', '吸铁石箱回环后类型不变');
   assert(rt63.player.state === rt63, '读档后 player.state 回指重建（吸铁石依赖它）');
@@ -1961,8 +1961,8 @@ try {
   assert(kd67.heal === 1 && kd67.magnet === 1,
          'Boss 必给回血箱 + 吸铁石各一（' + JSON.stringify(kd67) + '）');
   var bHeal67 = st67.pickups.filter(function (p) { return p.type === 'heal'; })[0];
-  assert(bHeal67.value === D61.chestHeal * D61.bossChestHealMult,
-         'Boss 回血箱翻倍（' + D61.chestHeal + '×' + D61.bossChestHealMult + ' = ' +
+  assert(bHeal67.value === D61.chestHealPct * D61.bossChestHealMult,
+         'Boss 回血箱翻倍（' + D61.chestHealPct + '×' + D61.bossChestHealMult + ' = ' +
          bHeal67.value + '）');
 
   // —— 小怪掉箱概率与配置一致，两种箱子都会出 ——
@@ -1983,33 +1983,38 @@ try {
   assert(healSeen68 > 0 && magSeen68 > 0,
          '回血箱与吸铁石箱都真的会掉（' + healSeen68 + ' / ' + magSeen68 + '）');
 
-  // —— 回血箱：真回血，且满血不溢出 ——
+  // —— 回血箱：按最大生命百分比真回血，且满血不溢出 ——
   var st69 = Game.Systems.createState('campaign', 'swordsman', 101);
   Game.state = st69;
   var p69 = st69.player;
   p69.stats.hp = 40;
-  new Game.Pickup('heal', D61.chestHeal, p69.x, p69.y).update(0.016, p69);
-  assert(p69.stats.hp === 70, '回血箱回 ' + D61.chestHeal + ' 点（40 → ' + p69.stats.hp.toFixed(0) + '）');
+  new Game.Pickup('heal', D61.chestHealPct, p69.x, p69.y).update(0.016, p69);
+  var expect69 = 40 + D61.chestHealPct * p69.stats.maxHp;
+  assert(Math.abs(p69.stats.hp - expect69) < 0.01,
+         '回血箱按最大生命 ' + (D61.chestHealPct * 100).toFixed(0) + '% 回（40 → ' +
+         p69.stats.hp.toFixed(1) + '）');
 
   var st70 = Game.Systems.createState('campaign', 'swordsman', 102);
   Game.state = st70;
   var p70 = st70.player;
   p70.stats.hp = p70.stats.maxHp;
-  new Game.Pickup('heal', D61.chestHeal, p70.x, p70.y).update(0.016, p70);
+  new Game.Pickup('heal', D61.chestHealPct, p70.x, p70.y).update(0.016, p70);
   assert(p70.stats.hp === p70.stats.maxHp,
          '满血吃回血箱不溢出（仍 ' + p70.stats.hp.toFixed(0) + '）');
 
-  // 治疗强度会放大回血箱（herbal +25% → 30 变 37.5）
+  // 治疗强度会放大回血箱（herbal +12% → 12 点变 13.44）
   var st71 = Game.Systems.createState('campaign', 'swordsman', 103);
   Game.state = st71;
   var p71 = st71.player;
   p71.applyItem('herbal', 1);
+  assert(Math.abs(p71.stats.healingPower - 1.12) < 1e-9,
+         '回春药草把治疗强度加到 1.12（' + p71.stats.healingPower + '）');
   p71.stats.hp = 40;
   var hp71 = p71.stats.hp;
-  new Game.Pickup('heal', D61.chestHeal, p71.x, p71.y).update(0.016, p71);
+  new Game.Pickup('heal', D61.chestHealPct, p71.x, p71.y).update(0.016, p71);
   var got71 = p71.stats.hp - hp71;
-  assert(Math.abs(got71 - D61.chestHeal * 1.25) < 0.01,
-         '回春药草放大回血箱（实回 ' + got71.toFixed(1) + '）');
+  assert(Math.abs(got71 - D61.chestHealPct * p71.stats.maxHp * 1.12) < 0.01,
+         '回春药草放大回血箱（实回 ' + got71.toFixed(2) + '）');
 
   // —— 吸铁石：一把把场上全部经验/材料吸回来 ——
   var st72 = Game.Systems.createState('campaign', 'swordsman', 104);
@@ -2047,7 +2052,7 @@ try {
   var p73 = st73.player;
   st73.pickups = [];
   var xp73 = new Game.Pickup('xp', 2, p73.x + 900, p73.y);
-  var heal73 = new Game.Pickup('heal', D61.chestHeal, p73.x - 900, p73.y);
+  var heal73 = new Game.Pickup('heal', D61.chestHealPct, p73.x - 900, p73.y);
   st73.pickups.push(xp73, heal73);
   var mag73 = new Game.Pickup('magnet', 0, p73.x, p73.y);
   st73.pickups.push(mag73);
@@ -2396,10 +2401,10 @@ try {
   var healIds95 = [];
   for (var i95 in Game.ITEMS) if (Game.ITEMS[i95].healing) healIds95.push(i95);
   assert(healIds95.length === 4, '4 件回血道具被标记（' + healIds95.length + '）');
-  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.012 &&
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.005 &&
          typeof Game.ITEMS.lifeluck.stat.lifeOnHit === 'undefined',
          '生机之种改成按最大生命百分比');
-  assert(Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.03 &&
+  assert(Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.008 &&
          typeof Game.ITEMS.deathbell.stat.lifeOnKill === 'undefined',
          '夺命金铃改成按最大生命百分比');
   assert(/最大生命/.test(Game.ITEMS.lifeluck.desc) && /最大生命/.test(Game.ITEMS.deathbell.desc),
@@ -2407,15 +2412,15 @@ try {
 
   var p96 = new Game.Player('swordsman');
   p96.applyItem('lifeluck', 1);
-  assert(Math.abs(p96.healForHit() - p96.stats.maxHp * 0.012) < 1e-9,
-         '命中回血 = 最大生命 × 1.2%');
+  assert(Math.abs(p96.healForHit() - p96.stats.maxHp * 0.005) < 1e-9,
+         '命中回血 = 最大生命 × 0.5%');
   var p97 = new Game.Player('swordsman');
   p97.applyItem('deathbell', 1);
-  assert(Math.abs(p97.healForKill() - p97.stats.maxHp * 0.03) < 1e-9,
-         '击杀回血 = 最大生命 × 3%');
+  assert(Math.abs(p97.healForKill() - p97.stats.maxHp * 0.008) < 1e-9,
+         '击杀回血 = 最大生命 × 0.8%');
   var hp97 = p97.stats.maxHp;
   p97.applyUpgrade({ maxHp: 40 });
-  assert(Math.abs(p97.healForKill() - (hp97 + 40) * 0.03) < 1e-9,
+  assert(Math.abs(p97.healForKill() - (hp97 + 40) * 0.008) < 1e-9,
          '最大生命涨了回血量跟着涨（固定点数做不到）');
   // 老存档里残留的固定点数仍生效 —— 改表不该让玩家白买
   var p98 = new Game.Player('swordsman');
@@ -2436,8 +2441,8 @@ try {
   wp99.update(0.016, s99.player, s99);
   assert(calls99.length === 2,
          '一次近战命中触发命中回血 + 击杀回血（' + calls99.length + ' 次）');
-  assert(Math.abs(calls99[0] - s99.player.stats.maxHp * 0.012) < 1e-9 &&
-         Math.abs(calls99[1] - s99.player.stats.maxHp * 0.03) < 1e-9,
+  assert(Math.abs(calls99[0] - s99.player.stats.maxHp * 0.005) < 1e-9 &&
+         Math.abs(calls99[1] - s99.player.stats.maxHp * 0.008) < 1e-9,
          '近战路径按最大生命百分比回血（' + calls99[0].toFixed(2) + ' / ' + calls99[1].toFixed(2) + '）');
 
   var s100 = Game.Systems.createState('campaign', 'swordsman', 305000);
@@ -2454,8 +2459,8 @@ try {
   s100.player.heal = function (v) { calls100.push(v); return 0; };
   Game.Systems.updateProjectiles(s100, 0.016);
   assert(calls100.length === 2 &&
-         Math.abs(calls100[0] - s100.player.stats.maxHp * 0.012) < 1e-9 &&
-         Math.abs(calls100[1] - s100.player.stats.maxHp * 0.03) < 1e-9,
+         Math.abs(calls100[0] - s100.player.stats.maxHp * 0.005) < 1e-9 &&
+         Math.abs(calls100[1] - s100.player.stats.maxHp * 0.008) < 1e-9,
          '远程弹道路径同样按最大生命百分比回血');
 
   // ---- 9. 面板上显示成百分比 ----
@@ -2463,8 +2468,8 @@ try {
   s101.player.applyItem('lifeluck', 1);
   s101.player.applyItem('deathbell', 1);
   var html101 = Game.UI.renderStatsHTML(s101);
-  assert(html101.indexOf('1.2% 最大生命') >= 0, '面板显示命中回血百分比');
-  assert(html101.indexOf('3% 最大生命') >= 0, '面板显示击杀回血百分比');
+  assert(html101.indexOf('0.5% 最大生命') >= 0, '面板显示命中回血百分比');
+  assert(html101.indexOf('0.8% 最大生命') >= 0, '面板显示击杀回血百分比');
   assert(!/回血<\/span><span class="v">[^<]*\/ 次<\/span>/.test(html101),
          '百分比生效时不再显示固定的「/ 次」');
 
@@ -3652,17 +3657,26 @@ try {
   var patchSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'patch-android.js'), 'utf8');
   assert(/tasks\.register\('verifyWebAssets'\)/.test(patchSrc),
          'patch-android.js 定义 verifyWebAssets 任务');
-  assert(/vendor\/core\.js/.test(patchSrc) && /GradleException/.test(patchSrc),
-         '守卫检查 vendor/core.js 且缺失时抛 GradleException（fail fast，不是 warn）');
+  assert(/vendor\/capacitor\/core\.js/.test(patchSrc) && /GradleException/.test(patchSrc),
+         '守卫检查 vendor/capacitor/core.js 且缺失时抛 GradleException（fail fast，不是 warn）');
   assert(/t\.name == 'preBuild'\) t\.dependsOn 'verifyWebAssets'/.test(patchSrc),
          '守卫挂在 preBuild 上（Android Studio 构建也会触发）');
   assert(/patchSyncGuard\(\)/.test(patchSrc), 'patch-android.js 的 main 调用了 patchSyncGuard');
-  assert(/已存在/.test(patchSrc), '守卫注入是幂等的（重复打补丁不会叠加两份任务）');
+  assert(/STALE_CORE_REF/.test(patchSrc),
+         '幂等注入会复核内容：早先版本把路径写成 vendor/core.js，已存在时也会修');
   var gradleP = path.join(__dirname, '..', 'android', 'app', 'build.gradle');
+  var pubDir = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'assets', 'public');
   if (fs.existsSync(gradleP)) {
     var gradle = fs.readFileSync(gradleP, 'utf8');
     var guardCount = (gradle.match(/tasks\.register\('verifyWebAssets'\)/g) || []).length;
     assert(guardCount === 1, 'android 工程的 build.gradle 里守卫只有一份（补丁已实际执行过）');
+    // 路径必须真实存在，否则守卫每次构建都报「assets 是旧资源」，
+    // 看起来完全像资源真的过期了，会往错的方向排查。
+    var gPath = (gradle.match(/new File\(pub, '([^']+)'\)\.exists\(\)/) || [])[1];
+    assert(!!gPath && fs.existsSync(path.join(pubDir, gPath)),
+           '守卫检查的 ' + gPath + ' 在 assets/public 里真实存在');
+    assert(gradle.indexOf("'vendor/core.js'") < 0,
+           'build.gradle 里不再有不存在的 vendor/core.js');
   } else {
     console.log('  · （跳过：android/ 工程不在本地，只校验补丁脚本本身）');
   }
@@ -3705,6 +3719,239 @@ try {
   Game.Storage.remove('endless_v1');
 } catch (e) {
   assert(false, '安卓真机适配异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉙ 第二轮真机反馈（2026-09-26）
+ * 选卡每排 4 张 / 经验条透明度 / 4 星武器死卡 / 续航削峰 / 弹体造型
+ * ============================================================ */
+console.log('\n== ㉙ 第二轮真机反馈 ==');
+try {
+  var S = Game.Systems, K = Game.CONST, D = Game.DROP;
+  var css2 = fs.readFileSync(path.join(__dirname, '..', 'css', 'style.css'), 'utf8');
+  var uiSrc = fs.readFileSync(path.join(JS_DIR, 'ui.js'), 'utf8');
+  var sysSrc2 = fs.readFileSync(path.join(JS_DIR, 'systems.js'), 'utf8');
+  var wpnSrc = fs.readFileSync(path.join(JS_DIR, 'weapons.js'), 'utf8');
+  var renSrc2 = fs.readFileSync(path.join(JS_DIR, 'renderer.js'), 'utf8');
+  var cfgSrc = fs.readFileSync(path.join(JS_DIR, 'config.js'), 'utf8');
+  var R2 = Game.Renderer;
+
+  // ---- 1. 选卡每排 4 张（手机上原来竖屏 1 张、横屏 3 张）----
+  assert(/card-row char-grid/.test(uiSrc), '选卡行加了 char-grid 类');
+  var cg2 = (css2.match(/\.char-grid\s*\{[^}]*\}/) || [''])[0];
+  assert(/display:\s*grid/.test(cg2), '.char-grid 用 grid 布局');
+  assert(/grid-template-columns:\s*repeat\(4,/.test(cg2),
+         '.char-grid 是 4 列（' + cg2.replace(/\s+/g, ' ').trim().slice(0, 90) + '）');
+  assert(/minmax\(0,\s*1fr\)/.test(cg2), '.char-grid 用 minmax(0,1fr)，长文案能压列而不撑破');
+  // 三选一那排不能跟着变：基础 .card-row 仍是 flex、卡片仍是 220px 定宽
+  var crb2 = (css2.match(/\.card-row\s*\{[^}]*\}/) || [''])[0];
+  assert(/display:\s*flex/.test(crb2), '基础 .card-row 仍是 flex（升级三选一不受牵连）');
+  var cbase2 = (css2.match(/^\.card \{[^}]*\}/m) || [''])[0];
+  assert(/width:\s*220px/.test(cbase2),
+         '基础卡片仍是 220px 定宽，没被 char-grid 覆盖（' +
+         cbase2.replace(/\s+/g, ' ').trim().slice(0, 70) + '）');
+  var portrait2 = (css2.match(/@media \(orientation: portrait\)\s*\{[\s\S]*?\n\}/) || [''])[0];
+  assert(/\.char-grid\s*\{[^}]*repeat\(2,/.test(portrait2),
+         '竖屏退回 2 列（4 张挤 358px = 每张 80px，卡名放不下）');
+
+  // ---- 2. 经验条透明度 0.7 ----
+  var lvl2 = (css2.match(/\.hud-lvl-row\s*\{[^}]*\}/) || [''])[0];
+  assert(/opacity:\s*0\.7/.test(lvl2), '经验条整行透明度 0.7（' +
+         lvl2.replace(/\s+/g, ' ').trim() + '）');
+  assert(!/opacity/.test((css2.match(/\.xp-fill\s*\{[^}]*\}/) || [''])[0]),
+         '.xp-fill 不再单独写 opacity —— 只压条会剩一个满亮的等级数字挂在旁边');
+
+  // ---- 3. 4 星武器：卡池不再给死卡、商店残留卡退钱 ----
+  function allMaxed(seed) {
+    var s = S.createState('campaign', 'swordsman', seed);
+    s.player.weapons = [];
+    for (var i = 0; i < K.MAX_WEAPONS; i++) s.player.weapons.push(Game.createWeapon('pistol', 1, i));
+    s.player.weapons.forEach(function (w) { w.level = K.MAX_WEAPON_LEVEL; });
+    return s;
+  }
+  var pm2 = allMaxed(3001);
+  assert(S.anyWeaponUpgradable(pm2.player) === false, '全部满星时 anyWeaponUpgradable = false');
+  pm2.player.weapons[2].level = 1;
+  assert(S.anyWeaponUpgradable(pm2.player) === true, '有一把未满星就 = true');
+
+  // 返回值守约：升满了必须返回 false，而不是静默空转
+  var s4a = S.createState('campaign', 'swordsman', 3002);
+  s4a.player.weapons = [Game.createWeapon('iron_sword', 1, 0)];
+  var ups2 = [];
+  for (var u2 = 0; u2 < 5; u2++) ups2.push(S.upgradeRandomWeapon(s4a.player, s4a.rng));
+  assert(ups2[0] && ups2[1] && ups2[2] && ups2[3] === false && ups2[4] === false,
+         '1 星升到 ' + K.MAX_WEAPON_LEVEL + ' 星要 3 次，之后返回 false（' + JSON.stringify(ups2) + '）');
+  assert(s4a.player.weapons[0].level === K.MAX_WEAPON_LEVEL,
+         '实际升到 Lv.' + s4a.player.weapons[0].level);
+  // 用 state.rng 而不是 Math.random：同种子两次跑要一致，存档才复现得了
+  function sig2(seed) {
+    var t = S.createState('campaign', 'swordsman', seed);
+    t.player.weapons = [Game.createWeapon('iron_sword', 1, 0), Game.createWeapon('pistol', 1, 1)];
+    for (var i2 = 0; i2 < 3; i2++) S.upgradeRandomWeapon(t.player, t.rng);
+    return t.player.weapons.map(function (w) { return w.level; }).join(',');
+  }
+  var runs2 = [];
+  for (var rr = 0; rr < 5; rr++) runs2.push(sig2(4242));
+  assert(runs2.every(function (x) { return x === runs2[0]; }) &&
+         runs2[0] !== '1,1',
+         '传 state.rng 时同种子可复现（' + runs2[0] + '）');
+
+  // 三条出货口在全部满星时都不再给强化卡
+  var dead2 = 0, offered2 = 0;
+  for (var a2 = 0; a2 < 60; a2++) {
+    var t2 = allMaxed(3100 + a2);
+    S.rollLevelUpChoices(t2).forEach(function (c) {
+      offered2++; if (c.kind === 'weaponUpgrade') dead2++; });
+    S.bossRewardChoices(t2).forEach(function (c) {
+      offered2++; if (c.kind === 'weaponUpgrade') dead2++; });
+    offered2++;
+    if (S.rollShopItem(t2, t2.rng).type === 'weaponUpgrade') dead2++;
+  }
+  assert(dead2 === 0 && offered2 > 100,
+         '全部满星时三条出货口都不再给强化卡（' + offered2 + ' 张候选里 ' + dead2 + ' 张）');
+
+  // 守卫不能把卡池切断：槽满但未满星时仍要给
+  var upNow2 = 0, tot2 = 0;
+  for (var c2 = 0; c2 < 150; c2++) {
+    var t3 = S.createState('campaign', 'swordsman', 3500 + c2);
+    for (var k2 = 0; k2 < K.MAX_WEAPONS - 1; k2++) {
+      t3.player.weapons.push(Game.createWeapon('pistol', 1, k2 + 1));
+    }
+    tot2++;
+    if (S.rollShopItem(t3, t3.rng).type === 'weaponUpgrade') upNow2++;
+  }
+  assert(upNow2 > tot2 * 0.3,
+         '槽满但未满星时商店仍给强化卡（' + upNow2 + '/' + tot2 + '，武器半区权重 0.5）');
+
+  // 老存档残留的强化卡：退钱、不标记 sold
+  var t4 = allMaxed(3901);
+  t4.player.materials = 500;
+  t4.shop = { items: [{ type: 'weaponUpgrade', price: 85, sold: false, name: '武器强化' }],
+              refreshCost: 5, refreshCount: 0, locked: [true, false, false, false] };
+  var ok4 = S.buyShopItem(t4, 0);
+  assert(ok4 === false && t4.player.materials === 500,
+         '满星买残留强化卡：退钱（材料仍是 ' + t4.player.materials + '）');
+  assert(t4.shop.items[0].sold === false,
+         '满星买残留强化卡：不标记 sold，玩家还能改买别的');
+  var t5 = S.createState('campaign', 'swordsman', 3902);
+  t5.player.weapons = [Game.createWeapon('iron_sword', 1, 0)];
+  t5.player.materials = 500;
+  t5.shop = { items: [{ type: 'weaponUpgrade', price: 85, sold: false, name: '武器强化' }],
+              refreshCost: 5, refreshCount: 0, locked: [true, false, false, false] };
+  assert(S.buyShopItem(t5, 0) === true && t5.player.materials === 415,
+         '未满星买强化卡正常扣钱（500 → ' + t5.player.materials + '）');
+  assert(t5.player.weapons[0].level === 2 && t5.shop.items[0].sold === true,
+         '未满星买强化卡正常升一级（Lv.' + t5.player.weapons[0].level + '）');
+
+  // ---- 4. 护盾回充削峰 ----
+  assert(K.SHIELD_REGEN_SCALE === 0.25, '护盾回充系数 0.25（' + K.SHIELD_REGEN_SCALE + '）');
+  assert(/\+ 2 \* dt \* CONST\.SHIELD_REGEN_SCALE/.test(sysSrc2),
+         '护盾回充走 CONST.SHIELD_REGEN_SCALE，不留裸 2*dt');
+  var t6 = S.createState('campaign', 'swordsman', 4001);
+  var p6 = t6.player;
+  p6.stats.shieldMax = 25; p6.stats.shield = 0;
+  var moveReal = Game.Input.getMove;
+  Game.Input.getMove = function () { return { x: 0, y: 0 }; };
+  Game.state = t6;
+  try {
+    for (var f2 = 0; f2 < 60; f2++) S.updatePlayer(t6, 1 / 60);
+  } finally { Game.Input.getMove = moveReal; Game.state = null; }
+  assert(Math.abs(p6.stats.shield - 0.5) < 0.2,
+         '护盾回充实得 ' + p6.stats.shield.toFixed(2) + '/秒（原来 2/秒，压 4 倍）');
+
+  // ---- 5. 回血削峰到「零点几」----
+  assert(D.chestHeal === undefined && typeof D.chestHealPct === 'number',
+         '回血箱从固定点数改成比例（chestHealPct = ' + D.chestHealPct + '）');
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.005 &&
+         Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.008,
+         '命中/击杀回血压到 0.5% / 0.8%');
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct < 0.01 &&
+         Game.ITEMS.deathbell.stat.lifeOnKillPct < 0.01,
+         '两件都在「零点几」—— 单次事件不超过 1% 最大生命');
+  assert(Game.ITEMS.vampiric.stat.lifesteal === 0.015 &&
+         Game.ITEMS.herbal.stat.healingPower === 0.12, '吸血 / 治疗强度同步下调');
+  // 文案是写死的，只改数值等于骗人 —— 两边必须一起动
+  assert(/0\.5%/.test(Game.ITEMS.lifeluck.desc), '生机之种文案跟着改（' + Game.ITEMS.lifeluck.desc + '）');
+  assert(/0\.8%/.test(Game.ITEMS.deathbell.desc), '夺命金铃文案跟着改（' + Game.ITEMS.deathbell.desc + '）');
+  assert(/1\.5%/.test(Game.ITEMS.vampiric.desc), '噬魂之牙文案跟着改（' + Game.ITEMS.vampiric.desc + '）');
+  assert(/\+12%/.test(Game.ITEMS.herbal.desc), '回春药草文案跟着改（' + Game.ITEMS.herbal.desc + '）');
+  // 回血箱真按比例回，低血角色不再一回满大半条命
+  var t7 = S.createState('campaign', 'swordsman', 4101);
+  Game.state = t7;
+  var p7 = t7.player;
+  p7.stats.hp = 0;
+  new Game.Pickup('heal', D.chestHealPct, p7.x, p7.y).update(1 / 60, p7);
+  assert(Math.abs(p7.stats.hp - D.chestHealPct * p7.stats.maxHp) < 0.01,
+         '回血箱按最大生命 ' + (D.chestHealPct * 100).toFixed(0) + '% 回（' + p7.stats.hp.toFixed(1) + '）');
+  Game.state = null;
+
+  // ---- 6. 弹体造型：枪射子弹、弩射箭 ----
+  assert(/PROJ_SHAPE/.test(wpnSrc), 'weapons.js 有 PROJ_SHAPE 映射');
+  assert(/jade_crossbow:\s*'arrow'/.test(wpnSrc), '青玉连弩 → arrow');
+  assert(/pistol:\s*'bullet'/.test(wpnSrc), '手枪 → bullet');
+  assert(!/PROJ_SHAPE/.test(cfgSrc),
+         '造型不在 WEAPONS 表里 —— 武器表本体冻结，只准动 CONST 系数');
+  assert(/_drawArrowBody/.test(renSrc2) && /_drawBulletBody/.test(renSrc2),
+         'renderer 有两个弹体分支');
+  assert(renSrc2.indexOf("if (p.type === 'spell')") < renSrc2.indexOf("p.type === 'arrow'"),
+         '法术弹仍先走符咒分支，弹体分支不抢怪的弹');
+
+  function fireOne(weaponId, seed) {
+    var t = S.createState('campaign', 'swordsman', seed);
+    t.enemies.length = 0; t.projectiles.length = 0;
+    t.player.weapons.length = 0;
+    t.player.weapons.push(Game.createWeapon(weaponId, 1, 0));
+    S.normalizeSlots(t.player);
+    var w = t.player.weapons[0];
+    var pos = w.posAt(t.player);
+    var e = new Game.Enemy('zombie', t.player.x + Math.cos(pos.a) * 60,
+                           t.player.y + Math.sin(pos.a) * 60, 1);
+    e.hp = 1e9;
+    t.enemies.push(e);
+    Game.state = t;
+    w.cooldownRemaining = 0;
+    w.update(0.016, t.player, t);
+    Game.state = null;
+    return t.projectiles[0];
+  }
+  var pa2 = fireOne('jade_crossbow', 5001);
+  var pb2 = fireOne('pistol', 5002);
+  assert(pa2 && pa2.type === 'arrow', '连弩射出的是箭（type=' + (pa2 && pa2.type) + '）');
+  assert(pb2 && pb2.type === 'bullet', '手枪射出的是子弹（type=' + (pb2 && pb2.type) + '）');
+  assert(pa2.color !== pb2.color, '两把武器的弹颜色不同（' + pa2.color + ' / ' + pb2.color + '）');
+
+  // 画出来确实是两种东西：子弹是铅灰弹体，箭是木杆。
+  // 之前两者共用一条金色胶囊，手枪 #ffd76e 直接当弹体画就是一枚铜钱。
+  function recCtx() {
+    var fills = [];
+    return { fills: fills, ctx: new Proxy({}, {
+      get: function (t, k) {
+        if (k === 'beginPath') return function () { t.path = {}; return t.path; };
+        if (k === 'fill') return function () { fills.push(t.fillStyle); t.path = {}; };
+        if (k === 'fillRect') return function () { fills.push(t.fillStyle); };
+        if (k === 'moveTo' || k === 'lineTo' || k === 'rect' || k === 'arc' || k === 'ellipse') {
+          return function () { return t.path = t.path || {}; };
+        }
+        if (typeof t[k] !== 'undefined') return t[k];
+        return function () {};   // save/restore/translate/rotate 等一律 noop
+      },
+      set: function (t, k, v) { t[k] = v; return true; }
+    }) };
+  }
+  R2.init(makeElement('canvas'));
+  var ra2 = recCtx(), rb2 = recCtx();
+  R2._drawArrowBody(ra2.ctx, pa2);
+  R2._drawBulletBody(rb2.ctx, pb2);
+  assert(ra2.fills.length > 0 && rb2.fills.length > 0,
+         '两个弹体都真的画了东西（箭 ' + ra2.fills.length + ' 笔 / 弹 ' + rb2.fills.length + ' 笔）');
+  assert(ra2.fills.indexOf('#8a6a45') >= 0, '箭是木杆（' + ra2.fills.join(',') + '）');
+  assert(rb2.fills.indexOf('#8f979f') >= 0, '子弹是铅灰弹体（' + rb2.fills.join(',') + '）');
+  var setA2 = Array.from(new Set(ra2.fills)).sort().join(',');
+  var setB2 = Array.from(new Set(rb2.fills)).sort().join(',');
+  assert(setA2 !== setB2,
+         '箭与子弹的调色板不同（' + setA2 + ' vs ' + setB2 + '）');
+} catch (e) {
+  assert(false, '第二轮真机反馈异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

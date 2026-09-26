@@ -139,7 +139,7 @@
         var k = order[g];
         var list = buckets[k];
         html += '<div class="char-group"><div class="char-group-title">' + (groups[k] || k) + '</div>' +
-                '<div class="card-row">';
+                '<div class="card-row char-grid">';
         for (var j = 0; j < list.length; j++) {
           var c = list[j];
           html +=

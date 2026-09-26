@@ -111,7 +111,7 @@ var SYNC_GUARD =
   "    doLast {\n" +
   "        def pub = file('src/main/assets/public')\n" +
   "        def missing = []\n" +
-  "        if (!new File(pub, 'vendor/core.js').exists()) missing << 'vendor/core.js'\n" +
+  "        if (!new File(pub, 'vendor/capacitor/core.js').exists()) missing << 'vendor/capacitor/core.js'\n" +
   "        def idx = new File(pub, 'index.html')\n" +
   "        if (idx.exists() && idx.text.indexOf('vendor/capacitor/core.js') < 0)\n" +
   "            missing << 'index.html 未引用 Capacitor'\n" +
@@ -126,16 +126,28 @@ var SYNC_GUARD =
   "tasks.whenTaskAdded { t -> if (t.name == 'preBuild') t.dependsOn 'verifyWebAssets' }\n" +
   '// ---- web assets 同步守卫结束 ----\n';
 
+// 早先版本写的是 'vendor/core.js'，真实路径是 'vendor/capacitor/core.js'。
+// 路径错了守卫会永远报「assets 是旧资源」，CI 每次都在 preBuild 失败，
+// 而报错信息看起来完全像资源真的过期了 —— 排查会往错的方向走。
+const STALE_CORE_REF = "'vendor/core.js'";
+const REAL_CORE_REF = "'vendor/capacitor/core.js'";
+
 function patchSyncGuard() {
   const p = path.join(ANDROID, 'app', 'build.gradle');
   if (!fs.existsSync(p)) { console.warn('[patch] 未找到 app/build.gradle，跳过 assets 守卫'); return; }
   let s = read(p);
-  if (s.includes("tasks.register('verifyWebAssets')")) {
-    console.log('[patch] build.gradle: assets 同步守卫已存在');
+  if (!s.includes("tasks.register('verifyWebAssets')")) {
+    write(p, s.replace(/\s*$/, '') + SYNC_GUARD);
+    console.log('[patch] build.gradle: 注入 assets 同步守卫');
     return;
   }
-  write(p, s.replace(/\s*$/, '') + SYNC_GUARD);
-  console.log('[patch] build.gradle: 注入 assets 同步守卫');
+  // 已经注进去也要复核内容：幂等只保证不叠加两份任务，不保证内容还是对的。
+  if (s.indexOf(STALE_CORE_REF) >= 0) {
+    write(p, s.split(STALE_CORE_REF).join(REAL_CORE_REF));
+    console.log('[patch] build.gradle: 修正 assets 守卫的路径（vendor/core.js → vendor/capacitor/core.js）');
+    return;
+  }
+  console.log('[patch] build.gradle: assets 同步守卫已存在');
 }
 
 /* ---------- 4. variables.gradle ---------- */

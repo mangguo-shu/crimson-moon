@@ -1524,26 +1524,93 @@
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    // 光晕
+    if (p.type === 'arrow') this._drawArrowBody(ctx, p);
+    else this._drawBulletBody(ctx, p);
+    ctx.restore();
+  };
+
+  /** 子弹弹体。造型按武器 id 派生（见 weapons.js 的 PROJ_SHAPE），不写在 WEAPONS 表里。
+   *  弹体是铅灰而不是武器色 —— 手枪是 #ffd76e，直接拿武器色画弹体就是一枚铜钱
+   *  （用户 2026-09-26「远程攻击现在全是铜钱」）。武器色只留在光晕和火苗上，
+   *  这样手枪与连弩的弹仍然一眼可分，但都不再是金币。 */
+  R._drawBulletBody = function (ctx, p) {
+    var r = p.radius;
+    // 光晕：武器色，弱一点 —— 它是这发子弹的「身份」，不是弹体本身
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = p.color;
-    ctx.globalAlpha = 0.4;
-    ctx.beginPath(); ctx.arc(0, 0, p.radius * 1.8, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.32;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.8, 0, TAU); ctx.fill();
     ctx.restore();
-    // 弹体（带拖尾的胶囊）
+    // 飞行拖尾
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.ellipse(-r * 2.8, 0, r * 1.6, r * 0.45, 0, 0, TAU);
+    ctx.fill();
+    // 弹体：铅灰色短圆柱
     ctx.globalAlpha = 1;
-    ctx.fillStyle = p.color;
+    ctx.fillStyle = '#8f979f';
     ctx.beginPath();
-    ctx.ellipse(0, 0, p.radius * 1.6, p.radius, 0, 0, TAU);
+    ctx.ellipse(0, 0, r * 1.15, r * 0.72, 0, 0, TAU);
     ctx.fill();
-    // 拖尾
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = p.color;
+    // 弹头：亮一点的金属尖（朝飞行方向，+x）
+    ctx.fillStyle = '#c9d2d9';
     ctx.beginPath();
-    ctx.ellipse(-p.radius * 2.4, 0, p.radius * 1.4, p.radius * 0.6, 0, 0, TAU);
+    ctx.ellipse(r * 0.55, 0, r * 0.62, r * 0.72, 0, 0, TAU);
+    ctx.fill();
+    // 出膛火苗
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.ellipse(r * 1.1, 0, r * 0.7, r * 0.5, 0, 0, TAU);
     ctx.fill();
     ctx.restore();
+  };
+
+  /** 弩箭弹体：木杆 + 金属箭头 + 羽尾。羽尾用武器色，连弩的青玉箭一眼就是青玉。 */
+  R._drawArrowBody = function (ctx, p) {
+    var r = p.radius;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = 0.26;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.9, 0, TAU); ctx.fill();
+    ctx.restore();
+    // 飞行拖尾
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.ellipse(-r * 3.6, 0, r * 2.0, r * 0.3, 0, 0, TAU);
+    ctx.fill();
+    // 箭杆
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#8a6a45';
+    ctx.fillRect(-r * 2.4, -r * 0.26, r * 4.5, r * 0.52);
+    // 箭头（金属，朝 +x）
+    ctx.fillStyle = '#e8eef4';
+    ctx.beginPath();
+    ctx.moveTo(r * 1.9, -r * 0.55);
+    ctx.lineTo(r * 3.2, 0);
+    ctx.lineTo(r * 1.9, r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    // 箭羽（武器色，两道后掠）
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.9, 0);
+    ctx.lineTo(-r * 3.3, -r * 0.9);
+    ctx.lineTo(-r * 3.3, r * 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-r * 2.5, 0);
+    ctx.lineTo(-r * 3.7, -r * 0.62);
+    ctx.lineTo(-r * 3.7, r * 0.62);
+    ctx.closePath();
+    ctx.fill();
   };
 
   /* ---------------- 掉落物（灵气珠 / 铜钱 / 回血箱 / 吸铁石） ---------------- */

@@ -115,7 +115,10 @@ html, body {
   align-items: stretch;
   gap: 6px;
 }
-.hud-lvl-row { display: flex; align-items: center; gap: 10px; }
+/* 用户 2026-09-26「经验条有点挡」——整行压到 0.7 透明度。
+   压 .hud-lvl-row 而不是只压 .xp-fill：条和等级数字是一体的，
+   只压条会剩一个满亮的绿字挂在半透明条旁边，看着像 bug。 */
+.hud-lvl-row { display: flex; align-items: center; gap: 10px; opacity: 0.7; }
 .xp-wrap {
   flex: 1;
   height: 8px;
@@ -343,6 +346,22 @@ html, body {
   color: var(--color-gold);
   margin-bottom: 12px;
 }
+/* 选卡页固定每排 4 张 —— 用户 2026-09-26「选卡页面太大了」「优化到四个格子在一排」。
+   原来走 .card-row 的 flex + 220px 定宽：手机上 810px 可视宽只能塞下 3 张、
+   竖屏只能塞 1 张（220px 的卡占满 358px 的屏），11 张卡堆成一长条。
+   独立类不改 .card-row 本体 —— 升级三选一那排只有 3 张卡，
+   靠定宽 + flex 居中才好看，跟着变就牵连了。
+   卡片交给 grid 分宽（width:100%），minmax(0,1fr) 让长文案能把列压窄而不是撑破。 */
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: min(900px, 96vw);
+}
+.char-grid > .card { width: 100%; min-height: 168px; padding: 11px; }
+.char-grid > .card .card-name { font-size: 18px; margin: 5px 0; }
+.char-grid > .card .card-desc { font-size: 12.5px; line-height: 1.35; }
 
 /* ===== 商店 ===== */
 .shop-grid { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
@@ -438,6 +457,8 @@ html, body {
   .card .card-name { font-size: 17px; }
   .card .card-desc { font-size: 12px; }
   .card-row { gap: 10px; }
+  /* 竖屏可视宽只有 358px，硬塞 4 张 = 每张 80px，卡名都放不下；退回 2 张一排。 */
+  .char-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 
   .shop-item { width: 142px; min-height: 128px; padding: 10px; }
 

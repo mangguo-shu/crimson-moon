@@ -432,15 +432,17 @@
         this.x + jx(), this.y + jx()));
     }
     // 宝箱：Boss 固定给回血 + 吸铁石各一；小怪按概率给，回血 / 吸铁石二选一。
+    // heal 拾取物的 value 存的是「最大生命比例」而不是固定点数，实际回血量在拾取
+    // 结算时按当时玩家的最大生命现算 —— 见 Pickup.prototype.update 的 heal 分支。
     if (this.isBoss) {
       for (var ci = 0; ci < D.bossChests.length; ci++) {
         var bk = D.bossChests[ci];
-        state.pickups.push(new Pickup(bk, bk === 'heal' ? D.chestHeal * D.bossChestHealMult : 0,
+        state.pickups.push(new Pickup(bk, bk === 'heal' ? D.chestHealPct * D.bossChestHealMult : 0,
           this.x + util.rand(state.rng, -40, 40), this.y + util.rand(state.rng, -40, 40)));
       }
     } else if (state.rng() < D.chestChance) {
       var kind = state.rng() < D.chestMagnetChance ? 'magnet' : 'heal';
-      state.pickups.push(new Pickup(kind, kind === 'heal' ? D.chestHeal : 0,
+      state.pickups.push(new Pickup(kind, kind === 'heal' ? D.chestHealPct : 0,
         this.x + util.rand(state.rng, -16, 16), this.y + util.rand(state.rng, -16, 16)));
     }
     if (fx()) fx().death(this.x, this.y, this.isBoss);
@@ -550,8 +552,9 @@
         if (fx()) fx().pickup(this.x, this.y, '#ffcf5e');
         if (Game.Audio) Game.Audio.pickup();
       } else if (this.type === 'heal') {
-        // 回血箱：走 heal()，过量转化护盾由 heal 内部处理
-        var healed = player.heal(this.value);
+        // 回血箱：value 存的是「最大生命比例」，这里按拾取时的最大生命现算成点数，
+        // 再走 heal()；过量治疗转化护盾由 heal 内部处理。
+        var healed = player.heal(this.value * player.stats.maxHp);
         if (fx()) fx().heal(this.x, this.y);
         if (Game.Audio) Game.Audio.heal();
       } else if (this.type === 'magnet') {

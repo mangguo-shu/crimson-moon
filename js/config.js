@@ -16,7 +16,7 @@
     // 跑的其实是 9/21 的 assets（`npx cap sync android` 从没跑过），7 条修复一条都没
     // 上去，看起来像「一个都没修好」。有这个号以后不用猜包里到底是什么版本。
     // 每次改完 www/ 要同步进 android 工程：npm run build:web && npm run sync:android
-    BUILD: 'v260926.4',
+    BUILD: 'v260926.5',
     LOGICAL_W: 1280,      // 参考逻辑宽
     LOGICAL_H: 720,       // 固定逻辑高（横屏基准），实际可见宽度随屏幕比例扩展
     WORLD_W: 2400,        // 地图世界宽（大于屏幕，相机跟随）
@@ -40,6 +40,12 @@
     // 调手感只动这里，面板与武器走同一个 WeaponInstance.damage/range 算式不会漂移。
     RANGED_DMG_SCALE: 0.6,     // 远程伤害 ×0.6（手枪 10→6、连弩 9→5.4）
     MELEE_RANGE_SCALE: 1.25,   // 近战范围 ×1.25（铁剑 66→82.5、赤月斩 86→107.5）
+    // —— 续航削峰（用户 2026-09-26「盾恢复的太快了，大砍一刀」）——
+    // 走乘法系数不动表：护盾回充的速率没有任何界面在显示它（面板只显示 当前/上限），
+    // 所以系数化不会让 UI 说谎。回血那几件不能这么办 —— ITEMS 的 desc 是写死的文案
+    // （「每次命中回复最大生命 1.2%」），加了隐藏乘数就等于面板写的和实际不一样，
+    // 回血数值直接改 ITEMS 本体（ITEMS 不在冻结范围内）。
+    SHIELD_REGEN_SCALE: 0.25,  // 护盾回充 2 → 0.5 HP/秒（原来 12.5 秒满盾，现在 50 秒）
     PARTICLE_LOW: 200,    // 低画质粒子上限
     PARTICLE_MID: 500,
     PARTICLE_HIGH: 800,
@@ -608,7 +614,8 @@
     matMult: 2.5,       // 材料倍数
     matChance: 0.8,     // 材料掉落概率（0.6→0.8：第 1 波材料要从 ~39 提到 ~80，否则首轮买不起一件装备）
     chestChance: 0.035, // 普通怪掉箱子的概率
-    chestHeal: 30,      // 回血箱回复量
+    chestHealPct: 0.12, // 回血箱回复「最大生命的 12%」。原为固定 30 点：160 血的力士只回 19%，
+                        // 88 血的刺客一回满 34%。改成比例后所有人都是同一个「零点几」的量级。
     chestMagnetChance: 0.35, // 掉箱子时其中是吸铁石的概率（否则是回血）
     bossChests: ['heal', 'magnet'],  // Boss 固定给的箱子
     bossChestHealMult: 2,  // Boss 回血箱是小怪的两倍 —— 打过 Boss 该有份补偿
@@ -628,12 +635,14 @@
     // 只是没有道具用过（暴击伤害 / 护盾 / 吸血 / 击杀回血 / 治疗强度全都没入口）。
     // healing:true 的四件是续航来源：商店/升级池按 CONST.HEAL_ITEM_WEIGHT 降权，
     // healBuild 角色（掠影/回春/禅心）不受降权。
-    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +25%',           stat: { healingPower: 0.25 }, healing: true },
-    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 5% 化为生命',   stat: { lifesteal: 0.05 }, healing: true },
+    // 2026-09-26 大砍一刀：按「零点几」重定基线 —— 每次事件最多回复 0.x% 最大生命，
+    // 治疗强度和吸血同步下调。desc 和 stat 必须同步改，文案是写死的，只改数值就是骗人。
+    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +12%',           stat: { healingPower: 0.12 }, healing: true },
+    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 1.5% 化为生命', stat: { lifesteal: 0.015 }, healing: true },
     shieldcharm:{ id: 'shieldcharm', name: '玄武纹章', rarity: 'rare',   desc: '护盾上限 +25',            stat: { shieldMax: 25 } },
-    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 1.2%', stat: { lifeOnHitPct: 0.012 }, healing: true },
+    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 0.5%', stat: { lifeOnHitPct: 0.005 }, healing: true },
     critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',           stat: { critMult: 0.15 } },
-    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 3%',  stat: { lifeOnKillPct: 0.03 }, healing: true },
+    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 0.8%', stat: { lifeOnKillPct: 0.008 }, healing: true },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */
