@@ -271,7 +271,10 @@
       p.stats.shield = Math.min(p.stats.shieldMax, p.stats.shield + 2 * dt);
     }
 
-    // 武器自动攻击
+    // 武器自动攻击。每帧先清「本帧已被处理」的目标集合 —— 多把武器按顺序各挑
+    // 一个没被别的武器要走的敌人，这样上下各来一个怪时两把武器会各打一个。
+    // 集合不持久化，只在 Weapons 这一整段循环里共享（见 weapons.js nearestFree）。
+    state._claimedThisFrame = null;
     for (var i = 0; i < p.weapons.length; i++) {
       p.weapons[i].update(dt, p, state);
     }

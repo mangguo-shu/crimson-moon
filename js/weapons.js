@@ -3,11 +3,12 @@
  * 负责自动攻击：冷却计时、索敌、近战挥砍 / 远程射击、暴击与吸血结算。
  * 合成/星级系统留到后续轮次，当前用 level 表示强化等级。
  *
- * 多把武器的表现：每把武器挂在玩家身边一圈上，整圈慢速旋转，各管自己扇形
- * 宽的一块。扇形越窄越多，武器越多打得的面越广（武器数 × 扇形宽）。
- * 索敌与命中的圆心是**玩家**、半径是近战射程，武器只是「指向哪个方向」的
- * 标记 —— 以武器为圆心时贴着玩家的敌人全落在武器背后，内环永远打不到。
- * 每把武器的冷却互不影响：两把武器左右同时来怪，各打各的。
+ * 多把武器的表现：每把武器挂在玩家身边一圈上，整圈慢速旋转（纯画面）。
+ * 索敌不做角度过滤 —— 永远打射程内最近的那个，剑转到哪儿不影响能不能打。
+ * 圆心是**玩家**、半径是近战射程，不是武器 —— 以武器为圆心时贴着玩家的敌人
+ * 全落在武器背后，内环永远打不到。
+ * 每把武器冷却互不影响；同一帧里按顺序各挑一个「还没被别的武器处理」的目标，
+ * 所以两把武器遇到上下两个敌人会各打一个，而不是都去打同一个。
  * ============================================================ */
 (function () {
   'use strict';
@@ -16,7 +17,7 @@
 
   function fx() { return Game.FX; }
 
-  /** 两角之差，wrap 到 [0, π]。环绕武器固定朝外打，索敌要按角度过滤。 */
+  /** 两角之差，wrap 到 [0, π]。近战挥砍用它判断敌人有没有落进这道扇形。 */
   function angDiff(a, b) {
     return Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
   }
@@ -26,7 +27,8 @@
    * 图标在另一边飘，一眼穿帮。index 取武器在 player.weapons 里的序号，
    * count 取当前武器数 —— 新拿一把武器整圈重新均分，旧的不用记位置。
    *
-   * 整圈按 WEAPON_ORBIT_SPEED 慢速旋转：武器转过去哪儿，就往哪儿打。
+   * 整圈按 WEAPON_ORBIT_SPEED 慢速旋转，纯画面 —— 转到哪儿不影响打哪儿，
+   * 索敌看全场（见 nearestFree）。
    *
    * 返回值必须归一化到 [-π, π]：cos/sin 不在乎角度大小，但「角度差取模」在乎。
    * 取模一旦吃掉大数目的周期，double 精度全丢，结果不是差值而是随机垃圾 ——
@@ -75,34 +77,34 @@
     return this.def.range * Game.CONST.MELEE_RANGE_SCALE;
   };
 
-  /** 在 (x,y) 为中心、aim 为对称轴、半角 halfArc 的扇形里找最近的敌人。 */
-  WeaponInstance.prototype.nearestInCone = function (state, x, y, aim, halfArc) {
+  /** 在 (x,y) 为圆心的全场范围内找最近的一个敌人，跳过本帧已被别的武器处理的。
+   *  没有角度门槛 —— 剑的朝向只管画面，不再决定能不能打到（用户 2026-09-26：
+   *  「怪物在上方，即使剑转到了下方，也可以攻击上方的怪物」）。多把武器要各打
+   *  各的目标，所以按更新顺序跳过 `claimed` 里已经有人要的。 */
+  WeaponInstance.prototype.nearestFree = function (state, x, y, claimed) {
     var best = null, bestD = Infinity;
     var es = state.enemies;
     for (var i = 0; i < es.length; i++) {
       var e = es[i];
       if (e.dead) continue;
+      if (claimed && claimed[e.uid] === true) continue;
       var d = util.dist2(x, y, e.x, e.y);
       if (d >= bestD) continue;
-      if (angDiff(util.angleTo(x, y, e.x, e.y), aim) > halfArc) continue;
       bestD = d; best = e;
     }
     return { enemy: best, dist: best === null ? Infinity : Math.sqrt(bestD) };
   };
 
-  /** 本把武器负责的扇形半角 = 自己那个扇形宽的一半。
-   *  近战用自己的 arc（冻结值：铁剑 135°、赤月斩 171°）；远程表里 arc 是 0，
-   *  用统一开关 RANGED_FIRE_ARC（135°，和铁剑同手感）。
-   *  总覆盖 = 武器数 × 扇形宽，武器越多打得的面越广 —— 这是「多把武器能
-   *  体现出来」的来源。不能按 360°/武器数均分：那样合计恒定 360°，加武器
-   *  只加输出，玩家感知不到手里多了什么。 */
+  /** 挥砍扇形半角 = WEAPON_ARC / 2 = 30°。
+   *  扇形不再用来限制索敌（索敌看全场），只决定「朝目标挥出去时，顺带扫到
+   *  多少邻居」。取 360°/6 让六把武器正好排满一圈。 */
   WeaponInstance.prototype.arcHalf = function () {
-    var a = this.def.arc > 0 ? this.def.arc : Game.CONST.RANGED_FIRE_ARC;
-    return a / 2;
+    return Game.CONST.WEAPON_ARC / 2;
   };
 
-  /** 每帧更新；自动攻击。扇形圆心是玩家（半径 = 近战射程），不是武器 ——
-   *  以武器为圆心时贴着玩家的敌人落在所有武器背后，内环永远打不到。 */
+  /** 每帧更新；自动攻击。命中范围是「以玩家为圆心、半径 = 近战射程」的整圈，
+   *  不做角度过滤 —— 剑的朝向只管画面。武器更新顺序决定目标分配，所以
+   *  Systems.updatePlayer 里要先清一次 state._claimedThisFrame。 */
   WeaponInstance.prototype.update = function (dt, owner, state) {
     var pos = this.posAt(owner);
     this.x = pos.x; this.y = pos.y; this.aimAngle = pos.a;  // 渲染用
@@ -110,22 +112,24 @@
     this.swingTime += dt;                                    // 出手余韵计时
     if (this.cooldownRemaining > 0) return;
 
-    var aim = pos.a;                 // 扇形对称轴 = 这把武器当前的轨道角
-    var halfArc = this.arcHalf();
-    var t = this.nearestInCone(state, owner.x, owner.y, aim, halfArc);
+    var claimed = state._claimedThisFrame || (state._claimedThisFrame = {});
+    var t = this.nearestFree(state, owner.x, owner.y, claimed);
+    if (!t.enemy) t = this.nearestFree(state, owner.x, owner.y, null);
+    //         ↑ 目标全被别的武器占了就打「已被占的那个」—— 敌人比武器少时
+    //           每把武器都得有活干，不能因为别人先出手就整把闲置。
     var enemy = t.enemy;
-    if (!enemy) return;   // 扇形里没有就空转，不空挥
+    if (!enemy) return;   // 场上没有敌人就空转，不空挥
 
-    var cd = this.cooldown(owner);
+    // 朝目标挥出去 —— 不再跟着剑的轨道方向走
+    var aim = util.angleTo(owner.x, owner.y, enemy.x, enemy.y);
+
     if (this.def.type === 'melee') {
-      if (t.dist <= this.range() + enemy.radius) {
-        this._meleeAttack(owner, state, aim, halfArc);
-        this.cooldownRemaining = cd;
-      }
+      if (t.dist > this.range() + enemy.radius) return;   // 最近的那个都够不着
+      this._meleeAttack(owner, state, aim, this.arcHalf(), claimed);
     } else {
-      this._rangedAttack(owner, state, aim, enemy);
-      this.cooldownRemaining = cd;
+      this._rangedAttack(owner, state, enemy, claimed);
     }
+    this.cooldownRemaining = this.cooldown(owner);
   };
 
   WeaponInstance.prototype._rollCrit = function (owner) {
@@ -166,11 +170,12 @@
     return this.slot === 0;
   };
 
-  // 近战挥砍：以**玩家**为圆心、扇形宽 = 武器自己的 arc、半径 = 有效射程。
-  // 圆心是玩家而不是武器 —— 武器在半径 62 的圈上，以它为圆心时贴着玩家的
-  // 敌人全落在它背后，内环永远打不到。刀光也画在玩家身上，特效和真实命中
-  // 范围必须同圆心，否则又是一次「特效和武器对不上」。
-  WeaponInstance.prototype._meleeAttack = function (owner, state, aim, halfArc) {
+  // 近战挥砍：以**玩家**为圆心、朝目标方向扫一道 WEAPON_ARC 宽的扇形、
+  // 半径 = 有效射程。圆心是玩家而不是武器 —— 武器在半径 62 的圈上，以它为
+  // 圆心时贴着玩家的敌人全落在它背后，内环永远打不到。刀光也画在玩家身上，
+  // 特效和真实命中范围必须同圆心，否则又是一次「特效和武器对不上」。
+  // 被扫到的都记进 claimed，同帧里下一把武器就去找别的目标了。
+  WeaponInstance.prototype._meleeAttack = function (owner, state, aim, halfArc, claimed) {
     var rng = this.range();
     this.swingTime = 0;
     if (this._primary() && owner.playAttack) owner.playAttack('melee');
@@ -185,15 +190,16 @@
       if (angDiff(util.angleTo(px, py, e.x, e.y), aim) > halfArc) continue;
       // 击退也从玩家身上算：把敌人往外推，和索敌同心
       this._applyHit(owner, state, e, dmg, e.x - px, e.y - py);
+      if (claimed) claimed[e.uid] = true;
     }
     if (fx()) fx().slash(px, py, aim, rng, this.def.color, halfArc * 2);
     if (this._primary() && Game.Audio) Game.Audio.hit();
   };
 
-  // 远程射击：从武器所在的布置点**朝目标**出膛，不沿径向固定往外打 ——
-  // 目标是扇形里离玩家最近的敌人，可能在内环（贴着玩家），固定朝外的话
-  // 子弹会从敌人背后飞走。
-  WeaponInstance.prototype._rangedAttack = function (owner, state, aim, enemy) {
+  // 远程射击：从武器所在的布置点**朝目标**出膛 —— 目标是全场最近的敌人，
+  // 可能落在内环（贴着玩家），朝外打会让子弹从敌人背后飞走。
+  WeaponInstance.prototype._rangedAttack = function (owner, state, enemy, claimed) {
+    if (claimed) claimed[enemy.uid] = true;
     this.swingTime = 0;
     if (this._primary() && owner.playAttack) owner.playAttack('ranged');
     var crit = this._rollCrit(owner);
