@@ -53,6 +53,7 @@
     this.cooldownRemaining = 0;
     this.slot = slot || 0;   // 槽位序号 → 轨道角度
     this.swingTime = 0;      // 距上次出手多久（渲染画出手余韵用；不持久化）
+    this.swingAim;           // 上次出手的朝向：剑身绕它挥、弩机朝它放箭（不持久化）
   }
 
   /** 本把武器挂在轨道上的位置。纯查询、不改状态：
@@ -178,6 +179,7 @@
   WeaponInstance.prototype._meleeAttack = function (owner, state, aim, halfArc, claimed) {
     var rng = this.range();
     this.swingTime = 0;
+    this.swingAim = aim;      // 渲染用：剑身绕这个方向挥，和刀光同向
     if (this._primary() && owner.playAttack) owner.playAttack('melee');
     var dmg = this.damage(owner);
     var px = owner.x, py = owner.y;
@@ -206,6 +208,7 @@
     var dmg = this.damage(owner) * (crit ? owner.stats.critMult : 1);
     var spd = this.def.projectileSpeed;
     var a = util.angleTo(this.x, this.y, enemy.x, enemy.y);
+    this.swingAim = a;        // 渲染用：弩机朝这个方向放箭、弩弦回弹
     var p = new Game.Projectile({
       x: this.x + Math.cos(a) * (owner.radius + 6),
       y: this.y + Math.sin(a) * (owner.radius + 6),

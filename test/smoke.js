@@ -3079,6 +3079,138 @@ try {
   Game.Renderer.render(s212, 0.016);
   assert(true, '武器还没算过位置时渲染无异常（卫星跳过）');
 
+  // ---- 11b. 卫星会动手：剑挥向目标、弩机朝目标放箭，不是原地贴图 ----
+  // 动画时钟复用 weapons.js 的 swingTime（出手瞬间归零），这里手动拨它到各个
+  // 相位来断言朝向。采样方式和 11 段一样：矩阵乘起来看 0.62 缩放笔画的方向。
+  // 顺手把笔画数带出来 —— 挥砍时应该有主图标 + 一两帧拖影，静止时只有一笔。
+  function orbitSat21b(s) {
+    var ctxx = Game.Renderer.ctx;
+    var mx = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    var tr = function (n) {
+      mx = {
+        a: mx.a * n.a + mx.c * n.b, b: mx.b * n.a + mx.d * n.b,
+        c: mx.a * n.c + mx.c * n.d, d: mx.b * n.c + mx.d * n.d,
+        e: mx.a * n.e + mx.c * n.f + mx.e,
+        f: mx.b * n.e + mx.d * n.f + mx.f,
+      };
+    };
+    var o = {}, st = [];
+    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) {
+      o[m] = ctxx[m];
+    });
+    ctxx.save = function () { st.push({ a: mx.a, b: mx.b, c: mx.c, d: mx.d, e: mx.e, f: mx.f }); };
+    ctxx.restore = function () { if (st.length) mx = st.pop(); };
+    ctxx.translate = function (x, y) { tr({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); };
+    ctxx.rotate = function (t) {
+      tr({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 });
+    };
+    ctxx.scale = function (x, y) { tr({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); };
+    var got = [];
+    ctxx.fill = function () { got.push({ a: mx.a, b: mx.b, c: mx.c, d: mx.d }); };
+    Game.Renderer.render(s, 0.016);
+    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) {
+      ctxx[m] = o[m];
+    });
+    var sat = got.filter(function (f) {
+      return Math.abs(Math.sqrt(f.a * f.a + f.c * f.c) - 0.62) < 0.01;
+    });
+    if (!sat.length) return { dir: null, count: 0 };
+    var f = sat[sat.length - 1];   // 主图标最后画（拖影在前面）
+    var dx = -f.c, dy = -f.d;
+    var l = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { dir: { x: dx / l, y: dy / l }, count: sat.length };
+  }
+
+  var s211b = Game.Systems.createState('campaign', 'swordsman', 7770101);
+  var pl211b = s211b.player;
+  s211b.enemies.length = 0; s211b.projectiles.length = 0;
+  var sw211b = pl211b.weapons[0];
+  s211b.enemies.push(new Game.Enemy('zombie', pl211b.x + 60, pl211b.y, 1));   // 正右方
+  sw211b.cooldownRemaining = 0;
+  sw211b.update(0.016, pl211b, s211b);
+  assert(Math.abs(sw211b.swingAim) < 1e-9,
+         '近战武器记下这枪的朝向（朝正右方，实得 ' + sw211b.swingAim.toFixed(4) + '）');
+  // 这把武器静止时挂在玩家正上方（轨道基准角 −π/2），径向朝外 = 屏幕正上方。
+  // 断言静止位和挥砍位真的不同，不然下面的断言是自证为真。
+  assert(Math.abs(sw211b.aimAngle - (-Math.PI / 2)) < 1e-9,
+         '这把武器静止位在玩家正上方（−π/2）');
+  assert(Math.abs(Math.abs(wrapDiff(sw211b.swingAim, sw211b.aimAngle)) - Math.PI / 2) < 1e-9,
+         '静止位和挥砍位确实差了 90°（否则「挥向目标」的断言毫无意义）');
+
+  sw211b.swingTime = 0;                        // 刚出手
+  var d021b = orbitSat21b(s211b).dir;
+  assert(d021b && Math.abs(d021b.x) < 1e-3 && Math.abs(d021b.y + 1) < 1e-3,
+         '刚出手时剑身还在静止位（径向朝外），不会瞬间跳向目标');
+
+  sw211b.swingTime = 0.11;                     // 挥砍中点（SWING_DUR/2）
+  var mid21b = orbitSat21b(s211b);
+  assert(mid21b.dir && Math.abs(mid21b.dir.x - 1) < 0.02 && Math.abs(mid21b.dir.y) < 0.02,
+         '挥砍中点剑身指向目标（朝正右方，实得 (' + mid21b.dir.x.toFixed(2) +
+         ', ' + mid21b.dir.y.toFixed(2) + ')）');
+
+  sw211b.swingTime = 1;                        // 余韵放完，回到静止
+  var dEnd21b = orbitSat21b(s211b);
+  assert(dEnd21b.dir && Math.abs(dEnd21b.dir.x) < 1e-3 && Math.abs(dEnd21b.dir.y + 1) < 1e-3,
+         '余韵放完剑身回到静止位（不是停在目标方向上）');
+  assert(mid21b.count > dEnd21b.count,
+         '挥砍中带拖影、静止时不带（挥砍 ' + mid21b.count + ' 笔 / 静止 ' +
+         dEnd21b.count + ' 笔）');
+
+  // 远程：弩机朝目标放箭，箭头方向跟着变
+  var s211c = Game.Systems.createState('campaign', 'swordsman', 7770102);
+  var pl211c = s211c.player;
+  s211c.enemies.length = 0; s211c.projectiles.length = 0;
+  pl211c.weapons.push(Game.createWeapon('pistol', 1, 1));
+  Game.Systems.normalizeSlots(pl211c);
+  var rg211c = pl211c.weapons[1];
+  // 两把武器时第二把挂在玩家正下方（轨道角 π/2，静止位朝下），所以把怪摆在
+  // 正左方：弩机确实要转过去才能把箭射出去，不是本来就朝那。
+  s211c.enemies.push(new Game.Enemy('zombie', pl211c.x - 50, pl211c.y, 1));
+  rg211c.cooldownRemaining = 0;
+  rg211c.update(0.016, pl211c, s211c);
+  // 箭是从**武器**（轨道上的布置点）朝目标出的，不是从玩家身上 —— 期望方向
+  // 也必须是「武器 → 敌人」，写成「玩家 → 敌人」会让断言跟着一起错。
+  var ex21b = s211c.enemies[0];
+  var vx21b = ex21b.x - rg211c.x, vy21b = ex21b.y - rg211c.y;
+  var vl21b = Math.sqrt(vx21b * vx21b + vy21b * vy21b);
+  vx21b /= vl21b; vy21b /= vl21b;
+  assert(Math.abs(wrapDiff(rg211c.swingAim, Math.atan2(vy21b, vx21b))) < 1e-9,
+         '远程武器记下的放箭朝向 = 武器指向敌人（实得 ' + rg211c.swingAim.toFixed(4) + '）');
+  // 目标方向和弩机静止位（朝玩家正下方 (0,1)）确实不同，否则下一条断言没意义
+  assert(vx21b < -0.3 && vy21b < -0.3,
+         '目标方向不在弩机的静止位上（' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) + '）');
+  // 弩机放箭不能只是把图标转个角度 —— 弩弦回弹、箭飞出都得靠 fire 进度驱动。
+  // 分两相采样：中点看朝向（正弦峰值正好对准目标），初期看 fire 有没有真的
+  // 从大往小衰减 —— 写死成常量的实现两相一样大，会被抓住。
+  function fireAt21c(tSec) {
+    rg211c.swingTime = tSec;
+    var fs21c = [];
+    Game.Renderer._drawCrossbow = function (ctx, hx, hy, color, fire) {
+      fs21c.push(fire);
+      return origCb21c.call(this, ctx, hx, hy, color, fire);
+    };
+    var r = orbitSat21b(s211c);
+    Game.Renderer._drawCrossbow = origCb21c;
+    return { dir: r.dir, fire: fs21c.length ? Math.max.apply(null, fs21c) : 0 };
+  }
+  var origCb21c = Game.Renderer._drawCrossbow;
+  var rgEarly21c = fireAt21c(0.04);   // t ≈ 0.18
+  var rgMid21c = fireAt21c(0.11);     // t = 0.5，正弦峰值
+  assert(rgMid21c.dir && Math.abs(rgMid21c.dir.x - vx21b) < 0.02 &&
+         Math.abs(rgMid21c.dir.y - vy21b) < 0.02,
+         '弩机放箭中点箭头正对目标（期望 (' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) +
+         ')，实得 (' + rgMid21c.dir.x.toFixed(2) + ', ' + rgMid21c.dir.y.toFixed(2) + ')）');
+  assert(rgEarly21c.fire > 0.8,
+         '放箭初期 fire 进度接近满（弩弦回弹/箭飞出才有画面，实得 ' +
+         rgEarly21c.fire.toFixed(2) + '）');
+  assert(rgEarly21c.fire > rgMid21c.fire + 0.2,
+         'fire 随余韵衰减（初期 ' + rgEarly21c.fire.toFixed(2) + ' → 中点 ' +
+         rgMid21c.fire.toFixed(2) + '，不是写死的常量）');
+
+  // swingAim 是运行期动画状态，不能进存档
+  assert(!JSON.stringify(Game.Systems.serialize(s211c)).includes('swingAim'),
+         'swingAim 不进存档（和 swingTime 一样是纯运行期）');
+
   // ---- 12. 刀光和真实命中范围要对得上：同圆心（玩家）、同扇形宽 ----
   var slash213 = null;
   var origSlash213 = Game.FX.slash;

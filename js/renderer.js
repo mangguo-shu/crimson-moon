@@ -809,6 +809,27 @@
     }
   };
 
+  /* ---------------- 环绕武器动画 ----------------
+   * 动画时钟直接复用 weapons.js 的 swingTime：出手瞬间它归零，余韵期间递增。
+   * 不在渲染这边另起计时器 —— 那样会出现「画面还在挥砍、逻辑已经进入下一枪」
+   * 的错位。t = 0 刚出手，t = 1 余韵放完、回到静止位。 */
+  var SWING_DUR = 0.22;
+
+  // 画一把卫星武器。th 是它当前朝向（静止时 = 径向朝外，挥砍时绕过去）。
+  // fire 是放箭进度（1 = 刚扣弦），弩机后坐 + 弩弦回弹 + 箭飞出都挂在这上面。
+  // 支点在剑柄/弩身上（局部 +2.5y），挥砍是绕着手转的，不是原地飘。
+  R._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(th);
+    if (fire > 0) ctx.translate(0, fire * 3.4);
+    ctx.scale(0.62, 0.62);
+    ctx.translate(0, 2.5);
+    if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
+    else this._drawCrossbow(ctx, 0, 0, w.def.color, fire);
+    ctx.restore();
+  };
+
   // 环绕武器卫星：多把武器挂在玩家身边的轨道上，各自出手。
   // 这是「我有多少把武器」在画面里的唯一证据 —— 不画出来，第二把武器就
   // 永远只等于「攻速快了一点」，玩家感知不到。位置直接取 WeaponInstance
@@ -825,13 +846,21 @@
       var w = p.weapons[i];
       if (w.x === undefined) continue;   // 首次 update 之前还没算过位置
       var x = w.x - p.x, y = w.y - p.y;  // 世界坐标 → 玩家局部坐标
-      // 出手余韵：挥砍瞬间向外刷一道弧光，每把武器都有独立反馈
       var sw = (w.swingTime || 0);
-      var swinging = sw >= 0 && sw < 0.22;
-      // 剑身永远沿径向朝外 —— 卫星只是在圈上转，朝向不参与索敌（用户
-      // 2026-09-26：剑转到下方也要能打上方的怪）。刀光朝目标方向画在玩家
-      // 身上，所以剑尖和刀光会指向不同的地方，这是刻意的：朝向只管画面。
-      var rot = w.aimAngle;
+      var t = sw < SWING_DUR ? sw / SWING_DUR : 1;   // 1 = 余韵放完，回到静止位
+      var swinging = t < 1;
+      // 朝向：静止时沿径向朝外站好等下一枪；出手这 0.22s 里绕剑柄往 swingAim
+      // 挥过去，t = 0.5 时正好指到目标 —— 也就是刀光画的那个方向（见 weapons.js
+      // _meleeAttack），剑身、刀光、真正被打到的那只怪在出手那一帧是对齐的。
+      // 用正弦而不是线性插值：t = 0 和 t = 1 都落在静止位，前后帧不会跳，
+      // 峰值时刻就是 SWING_DUR 的中点（测试也是按中点断言的）。
+      var rest = w.aimAngle + Math.PI / 2;
+      var dAng = 0;
+      if (swinging && w.swingAim !== undefined) {
+        dAng = ((w.swingAim + Math.PI / 2) - rest + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      }
+      var fire = w.def.type === 'ranged' && dAng !== 0 ? (1 - t) : 0;
+      // 光晕：出手瞬间膨一圈，每把武器都有独立反馈
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.30 + Math.sin(now * 0.004 + i * 1.3) * 0.09;
@@ -839,17 +868,19 @@
       ctx.lineWidth = swinging ? 4 : 2.2;
       ctx.beginPath(); ctx.arc(x, y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
       ctx.restore();
-      ctx.save();
-      ctx.translate(x, y);
-      // 武器头朝外：剑尖/箭头在局部空间指 −y，要把它转到径向朝外方向 rot 上。
-      // 局部 (0,-1) 经 rotate(θ) 后是 (sinθ, −cosθ)，要等于 (cos rot, sin rot)，
-      // 解出 θ = rot + π/2 —— 写成 rot − π/2 会整整差 180°，剑尖指向玩家自己，
-      // 用户 2026-09-25 真机指出「剑尖还是朝人物了，需要剑柄朝人物」。
-      ctx.rotate(rot + Math.PI / 2);
-      ctx.scale(0.62, 0.62);
-      if (w.def.type === 'melee') this._drawSword(ctx, 0, 0, w.def.color);
-      else this._drawCrossbow(ctx, 0, 0, w.def.color);
-      ctx.restore();
+      // 拖影：上一两帧的位置，alpha 更低 —— 16px 的小图标全靠这个看出速度
+      for (var g = 2; g >= 1 && dAng !== 0; g--) {
+        var gt = t - g * 0.16;
+        if (gt <= 0 || gt >= t) continue;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.26 * (1 - t) / g;
+        this._drawOrbitIcon(ctx, w, x, y,
+          rest + dAng * Math.sin(Math.PI * gt), fire);
+        ctx.restore();
+      }
+      this._drawOrbitIcon(ctx, w, x, y,
+        rest + dAng * Math.sin(Math.PI * t), fire);
       // 强化等级：一圈一圈，Lv1 光晕、Lv2 起每级多一圈
       if (w.level > 1) {
         ctx.save();
@@ -884,9 +915,13 @@
     ctx.restore();
   };
 
-  // 弩（弓手手持物）：横置弩身 + 弩弦 + 前指的箭
-  R._drawCrossbow = function (ctx, hx, hy, color) {
+  // 弩（弓手手持物）：横置弩身 + 弩臂 + 弩弦 + 前指的箭。
+  // fire = 放箭进度（1 = 刚扣弦，衰减到 0）：弩弦从卡在箭尾的 V 形弹回
+  // 绷直的直线，箭沿发射方向飞出并消散，配上一条亮线 —— 不这么做的话
+  // 「射箭」在画面上只剩一颗子弹飞出去，弩机自己毫无反应。
+  R._drawCrossbow = function (ctx, hx, hy, color, fire) {
     var O = this.outline;
+    fire = fire || 0;
     ctx.save();
     ctx.translate(hx, hy);
     // 弩身（横向）
@@ -896,19 +931,36 @@
     ctx.strokeStyle = PAL.woodDark; ctx.lineWidth = 2; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(-5.4, -1.4); ctx.quadraticCurveTo(-7.6, -3.4, -5.8, -5.6); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-5.4, 1.4); ctx.quadraticCurveTo(-7.6, 3.4, -5.8, 5.6); ctx.stroke();
-    // 弩弦
+    // 弩弦：静置时卡在箭尾 (0, −1.2)，放箭后弹过直线
     ctx.strokeStyle = '#d8d0c0'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(-5.8, -5.2); ctx.lineTo(0, -1.2); ctx.lineTo(-5.8, 5.2); ctx.stroke();
-    // 箭杆 + 箭头（前指 -y）
-    ctx.beginPath(); ctx.rect(-0.8, -13, 1.6, 11);
+    ctx.beginPath();
+    ctx.moveTo(-5.8, -5.2); ctx.lineTo(0, -1.2 + fire * 1.8); ctx.lineTo(-5.8, 5.2);
+    ctx.stroke();
+    // 箭杆 + 箭头（前指 -y）；放箭后沿方向飞出并淡出
+    var ay = -fire * 24;
+    ctx.save();
+    ctx.globalAlpha = 1 - fire * 0.85;
+    ctx.beginPath(); ctx.rect(-0.8, ay - 13, 1.6, 11);
     fs(ctx, color, O, 1);
     ctx.beginPath();
-    ctx.moveTo(-2.4, -13); ctx.lineTo(0, -17.4); ctx.lineTo(2.4, -13);
+    ctx.moveTo(-2.4, ay - 13); ctx.lineTo(0, ay - 17.4); ctx.lineTo(2.4, ay - 13);
     ctx.closePath();
     fs(ctx, color, O, 1);
     // 箭头反光
     ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9;
-    ctx.beginPath(); ctx.moveTo(0, -15.6); ctx.lineTo(0, -13.4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, ay - 15.6); ctx.lineTo(0, ay - 13.4); ctx.stroke();
+    ctx.restore();
+    // 箭飞出的残影：渐隐的亮线，比一颗子弹更像「一支箭射出去」
+    if (fire > 0.02) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fire * 0.75;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2 * fire;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, -fire * 26); ctx.lineTo(0, -fire * 46); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   };
   /* ---------------- 敌人绘制（按类型程序化建模） ---------------- */
