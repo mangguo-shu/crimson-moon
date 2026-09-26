@@ -526,14 +526,16 @@
       pierce: 0, projectileSpeed: 620, knockback: 20,
       color: '#ffd76e', desc: '远程射击，单发子弹。',
     },
-    // 龙胆枪：直线突刺点杀，和铁剑的贴脸横扫区分开。
-    // range 130 = 铁剑 66 的两倍；arc 收窄到 30° 只决定刀光宽度（不管索敌），
-    // pierce 4 是它的核心 —— 一排怪里只打一条线上的。cd 比铁剑慢，把总输出压回来。
+    // 龙胆枪：直线突刺，和铁剑的贴脸横扫区分开（2026-09-26 用户点名要「枪的攻击」）。
+    // range 130 = 铁剑 66 的两倍；pierce 4 是它的核心 —— 一排怪只贯穿一条线上的。
+    // 出手方式不在表里：weapons.js MELEE_STYLE 按 id 派生 _thrustAttack，走廊宽度按
+    // 射程比例算，所以表里的 arc 对它连「刀光宽度」都不是 —— 突刺根本没有扇形。
+    // cd 比铁剑慢，把总输出压回来。
     spear: {
       id: 'spear', name: '龙胆枪', type: 'melee', star: 1,
       cooldown: 0.85, damage: 20, range: 130, arc: Math.PI / 6,
       pierce: 4, projectileSpeed: 0, knockback: 90,
-      color: '#d9cba8', desc: '长柄突刺，射程翻倍、弧度收窄、穿透 4。',
+      color: '#d9cba8', desc: '长柄突刺，沿一条线贯穿 4 只，射程翻倍。',
     },
     // —— Boss 专属武器 —— exclusive: true
     // 只从 Boss 战奖励产出（见 Systems.bossRewardChoices），

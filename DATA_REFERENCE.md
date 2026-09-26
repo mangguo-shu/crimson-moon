@@ -103,7 +103,8 @@ type: 'melee' | 'ranged',
 star,             // 初始星级
 cooldown, damage,
 range,            // 近战射程
-arc,              // 挥砍弧度（★ 已作废，只留数据；索敌看全场，见 CONST.WEAPON_ARC）
+arc,              // 挥砍弧度（★ 已作废，只留数据；横扫宽度由 CONST.WEAPON_ARC 决定，
+                  //   突刺武器连扇形都没有 —— 龙胆枪的走廊宽度按射程比例算，见下）
 pierce,           // 穿透数
 projectileSpeed,  // 远程弹速，近战填 0
 knockback, color, desc,
@@ -120,11 +121,20 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
 
 - `Game.BOSS_EXCLUSIVE_CHANCE = 0.45`：Boss 奖励里出现专属武器的概率。
 - 武器等级倍率 `def.damage × (1 + 0.5 × (level - 1))`，上限 `MAX_WEAPON_LEVEL = 4`。
-- 弹体造型**不在表里**，按武器 id 派生：`weapons.js:22 PROJ_SHAPE`（pistol → bullet，jade_crossbow → arrow）。
+- 弹体造型**不在表里**，按武器 id 派生：`weapons.js PROJ_SHAPE`（pistol → bullet，jade_crossbow → arrow）。
+- 近战**出手方式也不在表里**，按武器 id 派生：`weapons.js MELEE_STYLE`。
+  `spear → _thrustAttack`（突刺走廊），没登记 = `_meleeAttack` 横扫扇形。
+  走廊半宽 = 有效射程 × `THRUST_HALF`（0.12），是模块本地常量，同样不进表。
+  想给别的武器加招式（回旋、横扫、突刺），在这张表登记一行再写一个 `_xxxAttack` 即可，
+  签名统一 `(owner, state, aim, claimed)`。
 - 环绕卫星的**图标造型也不在表里**，按武器 id 派生：`renderer.js ORBIT_ICON`。每把武器一套：
   `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
   `pistol → _drawPistol`、`jade_crossbow → _drawCrossbow`。
   漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）—— 龙胆枪就这样顶着剑的造型出场过。
+- 出手**位移幅值**同样按 id 派生：`renderer.js LUNGE_AMT`（`spear: 12`，世界单位）。
+  横扫武器只绕剑柄转、不位移；突刺型沿 aim 直推。不登记 = 0。
+- 近战特效两种：横扫 `FX.slash`（扇形，宽 = `WEAPON_ARC`）、突刺 `FX.thrust`（枪线，长 = 有效射程、
+  半宽 = 走廊半宽）。两者都从玩家身上发出 —— 特效和命中范围必须同圆心。
 - 远程伤害 ×0.6、近战射程 ×1.25 —— 走 CONST 系数，表本体不动。
 
 ---
@@ -396,8 +406,12 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | systems.js:62/68 | `isBossWave` / `pickBossType` | Boss 波与轮换 |
 | entities.js:432 | `BOSS_ATK_METHOD` | Boss 套路 → 方法名映射，**新套路必须登记**（缺省回落 `fan`） |
 | entities.js:460 起 | `_bossAtkFan/Charge/Ring/Spiral` | 各套路实现 |
-| weapons.js:22 | `PROJ_SHAPE` | 弹体造型按武器 id 派生 |
+| weapons.js `PROJ_SHAPE` | 弹体造型按武器 id 派生 |
+| weapons.js `MELEE_STYLE` | 近战出手方式按武器 id 派生，**漏登记 = 走横扫**（想要突刺/回旋必须登记） |
+| weapons.js `THRUST_HALF` | 突刺走廊半宽比例（模块本地常量，不在表里） |
 | renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**） |
+| renderer.js `LUNGE_AMT` | 出手位移幅值按武器 id 派生（**漏登记 = 只转角度不位移**） |
+| renderer.js `_drawEffects` | 特效 `switch(f.type)`，新特效类型要在这里加分支 |
 | renderer.js:507 | `R._PLAYER_BODY` | 4 套姿态绘制 |
 | renderer.js:1001 | `_drawEnemy` 的 `switch(e.type)` | **新怪不加 case 会画成跳尸** |
 | renderer.js | `FOOT_Y` | 各怪的脚底支点（缺省 `FOOT_Y_DEFAULT`） |
@@ -430,10 +444,12 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 5. **push 进 `Game.BOSSES`** —— 只写进 ENEMIES 不会被刷出来，`pickBossType` 只查 BOSSES 表
 
 **加武器**
-1. `WEAPONS` 加一条（记得带 `color` —— 刀光特效 `renderer.js` 的 slash 和弹体颜色都读它，缺了画成 `undefined`）
+1. `WEAPONS` 加一条（记得带 `color` —— 刀光/枪线特效 `renderer.js` 和弹体颜色都读它，缺了画成 `undefined`）
 2. 远程弹补 `weapons.js PROJ_SHAPE`
 3. **`renderer.js ORBIT_ICON` 登记图标**（漏了不报错，会静默顶着剑或弩的造型出场）
-4. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
+4. **不是横扫就补 `weapons.js MELEE_STYLE`**，并在 `renderer.js LUNGE_AMT` 登记位移幅值；
+   写一个 `_xxxAttack`（签名 `(owner, state, aim, claimed)`）+ 新的 `FX.xxx` 特效
+5. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
 
 `commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
 商店武器权重是 `0.5 / 武器数` —— **多一把非专属武器会摊薄所有武器在商店的出现率**，

@@ -24,6 +24,20 @@
     jade_crossbow: 'arrow',
   };
 
+  // 近战出手方式按武器 id 派生，和 PROJ_SHAPE、renderer 的 ORBIT_ICON 一个路数 ——
+  // 招式差异不进 WEAPONS 表（那张表是冻结区）。没登记 = 走通用横扫 _meleeAttack，
+  // 老存档里任何未登记的武器都照常挥砍，不会静默变成空手。
+  var MELEE_STYLE = {
+    spear: '_thrustAttack',
+  };
+
+  // 突刺走廊半宽 = 有效射程 × 这个比例。走廊要窄到看得出「是一条线」，又不能窄到
+  // 目标稍微歪一点就扎空 —— 索敌本来就不限角度（nearestFree 找全场最近），
+  // 被瞄准的那只永远正对枪尖，走廊宽度只决定顺带贯穿多少邻居。
+  // 故意不读 WEAPONS.arc：那个字段对所有武器都不作数（见 arcHalf），拿它当走廊宽
+  // 等于又造出一条「表里躺着但不生效」。
+  var THRUST_HALF = 0.12;
+
   function fx() { return Game.FX; }
 
   /** 两角之差，wrap 到 [0, π]。近战挥砍用它判断敌人有没有落进这道扇形。 */
@@ -135,7 +149,8 @@
 
     if (this.def.type === 'melee') {
       if (t.dist > this.range() + enemy.radius) return;   // 最近的那个都够不着
-      this._meleeAttack(owner, state, aim, this.arcHalf(), claimed);
+      // 出手方式按武器 id 派生：没登记的走横扫扇形，登记过的走自己的招式
+      this[MELEE_STYLE[this.defId] || '_meleeAttack'](owner, state, aim, claimed);
     } else {
       this._rangedAttack(owner, state, enemy, claimed);
     }
@@ -185,8 +200,9 @@
   // 圆心时贴着玩家的敌人全落在它背后，内环永远打不到。刀光也画在玩家身上，
   // 特效和真实命中范围必须同圆心，否则又是一次「特效和武器对不上」。
   // 被扫到的都记进 claimed，同帧里下一把武器就去找别的目标了。
-  WeaponInstance.prototype._meleeAttack = function (owner, state, aim, halfArc, claimed) {
+  WeaponInstance.prototype._meleeAttack = function (owner, state, aim, claimed) {
     var rng = this.range();
+    var halfArc = this.arcHalf();
     this.swingTime = 0;
     this.swingAim = aim;      // 渲染用：剑身绕这个方向挥，和刀光同向
     if (this._primary() && owner.playAttack) owner.playAttack('melee');
@@ -204,6 +220,44 @@
       if (claimed) claimed[e.uid] = true;
     }
     if (fx()) fx().slash(px, py, aim, rng, this.def.color, halfArc * 2);
+    if (this._primary() && Game.Audio) Game.Audio.hit();
+  };
+
+  // 突刺：不是更窄的扇形，是**走廊**。从玩家出发沿 aim 直刺出有效射程长的一条线，
+  // 半宽只有射程的 THRUST_HALF —— 铁剑负责贴脸横扫，枪负责一排怪里扎出一条线。
+  // 圆心仍然是**玩家**（和横扫同一个约定）：武器挂在半径 62 的轨道上，以它为
+  // 圆心时贴着玩家的怪全在它背后，内环永远扎不到；枪线也画在玩家身上，
+  // 命中范围和画面必须同圆心。
+  // 判定 = 沿枪尖方向的前向距离 ≤ 射程，且横向离轴 ≤ 走廊半宽 + 半个怪半径
+  // （擦边算中，和 _meleeAttack 的 rng + e.radius 同一口径）。走廊外的邻居一律
+  // 不碰 —— 这是它和横扫的根本区别。pierce 是贯穿上限，多出来的留给下一刺。
+  WeaponInstance.prototype._thrustAttack = function (owner, state, aim, claimed) {
+    var rng = this.range();
+    var halfW = rng * THRUST_HALF;
+    var ca = Math.cos(aim), sa = Math.sin(aim);
+    this.swingTime = 0;
+    this.swingAim = aim;      // 渲染用：枪尖沿这个方向前推，和枪线同向
+    if (this._primary() && owner.playAttack) owner.playAttack('melee');
+    var dmg = this.damage(owner);
+    var px = owner.x, py = owner.y;
+    var es = state.enemies;
+    var hit = 0;
+    for (var i = 0; i < es.length; i++) {
+      if (hit >= this.def.pierce) break;
+      var e = es[i];
+      if (e.dead) continue;
+      var dx = e.x - px, dy = e.y - py;
+      var along = dx * ca + dy * sa;          // 沿枪尖方向的前向距离
+      if (along < 0) continue;                // 在玩家身后，这一刺扎不到
+      if (along > rng + e.radius) continue;   // 超出突刺射程
+      // 横向离轴距离（走廊半宽之内才算被贯穿）
+      if (Math.abs(-dx * sa + dy * ca) > halfW + e.radius * 0.5) continue;
+      // 击退沿枪尖方向：被扎穿了往后飞，而不是被往玩家外侧推
+      this._applyHit(owner, state, e, dmg, ca, sa);
+      if (claimed) claimed[e.uid] = true;
+      hit++;
+    }
+    if (fx()) fx().thrust(px, py, aim, rng, halfW, this.def.color);
     if (this._primary() && Game.Audio) Game.Audio.hit();
   };
 

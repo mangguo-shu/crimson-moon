@@ -852,14 +852,24 @@
     jade_crossbow: '_drawCrossbow',
   };
 
+  /* 出手位移幅值（世界单位）：突刺型武器不是绕剑柄挥过去，而是沿 aim 直推。
+   * 按武器 id 派生，和 ORBIT_ICON 同源。12 单位 ≈ 图标高度的 6 成 —— 16px 的小图标
+   * 不到这个量级看不出「扎出去」。没登记 = 0，横扫武器只转角度不位移。 */
+  var LUNGE_AMT = {
+    spear: 12,
+  };
+
   // 画一把卫星武器。th 是它当前朝向（静止时 = 径向朝外，挥砍时绕过去）。
   // fire 是放箭进度（1 = 刚扣扳机/扣弦），枪口焰、弩弦回弹、箭飞出都挂在这上面。
+  // lunge 是突刺前推量（世界单位），沿局部 -y 往前移 —— 平移不改变朝向，
+  // 所以枪身照样跟着 th 转，只是整把枪在刺出去的瞬间往前探。
   // 支点在剑柄/弩身上（局部 +2.5y），挥砍是绕着手转的，不是原地飘。
-  R._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
+  R._drawOrbitIcon = function (ctx, w, x, y, th, fire, lunge) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(th);
     if (fire > 0) ctx.translate(0, fire * 3.4);
+    if (lunge > 0) ctx.translate(0, -lunge);   // 局部 -y 是前，突刺沿它前推
     ctx.scale(0.62, 0.62);
     ctx.translate(0, 2.5);
     var fn = ORBIT_ICON[w.def.id];
@@ -901,6 +911,10 @@
         dAng = ((w.swingAim + Math.PI / 2) - rest + Math.PI * 3) % (Math.PI * 2) - Math.PI;
       }
       var fire = w.def.type === 'ranged' && dAng !== 0 ? (1 - t) : 0;
+      // 突刺幅值：只在出手余韵里推，sin 相位和刀光同一套 —— t = 0.5 推得最远，
+      // 起落都回 0，前后帧不会跳。不走 dAng 判定：dAng 为 0 表示目标正好在
+      // 静止位上，枪尖照样要扎出去，不能因为「不用转角度」就没了动作。
+      var lungeAmp = swinging ? (LUNGE_AMT[w.def.id] || 0) : 0;
       // 光晕：出手瞬间膨一圈，每把武器都有独立反馈
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -909,19 +923,22 @@
       ctx.lineWidth = swinging ? 4 : 2.2;
       ctx.beginPath(); ctx.arc(x, y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
       ctx.restore();
-      // 拖影：上一两帧的位置，alpha 更低 —— 16px 的小图标全靠这个看出速度
-      for (var g = 2; g >= 1 && dAng !== 0; g--) {
+      // 拖影：上一两帧的位置，alpha 更低 —— 16px 的小图标全靠这个看出速度。
+      // 纯位移的突刺也要带拖影，所以判定条件除了 dAng 还要看 lungeAmp。
+      for (var g = 2; g >= 1 && (dAng !== 0 || lungeAmp > 0); g--) {
         var gt = t - g * 0.16;
         if (gt <= 0 || gt >= t) continue;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.26 * (1 - t) / g;
         this._drawOrbitIcon(ctx, w, x, y,
-          rest + dAng * Math.sin(Math.PI * gt), fire);
+          rest + dAng * Math.sin(Math.PI * gt), fire,
+          lungeAmp * Math.sin(Math.PI * gt));
         ctx.restore();
       }
       this._drawOrbitIcon(ctx, w, x, y,
-        rest + dAng * Math.sin(Math.PI * t), fire);
+        rest + dAng * Math.sin(Math.PI * t), fire,
+        lungeAmp * Math.sin(Math.PI * t));
       // 强化等级：一圈一圈，Lv1 光晕、Lv2 起每级多一圈
       if (w.level > 1) {
         ctx.save();
@@ -2145,6 +2162,29 @@
         ctx.beginPath();
         ctx.arc(f.x, f.y, f.range * 0.7, f.angle - f.arc / 2, f.angle + f.arc / 2);
         ctx.stroke();
+      } else if (f.type === 'thrust') {
+        // 突刺：从玩家身上往前扎的一条枪线。出生时短，前 1/3 生命推到满长，
+        // 之后整条淡出 —— 读起来是「刺出去」，不是「凭空亮一根」。
+        // 画到 f.range 为止，和 _thrustAttack 的前向判定同一个数（判定多留半个
+        // 怪半径的擦边量，枪线的亮芯 3px + 辉光约 6px，那点误差肉眼看不出）。
+        var thPush = Math.min(1, (1 - t) * 3);
+        var thReach = f.range * (0.42 + 0.58 * thPush);
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.angle);
+        // 外层辉光（枪势）：宽度跟着走廊走，半宽之外的邻居确实扎不到
+        ctx.strokeStyle = f.color;
+        ctx.globalAlpha = t * 0.5;
+        ctx.lineWidth = f.halfW * 2 + 6 * t;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(thReach, 0); ctx.stroke();
+        // 内层亮芯（鎏金）
+        ctx.globalAlpha = t;
+        ctx.strokeStyle = '#fff6d8';
+        ctx.lineWidth = 3 * t + 0.8;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(thReach, 0); ctx.stroke();
+        // 枪尖
+        ctx.fillStyle = '#fff6d8';
+        ctx.beginPath(); ctx.arc(thReach, 0, 3.4 * t + 0.8, 0, TAU); ctx.fill();
       } else if (f.type === 'ring') {
         var r = f.range * (1 - t) + 6;
         ctx.strokeStyle = f.color;
@@ -2285,6 +2325,12 @@
     // 之前硬编码铁剑的弧，赤月斩实际能打到的范围比刀光显示的宽。
     slash: function (x, y, angle, range, color, arc) {
       R.addEffect({ type: 'slash', x: x, y: y, angle: angle, arc: arc || Game.WEAPONS.iron_sword.arc, range: range, color: color, life: 0.16, maxLife: 0.16 });
+    },
+    // 突刺：一条枪线，和 slash 的扇形对应。range/halfW 都是从 _thrustAttack 的
+    // 判定值传过来的 —— 特效画宽了就又是一次「打得着的比看见的窄」。
+    // 时长比刀光长一点（0.22 vs 0.16）：突刺要看得见「扎出去」那段位移。
+    thrust: function (x, y, angle, range, halfW, color) {
+      R.addEffect({ type: 'thrust', x: x, y: y, angle: angle, range: range, halfW: halfW, color: color, life: 0.22, maxLife: 0.22 });
     },
     muzzle: function (x, y, angle) {
       var p = util.onCircle(x, y, 16, angle);

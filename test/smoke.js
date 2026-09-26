@@ -3420,6 +3420,191 @@ try {
   assert(w214.swingTime > 0 && swings214 === 0,
          '扇形里没有敌人就空转：只累积余韵计时，不挥砍');
 
+  // ---- 12b. 龙胆枪是突刺，不是更窄的横扫 ----
+  // 用户 2026-09-26：「长枪不要横扫，要做枪的攻击」。判定从扇形换成走廊 ——
+  // 走廊外的邻居一律不碰。同一套摆法放到铁剑上会被横扫到，这才是「扎不到」
+  // 这条断言的辨别力来源：不然只是实现漏了命中。
+  function guardMelee216(wid, seed) {
+    var s = Game.Systems.createState('campaign', 'guard', seed);
+    var pl = s.player;
+    pl.stats.critChance = 0;                     // 精确伤害断言：关掉暴击
+    pl.weapons.length = 0;
+    pl.weapons.push(Game.createWeapon(wid, 1, 0));
+    Game.Systems.normalizeSlots(pl);
+    s.enemies.length = 0; s.projectiles.length = 0;
+    return s;
+  }
+  var spDef216 = Game.WEAPONS.spear;
+  var rng216 = spDef216.range * K.MELEE_RANGE_SCALE;   // 有效射程 162.5
+  var halfW216 = rng216 * 0.12;                            // 走廊半宽（THRUST_HALF）
+
+  // 1) 同一条线上一排怪：只贯穿 pierce 只，多出来的留给下一刺
+  var s216 = guardMelee216('spear', 7770161);
+  var pl216 = s216.player;
+  var cl216 = {}; s216._claimedThisFrame = cl216;
+  for (var n216 = 0; n216 < 5; n216++) {
+    var e216 = new Game.Enemy('zombie', pl216.x + 25 + n216 * 30, pl216.y, 1);
+    e216.hp = 1e9; s216.enemies.push(e216);
+  }
+  var sp216 = pl216.weapons[0];
+  sp216.cooldownRemaining = 0;
+  sp216.update(0.016, pl216, s216);
+  var hit216 = s216.enemies.filter(function (e) { return e.hp < 1e9; });
+  assert(Math.abs(sp216.swingAim) < 1e-9,
+         '突刺记下枪尖方向（正右方，实得 ' + sp216.swingAim.toFixed(4) + '）');
+  assert(hit216.length === spDef216.pierce,
+         '一排怪里只贯穿 ' + spDef216.pierce + ' 只（实得 ' + hit216.length + '）');
+  assert(s216.enemies[4].hp === 1e9,
+         '第 5 只在走廊内、也在射程内，但超过 pierce 上限，留给下一刺');
+  assert(Object.keys(cl216).length === spDef216.pierce,
+         '贯穿的每一只都记进 claimed，同帧下一把武器不会重打这一排');
+  assert(Math.abs(hit216[0].hp - (1e9 - 20)) < 1e-6,
+         '突刺伤害 = 武器表伤害 × 角色系数（实得 ' + (1e9 - hit216[0].hp).toFixed(1) + '）');
+  assert(hit216[0].knockbackX > 89 && Math.abs(hit216[0].knockbackY) < 1e-6,
+         '击退沿枪尖方向往前飞（' + hit216[0].knockbackX.toFixed(1) + ', ' +
+         hit216[0].knockbackY.toFixed(2) + '），不是横扫那样往玩家外侧推');
+
+  // 2) 走廊内的邻居顺带贯穿，走廊外的侧翼、身后的、超程的一律不碰
+  var s216b = guardMelee216('spear', 7770162);
+  var pl216b = s216b.player;
+  var fl216 = 28 * Math.PI / 180;
+  var tgt216b = new Game.Enemy('zombie', pl216b.x + 50, pl216b.y, 1);
+  var side216b = new Game.Enemy('zombie',
+    pl216b.x + Math.cos(fl216) * 90, pl216b.y + Math.sin(fl216) * 90, 1);
+  var near216b = new Game.Enemy('zombie',
+    pl216b.x + Math.cos(12 * Math.PI / 180) * 60, pl216b.y + Math.sin(12 * Math.PI / 180) * 60, 1);
+  var back216b = new Game.Enemy('zombie', pl216b.x - 60, pl216b.y, 1);
+  var beyond216b = new Game.Enemy('zombie', pl216b.x + 200, pl216b.y, 1);
+  [tgt216b, side216b, near216b, back216b, beyond216b].forEach(function (e) { e.hp = 1e9; });
+  s216b.enemies.push(tgt216b, side216b, near216b, back216b, beyond216b);
+  // 摆法自检：侧翼那只要确实落在走廊之外，下面的「扎不到」才有意义
+  var sideOf216 = Math.abs(side216b.y - pl216b.y);
+  assert(sideOf216 > halfW216 + side216b.radius * 0.5,
+         '（摆法自检）侧翼怪在走廊之外（横向 ' + sideOf216.toFixed(1) +
+         ' > 容差 ' + (halfW216 + side216b.radius * 0.5).toFixed(1) + '）');
+  pl216b.weapons[0].cooldownRemaining = 0;
+  pl216b.weapons[0].update(0.016, pl216b, s216b);
+  assert(tgt216b.hp < 1e9 && near216b.hp < 1e9,
+         '走廊内的两只都中（正前方目标 + 斜 12° 的邻居被顺带贯穿）');
+  assert(side216b.hp === 1e9 && back216b.hp === 1e9 && beyond216b.hp === 1e9,
+         '走廊外的斜 28° 侧翼、身后的、超出射程的一律扎不到');
+
+  // 同一套摆法放到铁剑上：斜 28° 在横扫的 30° 半角内，会被扫到
+  var s216c = guardMelee216('iron_sword', 7770163);
+  var pl216c = s216c.player;
+  var tgt216c = new Game.Enemy('zombie', pl216c.x + 50, pl216c.y, 1);
+  var side216c = new Game.Enemy('zombie',
+    pl216c.x + Math.cos(fl216) * 90, pl216c.y + Math.sin(fl216) * 90, 1);
+  tgt216c.hp = 1e9; side216c.hp = 1e9;
+  s216c.enemies.push(tgt216c, side216c);
+  var sw216c = pl216c.weapons[0];
+  sw216c.cooldownRemaining = 0;
+  sw216c.update(0.016, pl216c, s216c);
+  assert(tgt216c.hp < 1e9 && side216c.hp < 1e9,
+         '（对照）同样的摆法换成铁剑横扫，斜 28° 的侧翼会被扫到 —— ' +
+         '上面的「扎不到」是走廊本来就窄，不是漏了命中');
+
+  // 3) 特效分家：枪画枪线，剑照旧画扇形
+  var fx216 = { thrust: null, slash: null };
+  var oTh216 = Game.FX.thrust, oSl216 = Game.FX.slash;
+  var stubFxc216 = function (box) {
+    Game.FX.thrust = function (x, y, a, r, hw, c) { box.thrust = { x: x, y: y, a: a, r: r, hw: hw, c: c }; };
+    Game.FX.slash = function (x, y, a, r, c, arc) { box.slash = { x: x, y: y, a: a, r: r, c: c, arc: arc }; };
+  };
+  stubFxc216(fx216);
+  var s216d = guardMelee216('spear', 7770164);
+  var pl216d = s216d.player;
+  s216d.enemies.push(new Game.Enemy('zombie', pl216d.x + 60, pl216d.y, 1));
+  pl216d.weapons[0].cooldownRemaining = 0;
+  pl216d.weapons[0].update(0.016, pl216d, s216d);
+  assert(fx216.thrust && !fx216.slash, '龙胆枪出的是枪线，不是扇形刀光');
+  assert(Math.abs(fx216.thrust.x - pl216d.x) < 1e-6 && Math.abs(fx216.thrust.y - pl216d.y) < 1e-6,
+         '枪线从玩家身上发出（和横扫同一个约定：特效与命中范围同圆心）');
+  assert(Math.abs(fx216.thrust.a) < 1e-9, '枪线朝向 = 玩家指向目标的方向');
+  assert(Math.abs(fx216.thrust.r - rng216) < 1e-9,
+         '枪线长度 = 有效射程（已含 ×' + K.MELEE_RANGE_SCALE + '）');
+  assert(Math.abs(fx216.thrust.hw - halfW216) < 1e-9,
+         '枪线半宽 = 判定用的走廊半宽（画面和命中同一个数）');
+  assert(fx216.thrust.c === spDef216.color, '枪线颜色取自武器表 color');
+
+  var fx216b = { thrust: null, slash: null };
+  stubFxc216(fx216b);
+  var s216e = guardMelee216('iron_sword', 7770165);
+  var pl216e = s216e.player;
+  s216e.enemies.push(new Game.Enemy('zombie', pl216e.x + 60, pl216e.y, 1));
+  pl216e.weapons[0].cooldownRemaining = 0;
+  pl216e.weapons[0].update(0.016, pl216e, s216e);
+  Game.FX.thrust = oTh216; Game.FX.slash = oSl216;
+  assert(fx216b.slash && !fx216b.thrust, '铁剑照旧画扇形刀光，没跟着枪改成枪线');
+  assert(Math.abs(fx216b.slash.arc - K.WEAPON_ARC) < 1e-9,
+         '铁剑的扇形宽度没被这次改动碰过（' + (K.WEAPON_ARC * 180 / Math.PI).toFixed(0) + '°）');
+
+  // 4) 图标：枪是往前扎（沿 aim 平移），剑照旧只绕剑柄转
+  // 钉住卫星位置 (0,0) 和朝向 th=0（局部 -y = 屏幕上方 = 前），只变 lunge，
+  // 读矩阵 e/f 的差 —— 差值就是前推幅度，和 0.62 缩放、+2.5 支点互不干扰。
+  var ghostSp216 = { def: Game.WEAPONS.spear, x: 0, y: 0 };
+  function iconPose216(lunge) {
+    var ctxx = Game.Renderer.ctx;
+    var mx = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    var tr = function (n) {
+      mx = {
+        a: mx.a * n.a + mx.c * n.b, b: mx.b * n.a + mx.d * n.b,
+        c: mx.a * n.c + mx.c * n.d, d: mx.b * n.c + mx.d * n.d,
+        e: mx.a * n.e + mx.c * n.f + mx.e,
+        f: mx.b * n.e + mx.d * n.f + mx.f,
+      };
+    };
+    var o = {}, st = [];
+    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) { o[m] = ctxx[m]; });
+    ctxx.save = function () { st.push({ a: mx.a, b: mx.b, c: mx.c, d: mx.d, e: mx.e, f: mx.f }); };
+    ctxx.restore = function () { if (st.length) mx = st.pop(); };
+    ctxx.translate = function (x, y) { tr({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); };
+    ctxx.rotate = function (t) { tr({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 }); };
+    ctxx.scale = function (x, y) { tr({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); };
+    var got = [];
+    ctxx.fill = function () { got.push({ e: mx.e, f: mx.f }); };
+    Game.Renderer._drawOrbitIcon(ctxx, ghostSp216, 0, 0, 0, 0, lunge);
+    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) { ctxx[m] = o[m]; });
+    return got.length ? got[got.length - 1] : null;
+  }
+  var q0216 = iconPose216(0), q1216 = iconPose216(12);
+  assert(q0216 && q1216, '枪的图标真的画了形状（拿到 ' +
+         ((q0216 && q1216) ? 2 : 0) + ' 组矩阵）');
+  assert(Math.abs((q0216.f - q1216.f) - 12) < 0.01,
+         '突刺沿前方把图标推了 12 单位（实得 ' + (q0216.f - q1216.f).toFixed(2) +
+         '；f 变小 = 屏幕上方 = 局部 -y = 前）');
+
+  // 集成：真渲染里枪在前推、剑完全没位移
+  var lungeSeen216 = [];
+  var origOIC216 = Game.Renderer._drawOrbitIcon;
+  Game.Renderer._drawOrbitIcon = function (ctx, w, x, y, th, fire, lunge) {
+    lungeSeen216.push(lunge || 0);
+    return origOIC216.apply(this, arguments);
+  };
+  function maxLunge216(s) {
+    lungeSeen216.length = 0;
+    Game.Renderer.render(s, 0.016);
+    return Math.max.apply(null, lungeSeen216);
+  }
+  var s216f = guardMelee216('spear', 7770166);
+  var pl216f = s216f.player;
+  s216f.enemies.push(new Game.Enemy('zombie', pl216f.x + 60, pl216f.y, 1));
+  var w216f = pl216f.weapons[0];
+  w216f.cooldownRemaining = 0;
+  w216f.update(0.016, pl216f, s216f);
+  w216f.swingTime = 0.11;                       // SWING_DUR/2，前推峰值
+  var midL216 = maxLunge216(s216f);
+  w216f.swingTime = 0.4;                        // 余韵放完
+  var endL216 = maxLunge216(s216f);
+  var swMaxL216 = (function () {
+    sw216c.swingTime = 0.11;
+    return maxLunge216(s216c);
+  })();
+  Game.Renderer._drawOrbitIcon = origOIC216;
+  assert(midL216 > 8, '枪出手余韵里图标真的在往前扎（峰值 lunge ' + midL216.toFixed(1) + '）');
+  assert(endL216 < 0.01, '余韵放完归零，图标不卡在枪尖伸出的位置（lunge ' + endL216.toFixed(2) + '）');
+  assert(swMaxL216 < 0.01, '铁剑照旧只绕剑柄转、没有位移（lunge ' + swMaxL216.toFixed(2) + '）');
+
   // ---- 13. 远程朝目标出膛，不沿径向固定往外打 ----
   // 目标是扇形里离玩家最近的敌人，可能落在内环（布置圈之内）。固定朝外的话
   // 子弹会从敌人背后飞走，所以远程单独朝目标算角度。
