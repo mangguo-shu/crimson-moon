@@ -63,6 +63,14 @@
     return wave % 10 === 0;
   };
 
+  /** Boss 轮换：第 10 波 Game.BOSSES[0]，第 20 波 [1]……按 bossTier 取模。
+   *  纯查表、不消耗随机数 —— 刷谁只由波次决定，读档/不同种子结果一致。 */
+  S.pickBossType = function (tier) {
+    var list = Game.BOSSES || ['boss'];
+    var t = Math.max(1, tier | 0);
+    return list[(t - 1) % list.length];
+  };
+
   /** 预生成整波刷新计划（用与 seed+wave 绑定的独立 RNG，保证读档一致） */
   S.buildSpawnSchedule = function (state, wave) {
     var schedule = [];
@@ -76,8 +84,8 @@
     var boss = S.isBossWave(wave);
 
     if (boss) {
-      // Boss 波：第 3 秒刷 Boss，再铺少量小怪
-      schedule.push({ time: 3, type: 'boss', x: 0, y: 0, boss: true });
+      // Boss 波：第 3 秒刷 Boss（按层数轮换，见 pickBossType），再铺少量小怪
+      schedule.push({ time: 3, type: S.pickBossType(Math.floor(wave / 10) || 1), x: 0, y: 0, boss: true });
       budget = Math.max(10, Math.floor(budget * 0.6));
     }
 
@@ -154,9 +162,14 @@
     state.spawnIndex = 0;
     state.waveSeen = [];      // 换波就换一批卡：上一波刷过的不再重复
     state.screen = 'PLAYING';
+    // Boss 波点名：现在 4 只 Boss 各刷各的，横幅报名字而不是只说「BOSS」
+    var bossType = state.isBossWave ? S.pickBossType(Math.floor(wave / 10) || 1) : '';
+    var bossDef = bossType ? Game.ENEMIES[bossType] : null;
+    state.bossType = bossType;
     console.log('[Wave] 开始波次 ' + wave + ' 时长=' + state.waveDuration +
-                ' 敌人预算=' + state.spawnSchedule.length + (state.isBossWave ? ' [Boss]' : ''));
-    if (Game.UI) Game.UI.showWaveBanner(wave, state.isBossWave);
+                ' 敌人预算=' + state.spawnSchedule.length +
+                (bossType ? ' [Boss:' + bossDef.name + ']' : ''));
+    if (Game.UI) Game.UI.showWaveBanner(wave, state.isBossWave, bossDef ? bossDef.name : '');
     if (Game.Audio) Game.Audio.wave();
     if (state.isBossWave) {
       if (Game.FX) Game.FX.flash('#ff3a3a', 0.4);
@@ -179,9 +192,10 @@
       var ev = state.spawnSchedule[state.spawnIndex];
       if (ev.boss) {
         state.bossSpawned = true;
-        state.enemies.push(new Game.Enemy('boss', ev.x, ev.y, state.wave, { bossTier: Math.floor(state.wave / 10) || 1 }));
+        state.enemies.push(new Game.Enemy(ev.type || 'boss', ev.x, ev.y, state.wave,
+                                          { bossTier: Math.floor(state.wave / 10) || 1 }));
         if (Game.FX) Game.FX.shake(14);
-        console.log('[Wave] Boss 已出场');
+        console.log('[Wave] Boss 已出场：' + (ev.type || 'boss'));
       } else {
         state.enemies.push(new Game.Enemy(ev.type, ev.x, ev.y, state.wave));
       }

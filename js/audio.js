@@ -159,6 +159,13 @@
     buy: function () { tone('square', 700, 1100, 0.08, 0.2); },
     wave: function () { tone('sawtooth', 150, 300, 0.4, 0.22); },
     boss: function () { tone('sawtooth', 80, 200, 0.7, 0.35); tone('sine', 60, 120, 0.8, 0.3); },
+    // 冲撞预警：0.6s 的低频上滑，和 _drawBossBrute 的抖动同长 —— 听觉上给足反应时间
+    telegraph: function () { tone('sawtooth', 90, 320, 0.6, 0.26); },
+    // 冲撞落地：急坠的滑音，像风从耳边扫过
+    dash: function () { tone('sawtooth', 520, 70, 0.3, 0.28); tone('sine', 200, 50, 0.25, 0.22); },
+    // 蛛后螺旋的每簇出手音。attackCd 0.85s，复用 boss() 会变成每秒一次低频轰鸣，
+    // 所以单独给一个短促轻量的点。
+    zap: function () { tone('square', 320, 210, 0.05, 0.09); },
     heal: function () { tone('sine', 600, 1000, 0.15, 0.2); },
   };
 })();

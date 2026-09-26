@@ -479,7 +479,7 @@
     },
 
     /* ---------------- 波次横幅 ---------------- */
-    showWaveBanner: function (wave, boss) {
+    showWaveBanner: function (wave, boss, bossName) {
       var b = document.getElementById('wave-banner');
       if (!b) {
         b = document.createElement('div');
@@ -489,11 +489,15 @@
           'text-shadow:0 0 24px rgba(226,59,59,0.9),0 2px 0 #000;transition:opacity .5s ease;';
         document.body.appendChild(b);
       }
-      b.textContent = boss ? '⚠ BOSS 来袭 ⚠' : '第 ' + wave + ' 波';
+      // 点名比「BOSS」有用：4 只 Boss 的躲法完全不同，得先知道撞上的是哪一只
+      var named = boss && bossName;
+      b.textContent = named ? '⚠ ' + bossName + ' 来袭 ⚠'
+                            : (boss ? '⚠ BOSS 来袭 ⚠' : '第 ' + wave + ' 波');
+      b.style.fontSize = named ? '44px' : '52px';   // 四字名字压一档，别顶出屏
       b.style.color = boss ? '#ff5e5e' : '#fff';
       b.style.opacity = '1';
       clearTimeout(this._bannerT);
-      this._bannerT = setTimeout(function () { b.style.opacity = '0'; }, 1800);
+      this._bannerT = setTimeout(function () { b.style.opacity = '0'; }, named ? 2600 : 1800);
     },
 
     /* ---------------- 存档提示 ---------------- */

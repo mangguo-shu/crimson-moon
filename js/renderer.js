@@ -64,6 +64,7 @@
    * 早先两边各写各的（影子按 radius*0.6 推），年兽因此浮在影子上面近 15px。
    */
   var FOOT_Y = { player: 12, zombie: 13, bat: 6, wizard: 14, boss: 40,
+                 boss_brute: 42, boss_mage: 30, boss_spider: 34,
                  golem: 19, bulwark: 18, bruiser: 16 };
   var FOOT_Y_DEFAULT = 10;
 
@@ -999,6 +1000,9 @@
       case 'bat': this._drawBat(ctx, e, flash); break;
       case 'wizard': this._drawWizard(ctx, e, flash); break;
       case 'boss': this._drawBoss(ctx, e, flash); break;
+      case 'boss_brute': this._drawBossBrute(ctx, e, flash); break;
+      case 'boss_mage': this._drawBossMage(ctx, e, flash); break;
+      case 'boss_spider': this._drawBossSpider(ctx, e, flash); break;
       case 'golem': this._drawGolem(ctx, e, flash); break;
       case 'bulwark': this._drawBulwark(ctx, e, flash); break;
       case 'bruiser': this._drawBruiser(ctx, e, flash); break;
@@ -1287,6 +1291,244 @@
     }
   };
 
+  /* ---------------- Boss 系（4 个模型 / 4 种攻击套路） ----------------
+   * 三个新模型刻意避开赤月年兽那套视觉语言（圆身 + 云纹 + 环绕利爪 + 核心辉光），
+   * 保证玩家隔着半个屏幕就能认出这是哪一只：
+   *   蛮荒冲兽 —— 宽矮冲撞体 + 后掠巨角；蓄力期全身抖、角尖烧红
+   *   血月咒使 —— 悬浮长袍 + 头顶血月；施法时抬袖，脚下没有腿
+   *   天罗蛛后 —— 双节八足 + 复眼群；出手时八足外张
+   * 预警必须画在身上（抖动 / 抬袖 / 张足），不额外做 UI 提示条。 */
+
+  /** 蛮荒冲兽：蓄力冲撞。蓄力进度来自 e.charge，冲撞来自 e.dash。 */
+  R._drawBossBrute = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var body = flash ? '#fff' : d.color;
+    var dark = flash ? '#fff' : d.color2;
+    var hot = d.color3 || '#ffd27a';
+    var ch = e.charge ? Math.min(1, e.charge.t / e.charge.dur) : 0;
+    var ds = !!e.dash;
+    var i, s, k;
+
+    // 蓄力：高频抖动 —— 「它要撞了」唯一的读图信号
+    if (ch > 0) ctx.translate(Math.sin(e.animTime * 55) * 1.9 * ch,
+                              Math.cos(e.animTime * 47) * 1.3 * ch);
+    // 冲撞中压扁前倾；蓄力中蓄劲下压
+    if (ds) ctx.scale(1.08, 0.92);
+    else if (ch > 0) ctx.scale(1 + ch * 0.03, 1 - ch * 0.06);
+
+    // 四条粗腿（冲撞中前后交错）
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.6;
+    for (i = 0; i < 4; i++) {
+      var stride = ds ? Math.sin(e.animTime * 26 + i * 1.7) * 6 : 0;
+      ctx.beginPath();
+      ctx.ellipse(-25 + i * 17 + stride, 25, 8, 15, 0, 0, TAU);
+      fs(ctx, dark, O, 1.6);
+    }
+
+    // 主体：宽厚矮身
+    ctx.beginPath(); ctx.ellipse(0, 4, 42, 25, 0, 0, TAU);
+    fs(ctx, body, O, 2.4);
+
+    // 背部甲片（三层向后收窄，读起来像背脊）
+    for (i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.ellipse(-20 + i * 13, -13 - i * 1.5, 13, 8, -0.3, 0, TAU);
+      fs(ctx, dark, O, 1.6);
+    }
+
+    // 后掠巨角（蓄力时角尖烧红）
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.moveTo(s * 20, -16);
+      ctx.quadraticCurveTo(s * 40, -30, s * 14, -38);
+      ctx.quadraticCurveTo(s * 30, -24, s * 12, -13);
+      ctx.closePath();
+      fs(ctx, PAL.paper, O, 1.8);
+    }
+    if (ch > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = hot; ctx.globalAlpha = 0.35 + ch * 0.55;
+      for (s = -1; s <= 1; s += 2) {
+        ctx.beginPath(); ctx.ellipse(s * 15, -37, 7, 5, 0, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 头部：朝飞行方向（+x）
+    ctx.beginPath(); ctx.ellipse(30, 8, 15, 14, 0, 0, TAU);
+    fs(ctx, body, O, 2);
+    // 獠牙
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.moveTo(38, 10 + s * 3); ctx.lineTo(50, 6 + s * 6); ctx.lineTo(38, 14 + s * 3);
+      ctx.closePath();
+      fs(ctx, '#fdfaf0', O, 1);
+    }
+    // 眼：常态暗红，蓄力转亮橙 —— 和角尖同步
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = ch > 0 ? hot : 'rgba(255,90,70,' + (0.5 + 0.3 * Math.sin(e.animTime * 3)) + ')';
+    ctx.globalAlpha = ch > 0 ? 1 : 0.8;
+    ctx.beginPath(); ctx.ellipse(36, 3, 4.2, 3.4, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#1a1010';
+    ctx.beginPath(); ctx.ellipse(37, 3, 1.4, 2.8, 0, 0, TAU); ctx.fill();
+
+    // 胸口核心：蓄力时把劲聚在这里
+    if (ch > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = hot; ctx.globalAlpha = 0.25 + ch * 0.5;
+      ctx.beginPath(); ctx.arc(6, 6, 12 + ch * 10, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+  };
+
+  /** 血月咒使：环绕弹排。悬浮 —— 没有腿，靠上下浮动和袍摆表达高度。 */
+  R._drawBossMage = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var robe = flash ? '#fff' : d.color;
+    var dark = flash ? '#fff' : d.color2;
+    var lum = d.color3 || '#c48aff';
+    var bob = Math.sin(e.animTime * 1.8) * 4;          // 悬浮浮动
+    var cast = pulse(atkU(e), 1.1);                    // 出手脉冲
+    var i, s;
+
+    ctx.translate(0, bob);
+
+    // 头顶血月：常驻旋转，是这只的记号
+    var ma = e.animTime * 0.7;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = lum; ctx.globalAlpha = 0.30 + cast * 0.4;
+    ctx.beginPath(); ctx.arc(0, -62, 20 + cast * 8, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(0, -62); ctx.rotate(ma);
+    ctx.beginPath(); ctx.arc(0, 0, 13, 0, TAU);
+    fs(ctx, lum, O, 1.8);
+    ctx.beginPath(); ctx.arc(6, -2, 11, 0, TAU);
+    fs(ctx, dark, O, 1.4);
+    ctx.restore();
+
+    // 长袍：上窄下宽，下摆撕成锯齿（飘起来才像没踩地）
+    ctx.beginPath();
+    ctx.moveTo(-13, -26);
+    ctx.quadraticCurveTo(-22, -6, -27, 22);
+    for (s = -1; s <= 1; s += 1) {                    // 下摆锯齿：左尖、中平、右尖
+      ctx.lineTo(-27 + s * 13.5, 22 + (s === 0 ? -8 : -3));
+    }
+    ctx.quadraticCurveTo(22, -6, 13, -26);
+    ctx.closePath();
+    fs(ctx, robe, O, 2.2);
+
+    // 腰封
+    ctx.beginPath();
+    ctx.moveTo(-19, 0); ctx.lineTo(19, 0); ctx.lineTo(17, 9); ctx.lineTo(-17, 9);
+    ctx.closePath();
+    fs(ctx, dark, O, 1.6);
+    ctx.fillStyle = lum;
+    ctx.beginPath(); ctx.ellipse(0, 4.5, 4, 3, 0, 0, TAU); ctx.fill();
+
+    // 袖子：施法时上举，平时垂在身侧
+    var raise = cast * 16;
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.moveTo(s * 12, -16);
+      ctx.quadraticCurveTo(s * 26, -14 - raise * 0.4, s * (24 + raise * 0.25), -4 - raise);
+      ctx.quadraticCurveTo(s * 20, 2 - raise * 0.5, s * 15, 4);
+      ctx.closePath();
+      fs(ctx, robe, O, 1.8);
+      // 袖口浮出的月华
+      if (cast > 0.05) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = lum; ctx.globalAlpha = cast * 0.8;
+        ctx.beginPath(); ctx.arc(s * (24 + raise * 0.25), -6 - raise, 5 + cast * 3, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 头：兜帽下的一张脸
+    ctx.beginPath(); ctx.arc(0, -32, 11, 0, TAU);
+    fs(ctx, '#1d1620', O, 1.8);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = lum; ctx.globalAlpha = 0.75 + cast * 0.25;
+    ctx.beginPath(); ctx.ellipse(-4.5, -33, 3, 2.2, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(4.5, -33, 3, 2.2, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    // 兜帽
+    ctx.beginPath();
+    ctx.moveTo(-13, -30);
+    ctx.quadraticCurveTo(-15, -48, 0, -49);
+    ctx.quadraticCurveTo(15, -48, 13, -30);
+    ctx.quadraticCurveTo(0, -38, -13, -30);
+    ctx.closePath();
+    fs(ctx, robe, O, 1.8);
+  };
+
+  /** 天罗蛛后：螺旋弹幕。八足四对，出手时整圈外张。 */
+  R._drawBossSpider = function (ctx, e, flash) {
+    var d = e.def, O = this.outline;
+    var body = flash ? '#fff' : d.color;
+    var dark = flash ? '#fff' : d.color2;
+    var lum = d.color3 || '#6fe3c1';
+    var spread = 1 + pulse(atkU(e), 1.2) * 0.34;       // 出手时八足外张
+    var i, s;
+
+    // 八足：四对，沿前体两侧上下排开，两段关节外张
+    ctx.lineCap = 'round';
+    for (i = 0; i < 4; i++) {
+      var sway = Math.sin(e.animTime * 3.1 + i * 1.4) * 3;
+      for (s = -1; s <= 1; s += 2) {
+        var yHip = -8 + i * 5.5;
+        ctx.beginPath();
+        ctx.moveTo(6, yHip);
+        ctx.quadraticCurveTo(16 + sway * 0.3, yHip + s * (15 + i * 4.5) * spread,
+                             27 + i * 1.5, yHip + s * (25 + i * 2.5) * spread);
+        ctx.strokeStyle = body; ctx.lineWidth = 4.6; ctx.stroke();
+        ctx.strokeStyle = OUT; ctx.lineWidth = 1.3; ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(27 + i * 1.5, yHip + s * (25 + i * 2.5) * spread, 2.4, 0, TAU);
+        fs(ctx, dark, O, 1);
+      }
+    }
+
+    // 腹部（后侧，-x）：大且带斑纹
+    ctx.beginPath(); ctx.ellipse(-16, -4, 25, 21, 0, 0, TAU);
+    fs(ctx, dark, O, 2.2);
+    ctx.strokeStyle = lum; ctx.lineWidth = 2;
+    for (i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(-19 - i * 7, -4, 9 - i * 1.5, Math.PI * 0.25, Math.PI * 0.75);
+      ctx.stroke();
+    }
+
+    // 头胸甲（前侧，+x）
+    ctx.beginPath(); ctx.ellipse(9, 2, 17, 15, 0, 0, TAU);
+    fs(ctx, body, O, 2);
+
+    // 复眼群：八只，前密后疏
+    var eyes = [[16, -5], [20, -2], [20, 3], [16, 6], [12, -2], [12, 4], [8, -6], [8, 7]];
+    for (i = 0; i < eyes.length; i++) {
+      ctx.beginPath(); ctx.arc(eyes[i][0], eyes[i][1], i < 4 ? 2.4 : 1.8, 0, TAU);
+      fs(ctx, lum, O, 1);
+    }
+
+    // 额部毒腺：施法时亮
+    var cast = pulse(atkU(e), 1.2);
+    if (cast > 0.02) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = lum; ctx.globalAlpha = cast * 0.9;
+      ctx.beginPath(); ctx.ellipse(24, 1, 5 + cast * 2.5, 4 + cast * 2, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // 毒牙
+    for (s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.moveTo(22, 5 + s * 2); ctx.lineTo(30, 8 + s * 4); ctx.lineTo(22, 8 + s * 2);
+      ctx.closePath();
+      fs(ctx, '#fdfaf0', O, 1);
+    }
+  };
+
   /* ---------------- 反伤系（坦克） ----------------
    * 三种坦克共用一条「反伤预警」约定：脚下持续脉动一圈 color3 光晕，
    * 玩家进图就能看出「这只不能硬啃」。被命中反弹时再闪一次亮环（counterFlash）。
@@ -1530,23 +1772,17 @@
   };
 
   /** 子弹弹体。造型按武器 id 派生（见 weapons.js 的 PROJ_SHAPE），不写在 WEAPONS 表里。
-   *  弹体是铅灰而不是武器色 —— 手枪是 #ffd76e，直接拿武器色画弹体就是一枚铜钱
-   *  （用户 2026-09-26「远程攻击现在全是铜钱」）。武器色只留在光晕和火苗上，
-   *  这样手枪与连弩的弹仍然一眼可分，但都不再是金币。 */
+   *  全金属灰，一根带子都不染武器色：手枪是 #ffd76e，早先那版把武器色当弹体画
+   *  （「远程全是铜钱」），改金属后又把武器色留在光晕/拖尾/火苗上 —— 屏幕上仍是一串
+   *  发着黄光的圆点（「子弹有黄色的光晕，移除它」）。
+   *  现在靠弹形和箭区分，不靠颜色；武器色只留在弩箭的箭羽上。 */
   R._drawBulletBody = function (ctx, p) {
     var r = p.radius;
-    // 光晕：武器色，弱一点 —— 它是这发子弹的「身份」，不是弹体本身
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = p.color;
-    ctx.globalAlpha = 0.32;
-    ctx.beginPath(); ctx.arc(0, 0, r * 1.8, 0, TAU); ctx.fill();
-    ctx.restore();
-    // 飞行拖尾
-    ctx.globalAlpha = 0.25;
-    ctx.fillStyle = p.color;
+    // 飞行拖尾：浅灰烟痕，弱且短，不用武器色
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#c3c9cf';
     ctx.beginPath();
-    ctx.ellipse(-r * 2.8, 0, r * 1.6, r * 0.45, 0, 0, TAU);
+    ctx.ellipse(-r * 2.6, 0, r * 1.4, r * 0.42, 0, 0, TAU);
     ctx.fill();
     // 弹体：铅灰色短圆柱
     ctx.globalAlpha = 1;
@@ -1554,20 +1790,23 @@
     ctx.beginPath();
     ctx.ellipse(0, 0, r * 1.15, r * 0.72, 0, 0, TAU);
     ctx.fill();
+    // 底火：弹尾暗一档，转出来能看出是圆柱不是圆点
+    ctx.fillStyle = '#6b7379';
+    ctx.beginPath();
+    ctx.ellipse(-r * 1.0, 0, r * 0.24, r * 0.6, 0, 0, TAU);
+    ctx.fill();
     // 弹头：亮一点的金属尖（朝飞行方向，+x）
     ctx.fillStyle = '#c9d2d9';
     ctx.beginPath();
     ctx.ellipse(r * 0.55, 0, r * 0.62, r * 0.72, 0, 0, TAU);
     ctx.fill();
-    // 出膛火苗
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = p.color;
+    // 出膛白热：金属反光点，冷白不是黄光，也不发光叠加
+    ctx.fillStyle = '#ffffff';
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.ellipse(r * 1.1, 0, r * 0.7, r * 0.5, 0, 0, TAU);
+    ctx.ellipse(r * 1.02, 0, r * 0.28, r * 0.28, 0, 0, TAU);
     ctx.fill();
-    ctx.restore();
+    ctx.globalAlpha = 1;
   };
 
   /** 弩箭弹体：木杆 + 金属箭头 + 羽尾。羽尾用武器色，连弩的青玉箭一眼就是青玉。 */
@@ -1912,6 +2151,9 @@
     },
     blood: function (x, y, n) { this._dot(x, y, n, '#c8352f', 120, 3, false); },
     spark: function (x, y, n) { this._dot(x, y, n, '#ffd76e', 200, 2, true); },
+    // 冲撞扬尘：土灰色，不给发光 —— 金色的火花是玩家特效专用，
+    // 撞进怪脚下会读成「我在放技能」
+    dust: function (x, y, n) { this._dot(x, y, n, '#b9a894', 70, 3, false); },
     heal: function (x, y) { this._dot(x, y, 6, '#6fe08a', 60, 3, true); },
     crit: function (x, y) { R.addEffect({ type: 'ring', x: x, y: y, range: 26, color: PAL.gold, life: 0.25, maxLife: 0.25 }); },
     // 伤害飘字：暴击放大字号并鎏金，配合 crit 的金圈。数字即结算伤害。

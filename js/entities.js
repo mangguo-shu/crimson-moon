@@ -235,7 +235,9 @@
     this.uid = ++Enemy._uid;  // 唯一编号，被动用它区分「同一目标」（同类型怪 uid 不同）
     this.x = x; this.y = y;
     this.radius = def.radius;
-    this.isBoss = type === 'boss';
+    // Boss 身份读配置标志，不认 type 字符串 —— 现在有 4 个 Boss（见 Game.BOSSES）。
+    // 大血条、宝箱、奖励面板、波次结算都靠这个布尔值，旧怪恒为 false 行为不变。
+    this.isBoss = !!def.boss;
 
     // 波次成长系数
     var w = Math.max(1, wave);
@@ -260,6 +262,13 @@
     this.animTime = Math.random() * 10;
     this.dead = false;
     this.armorPierce = 0; // 破甲比例（后续高波次破甲怪使用）
+
+    // Boss 攻击状态机（只有 boss 系单位会写，普通怪恒为 null）：
+    //   charge    蓄力预警中，原地不动 —— { t, dur, angle }
+    //   dash      已出手冲撞中，沿锁定方向直线撞 —— { t, dur, vx, vy, hit }
+    //   ringPhase / spiralTurn  纯表现用的相位推进
+    this.charge = null; this.dash = null;
+    this.ringPhase = 0; this.spiralTurn = 0;
 
     // 攻击动作（纯表现）
     // { kind: 'lunge' 跳尸前扑 | 'dive' 蝠妖俯冲 | 'cast' 邪修施法 | 'boss' 年兽拍击 }
@@ -340,16 +349,8 @@
         if (fx()) fx().cast(this.x, this.y);
       }
     } else if (behavior === 'boss') {
-      // Boss：缓慢逼近 + 弹幕 + 冲刺
-      if (d > this.radius + player.radius + 40) {
-        this.x += dx / d * this.speed * dt;
-        this.y += dy / d * this.speed * dt;
-      }
-      if (this.attackCd <= 0) {
-        this.attackCd = def.attackCd;
-        this.playAttack('boss');
-        this._bossAttack(player, state, dx, dy, d);
-      }
+      // Boss：按 def.attack 走各自的套路（见 _bossUpdate），4 种互不共享逻辑
+      this._bossUpdate(dt, player, state, dx, dy, d);
     }
 
     // 限制在地图内
@@ -357,19 +358,107 @@
     this.y = util.clamp(this.y, this.radius, CONST.WORLD_H - this.radius);
   };
 
-  // Boss 攻击：扇形弹幕 + 召唤小怪
+  /* ============================================================
+   * Boss 攻击
+   *
+   * 套路由 ENEMIES.<id>.attack 指名（fan / charge / ring / spiral），
+   * 四个各写各的，互不共享数值 —— 手感差异是靠代码结构做出来的，不是靠系数。
+   * 约定：套路函数只负责「起手」，跨帧持续的动作（冲撞、螺旋续发）写在
+   * Enemy 上的 charge / dash / spiralTurn 字段，下一帧由 _bossUpdate 接着跑。
+   * 数值全部来自 def（冻结在 config.js），这里只写结构。
+   * ============================================================ */
+
+  /** Boss 每帧主逻辑：冲撞中 / 蓄力中 / 常态逼近 + 出手，三态互斥。
+   *  冲撞与蓄力时提前 return —— 不索敌、不出手，否则会出现「一边冲撞一边
+   *  扇形弹幕」的叠招。地图边界仍由 update() 末尾统一 clamp，这里不用管。 */
+  Enemy.prototype._bossUpdate = function (dt, player, state, dx, dy, d) {
+    var def = this.def;
+
+    if (this.dash) {
+      var ds = this.dash;
+      ds.t += dt;
+      this.x += ds.vx * dt;
+      this.y += ds.vy * dt;
+      this.facing = Math.atan2(ds.vy, ds.vx);
+      if (fx()) fx().dust(this.x - ds.vx * dt * 0.05, this.y - ds.vy * dt * 0.05, 1);
+      if (!ds.hit && d < this.radius + player.radius + 8) {
+        ds.hit = true;
+        player.takeDamage(this.damage * 1.35, 'boss');
+        if (fx()) {
+          fx().ring(this.x, this.y, this.radius + 34, def.color3 || '#ffd27a');
+          fx().blood(player.x, player.y, 8);
+          fx().shake(11);
+        }
+        if (Game.Audio) Game.Audio.dash();
+        ds.t = ds.dur;                    // 撞上立刻收场，不追着撞
+      }
+      if (ds.t >= ds.dur) this.dash = null;
+      return;
+    }
+
+    if (this.charge) {
+      this.charge.t += dt;
+      this.facing = this.charge.angle;   // 预警期不追玩家：预警光晕就是全部躲法信息
+      if (this.charge.t >= this.charge.dur) {
+        var sp = def.dashSpeed || 600;
+        this.dash = { t: 0, dur: 0.42,
+                      vx: Math.cos(this.charge.angle) * sp,
+                      vy: Math.sin(this.charge.angle) * sp, hit: false };
+        this.charge = null;
+        if (fx()) fx().shake(4);
+      }
+      return;
+    }
+
+    // 常态：缓慢逼近，射程外不出手
+    if (d > this.radius + player.radius + 40) {
+      this.x += dx / d * this.speed * dt;
+      this.y += dy / d * this.speed * dt;
+    }
+    if (this.attackCd <= 0) {
+      this.attackCd = def.attackCd;
+      this.playAttack('boss');
+      this._bossAttack(player, state, dx, dy, d);
+    }
+  };
+
+  /* attack 名 → 方法名后缀。显式查表而不是拼字符串，配错名字在这张表上就能看出来。 */
+  var BOSS_ATK_METHOD = {
+    fan:    '_bossAtkFan',
+    charge: '_bossAtkCharge',
+    ring:   '_bossAtkRing',
+    spiral: '_bossAtkSpiral',
+  };
+
+  /** 按 def.attack 分派。未知套路回落扇形 —— 配错名字不该让 Boss 变成木桩。 */
   Enemy.prototype._bossAttack = function (player, state, dx, dy, d) {
+    var m = BOSS_ATK_METHOD[this.def.attack] || BOSS_ATK_METHOD.fan;
+    Enemy.prototype[m].call(this, player, state, dx, dy, d);
+  };
+
+  /** 造一发 Boss 弹幕：怪的弹一律走符咒型（renderer 按 type==='spell' 画）。 */
+  Enemy.prototype._bossBullet = function (state, angle, spd, opts) {
+    opts = opts || {};
+    state.projectiles.push(new Projectile({
+      x: this.x, y: this.y,
+      vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+      radius: opts.radius || 8,
+      damage: this.damage * (opts.dmgRatio || 0.7),
+      fromPlayer: false,
+      life: opts.life || 4,
+      color: opts.color || '#ff5e6e',
+      type: 'spell',
+    }));
+  };
+
+  /** 1) 扇形弹幕 + 概率召唤 —— 赤月年兽。原有实现，逐行未改（基线手感）。 */
+  Enemy.prototype._bossAtkFan = function (player, state, dx, dy, d) {
     var def = this.def;
     var base = this.facing;
     var n = 7;
     for (var i = 0; i < n; i++) {
-      var a = base + (i - (n - 1) / 2) * (Math.PI / 8);
-      state.projectiles.push(new Projectile({
-        x: this.x, y: this.y,
-        vx: Math.cos(a) * def.projectileSpeed, vy: Math.sin(a) * def.projectileSpeed,
-        radius: 8, damage: this.damage * 0.7, fromPlayer: false,
-        life: 4, color: '#ff5e6e', type: 'spell',
-      }));
+      this._bossBullet(state, base + (i - (n - 1) / 2) * (Math.PI / 8), def.projectileSpeed,
+                       { dmgRatio: 0.7, life: 4, color: '#ff5e6e' });
     }
     if (fx()) fx().bossCast(this.x, this.y);
     if (Game.Audio) Game.Audio.boss();
@@ -380,6 +469,49 @@
         state.enemies.push(new Enemy('bat', p.x, p.y, state.wave));
       }
     }
+  };
+
+  /** 2) 蓄力预警 + 直线冲撞 —— 蛮荒冲兽。
+   *  预警期锁死朝向并原地定住 0.6s，玩家这段时间必须横移；预警光晕就是
+   *  「现在往哪边躲」的全部信息，所以朝向必须在起手时定下来，不能追玩家。
+   *  冲撞伤害 1.35× 本体（高但只打一次），撞上或撞墙立刻收招。 */
+  Enemy.prototype._bossAtkCharge = function (player, state, dx, dy, d) {
+    this.charge = { t: 0, dur: 0.6, angle: this.facing, hit: false };
+    if (fx()) fx().ring(this.x, this.y, this.radius + 28, this.def.color3 || '#ffd27a');
+    if (Game.Audio) Game.Audio.telegraph();
+  };
+
+  /** 3) 360° 环绕弹排 —— 血月咒使。
+   *  16 发均分一圈，每发第二次出手错开半步再叠一层：两圈交错的空隙比
+   *  单圈大，玩家能钻进弹缝里跑，而不是被一整圈墙堵住。 */
+  Enemy.prototype._bossAtkRing = function (player, state, dx, dy, d) {
+    var def = this.def, n = 16;
+    var off = (this.ringPhase % 2) * (Math.PI / n);
+    this.ringPhase += 1;
+    for (var i = 0; i < n; i++) {
+      this._bossBullet(state, i * (Math.PI * 2 / n) + off, def.projectileSpeed,
+                       { dmgRatio: 0.6, life: 3.4, radius: 7,
+                         color: def.color3 || '#c48aff' });
+    }
+    if (fx()) fx().bossCast(this.x, this.y);
+    if (Game.Audio) Game.Audio.boss();
+  };
+
+  /** 4) 连续螺旋弹幕 —— 天罗蛛后。
+   *  每次出手一小簇（4 发），簇的朝向每发推进 0.42rad；cooldown 0.85s，
+   *  连续几发拧成一条扫过的螺旋带。伤害低（0.5×）换密度，靠走位躲。 */
+  Enemy.prototype._bossAtkSpiral = function (player, state, dx, dy, d) {
+    var def = this.def;
+    var base = this.facing + this.spiralTurn * 0.42;
+    this.spiralTurn += 1;
+    var n = 4;
+    for (var i = 0; i < n; i++) {
+      var a = base + (i - (n - 1) / 2) * 0.13;
+      this._bossBullet(state, a, def.projectileSpeed,
+                       { dmgRatio: 0.5, life: 3, radius: 6,
+                         color: def.color3 || '#6fe3c1' });
+    }
+    if (Game.Audio) Game.Audio.zap();
   };
 
   /** 承受伤害，返回是否死亡。

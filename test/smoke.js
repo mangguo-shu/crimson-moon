@@ -2002,18 +2002,18 @@ try {
   assert(p70.stats.hp === p70.stats.maxHp,
          '满血吃回血箱不溢出（仍 ' + p70.stats.hp.toFixed(0) + '）');
 
-  // 治疗强度会放大回血箱（herbal +12% → 12 点变 13.44）
+  // 治疗强度会放大回血箱（herbal +8% → 12 点变 12.96）
   var st71 = Game.Systems.createState('campaign', 'swordsman', 103);
   Game.state = st71;
   var p71 = st71.player;
   p71.applyItem('herbal', 1);
-  assert(Math.abs(p71.stats.healingPower - 1.12) < 1e-9,
-         '回春药草把治疗强度加到 1.12（' + p71.stats.healingPower + '）');
+  assert(Math.abs(p71.stats.healingPower - 1.08) < 1e-9,
+         '回春药草把治疗强度加到 1.08（' + p71.stats.healingPower + '）');
   p71.stats.hp = 40;
   var hp71 = p71.stats.hp;
   new Game.Pickup('heal', D61.chestHealPct, p71.x, p71.y).update(0.016, p71);
   var got71 = p71.stats.hp - hp71;
-  assert(Math.abs(got71 - D61.chestHealPct * p71.stats.maxHp * 1.12) < 0.01,
+  assert(Math.abs(got71 - D61.chestHealPct * p71.stats.maxHp * 1.08) < 0.01,
          '回春药草放大回血箱（实回 ' + got71.toFixed(2) + '）');
 
   // —— 吸铁石：一把把场上全部经验/材料吸回来 ——
@@ -2397,14 +2397,14 @@ try {
   assert(short94 === 0, 'Boss 奖励池抽干时仍凑满 3 张（200 轮 × 10 次，缺张 ' + short94 + ' 次）');
 
   // ---- 7. 回血道具改成按最大生命百分比 ----
-  assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.15, '回血卡权重系数集中在 CONST');
+  assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.08, '回血卡权重系数集中在 CONST');
   var healIds95 = [];
   for (var i95 in Game.ITEMS) if (Game.ITEMS[i95].healing) healIds95.push(i95);
   assert(healIds95.length === 4, '4 件回血道具被标记（' + healIds95.length + '）');
-  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.005 &&
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.003 &&
          typeof Game.ITEMS.lifeluck.stat.lifeOnHit === 'undefined',
          '生机之种改成按最大生命百分比');
-  assert(Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.008 &&
+  assert(Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.005 &&
          typeof Game.ITEMS.deathbell.stat.lifeOnKill === 'undefined',
          '夺命金铃改成按最大生命百分比');
   assert(/最大生命/.test(Game.ITEMS.lifeluck.desc) && /最大生命/.test(Game.ITEMS.deathbell.desc),
@@ -2412,15 +2412,15 @@ try {
 
   var p96 = new Game.Player('swordsman');
   p96.applyItem('lifeluck', 1);
-  assert(Math.abs(p96.healForHit() - p96.stats.maxHp * 0.005) < 1e-9,
-         '命中回血 = 最大生命 × 0.5%');
+  assert(Math.abs(p96.healForHit() - p96.stats.maxHp * 0.003) < 1e-9,
+         '命中回血 = 最大生命 × 0.3%');
   var p97 = new Game.Player('swordsman');
   p97.applyItem('deathbell', 1);
-  assert(Math.abs(p97.healForKill() - p97.stats.maxHp * 0.008) < 1e-9,
-         '击杀回血 = 最大生命 × 0.8%');
+  assert(Math.abs(p97.healForKill() - p97.stats.maxHp * 0.005) < 1e-9,
+         '击杀回血 = 最大生命 × 0.5%');
   var hp97 = p97.stats.maxHp;
   p97.applyUpgrade({ maxHp: 40 });
-  assert(Math.abs(p97.healForKill() - (hp97 + 40) * 0.008) < 1e-9,
+  assert(Math.abs(p97.healForKill() - (hp97 + 40) * 0.005) < 1e-9,
          '最大生命涨了回血量跟着涨（固定点数做不到）');
   // 老存档里残留的固定点数仍生效 —— 改表不该让玩家白买
   var p98 = new Game.Player('swordsman');
@@ -2441,8 +2441,8 @@ try {
   wp99.update(0.016, s99.player, s99);
   assert(calls99.length === 2,
          '一次近战命中触发命中回血 + 击杀回血（' + calls99.length + ' 次）');
-  assert(Math.abs(calls99[0] - s99.player.stats.maxHp * 0.005) < 1e-9 &&
-         Math.abs(calls99[1] - s99.player.stats.maxHp * 0.008) < 1e-9,
+  assert(Math.abs(calls99[0] - s99.player.stats.maxHp * 0.003) < 1e-9 &&
+         Math.abs(calls99[1] - s99.player.stats.maxHp * 0.005) < 1e-9,
          '近战路径按最大生命百分比回血（' + calls99[0].toFixed(2) + ' / ' + calls99[1].toFixed(2) + '）');
 
   var s100 = Game.Systems.createState('campaign', 'swordsman', 305000);
@@ -2459,8 +2459,8 @@ try {
   s100.player.heal = function (v) { calls100.push(v); return 0; };
   Game.Systems.updateProjectiles(s100, 0.016);
   assert(calls100.length === 2 &&
-         Math.abs(calls100[0] - s100.player.stats.maxHp * 0.005) < 1e-9 &&
-         Math.abs(calls100[1] - s100.player.stats.maxHp * 0.008) < 1e-9,
+         Math.abs(calls100[0] - s100.player.stats.maxHp * 0.003) < 1e-9 &&
+         Math.abs(calls100[1] - s100.player.stats.maxHp * 0.005) < 1e-9,
          '远程弹道路径同样按最大生命百分比回血');
 
   // ---- 9. 面板上显示成百分比 ----
@@ -2468,8 +2468,8 @@ try {
   s101.player.applyItem('lifeluck', 1);
   s101.player.applyItem('deathbell', 1);
   var html101 = Game.UI.renderStatsHTML(s101);
-  assert(html101.indexOf('0.5% 最大生命') >= 0, '面板显示命中回血百分比');
-  assert(html101.indexOf('0.8% 最大生命') >= 0, '面板显示击杀回血百分比');
+  assert(html101.indexOf('0.3% 最大生命') >= 0, '面板显示命中回血百分比');
+  assert(html101.indexOf('0.5% 最大生命') >= 0, '面板显示击杀回血百分比');
   assert(!/回血<\/span><span class="v">[^<]*\/ 次<\/span>/.test(html101),
          '百分比生效时不再显示固定的「/ 次」');
 
@@ -3862,19 +3862,19 @@ try {
   // ---- 5. 回血削峰到「零点几」----
   assert(D.chestHeal === undefined && typeof D.chestHealPct === 'number',
          '回血箱从固定点数改成比例（chestHealPct = ' + D.chestHealPct + '）');
-  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.005 &&
-         Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.008,
-         '命中/击杀回血压到 0.5% / 0.8%');
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.003 &&
+         Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.005,
+         '命中/击杀回血压到 0.3% / 0.5%');
   assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct < 0.01 &&
          Game.ITEMS.deathbell.stat.lifeOnKillPct < 0.01,
          '两件都在「零点几」—— 单次事件不超过 1% 最大生命');
-  assert(Game.ITEMS.vampiric.stat.lifesteal === 0.015 &&
-         Game.ITEMS.herbal.stat.healingPower === 0.12, '吸血 / 治疗强度同步下调');
+  assert(Game.ITEMS.vampiric.stat.lifesteal === 0.01 &&
+         Game.ITEMS.herbal.stat.healingPower === 0.08, '吸血 / 治疗强度同步下调');
   // 文案是写死的，只改数值等于骗人 —— 两边必须一起动
-  assert(/0\.5%/.test(Game.ITEMS.lifeluck.desc), '生机之种文案跟着改（' + Game.ITEMS.lifeluck.desc + '）');
-  assert(/0\.8%/.test(Game.ITEMS.deathbell.desc), '夺命金铃文案跟着改（' + Game.ITEMS.deathbell.desc + '）');
-  assert(/1\.5%/.test(Game.ITEMS.vampiric.desc), '噬魂之牙文案跟着改（' + Game.ITEMS.vampiric.desc + '）');
-  assert(/\+12%/.test(Game.ITEMS.herbal.desc), '回春药草文案跟着改（' + Game.ITEMS.herbal.desc + '）');
+  assert(/0\.3%/.test(Game.ITEMS.lifeluck.desc), '生机之种文案跟着改（' + Game.ITEMS.lifeluck.desc + '）');
+  assert(/0\.5%/.test(Game.ITEMS.deathbell.desc), '夺命金铃文案跟着改（' + Game.ITEMS.deathbell.desc + '）');
+  assert(/1%/.test(Game.ITEMS.vampiric.desc), '噬魂之牙文案跟着改（' + Game.ITEMS.vampiric.desc + '）');
+  assert(/\+8%/.test(Game.ITEMS.herbal.desc), '回春药草文案跟着改（' + Game.ITEMS.herbal.desc + '）');
   // 回血箱真按比例回，低血角色不再一回满大半条命
   var t7 = S.createState('campaign', 'swordsman', 4101);
   Game.state = t7;
@@ -3952,6 +3952,366 @@ try {
          '箭与子弹的调色板不同（' + setA2 + ' vs ' + setB2 + '）');
 } catch (e) {
   assert(false, '第二轮真机反馈异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉚ 弹体去黄光 + 4 只 Boss + 回血卡再削（2026-09-26）
+ * ① 子弹不再带武器色：早先光晕/拖尾/火苗全是 #ffd76e，屏幕上就是一串发光的圆点
+ * ② 4 个 Boss 模型，4 种攻击套路（扇形弹幕 / 蓄力冲撞 / 环绕弹排 / 螺旋弹幕）
+ * ③ 回血卡数值再砍一刀，池子里出现概率再降
+ * ============================================================ */
+console.log('\n== ㉚ 弹体去黄光 + 4 Boss ==');
+try {
+  var S3 = Game.Systems, R3 = Game.Renderer;
+  var entSrc3 = fs.readFileSync(path.join(JS_DIR, 'entities.js'), 'utf8');
+  var renSrc3 = fs.readFileSync(path.join(JS_DIR, 'renderer.js'), 'utf8');
+  var uiSrc3 = fs.readFileSync(path.join(JS_DIR, 'ui.js'), 'utf8');
+
+  function rec3() {
+    var fills = [];
+    return { fills: fills, ctx: new Proxy({}, {
+      get: function (t, k) {
+        if (k === 'beginPath') return function () { t.path = {}; return t.path; };
+        if (k === 'fill') return function () { fills.push(t.fillStyle); t.path = {}; };
+        if (k === 'fillRect') return function () { fills.push(t.fillStyle); };
+        if (k === 'moveTo' || k === 'lineTo' || k === 'rect' || k === 'arc' || k === 'ellipse')
+          return function () { return t.path = t.path || {}; };
+        if (typeof t[k] !== 'undefined') return t[k];
+        return function () {};
+      },
+      set: function (t, k, v) { t[k] = v; return true; }
+    }) };
+  }
+
+  // ---- 1. 子弹彻底不带武器色 ----
+  // 故意把武器的金色当 color 传进去，看它有没有漏进任何一笔
+  var GOLD3 = ['#ffd76e', '#ffcf5e', '#ffd27a', '#ff5e6e', '#ffe08a', '#fff6d8'];
+  R3.init(makeElement('canvas'));
+  var rb3 = rec3();
+  R3._drawBulletBody.call(R3, rb3.ctx, { radius: 6, color: '#ffd76e' });
+  var gold3 = rb3.fills.filter(function (c) { return GOLD3.indexOf(c) >= 0; });
+  assert(gold3.length === 0, '子弹里没有任何武器色/暖黄笔触（' + rb3.fills.join(',') + '）');
+  var body3 = renSrc3.split('R._drawBulletBody = function')[1].split('\n  R._')[0];
+  assert(!/p\.color/.test(body3), '子弹绘制函数里不再引用 p.color');
+  assert(rb3.fills.indexOf('#8f979f') >= 0, '子弹仍是铅灰弹体（金属感保留）');
+  var ra3 = rec3();
+  R3._drawArrowBody.call(R3, ra3.ctx, { radius: 6, color: '#4fbfa0' });
+  var set3a = Array.from(new Set(ra3.fills)).sort().join(','), set3b = Array.from(new Set(rb3.fills)).sort().join(',');
+  assert(set3a !== set3b, '去掉颜色后箭与子弹仍能靠弹形区分（' + set3b + ' vs ' + set3a + '）');
+  // 弩箭保留武器色（用户只投诉子弹），别一刀切把箭也砍了
+  assert(ra3.fills.indexOf('#4fbfa0') >= 0, '弩箭箭羽仍是武器色');
+
+  // ---- 2. Boss 身份改读配置标志 ----
+  var BOSS_IDS3 = Game.BOSSES;
+  assert(BOSS_IDS3.length === 4, '有 4 只 Boss（' + BOSS_IDS3.join(',') + '）');
+  var missingDef3 = BOSS_IDS3.filter(function (t) { return !Game.ENEMIES[t]; });
+  assert(missingDef3.length === 0, '4 只都在 ENEMIES 表里');
+  var notBoss3 = BOSS_IDS3.filter(function (t) { return !new Game.Enemy(t, 400, 300, 10).isBoss; });
+  assert(notBoss3.length === 0, '4 只 isBoss 全为 true（缺：' + notBoss3.join(',') + '）');
+  assert(!new Game.Enemy('golem', 400, 300, 30).isBoss &&
+         !new Game.Enemy('zombie', 400, 300, 1).isBoss,
+         '普通怪 / 坦克不被误认成 Boss');
+  var noFlag3 = Object.keys(Game.ENEMIES).filter(function (t) {
+    return Game.ENEMIES[t].boss === true && BOSS_IDS3.indexOf(t) < 0;
+  });
+  assert(noFlag3.length === 0, '除这 4 只外没有其他怪带 boss 标志（误配：' + noFlag3.join(',') + '）');
+  var noList3 = Object.keys(Game.ENEMIES).filter(function (t) {
+    return Game.ENEMIES[t].boss === true && BOSS_IDS3.indexOf(t) >= 0;
+  });
+  assert(noList3.length === 4, '带 boss 标志的 4 只都在出场轮换表里（' + noList3.length + '）');
+  assert(!/type === 'boss'/.test(entSrc3), '实体里不再用 type 字符串判断 Boss');
+
+  // ---- 3. 每只 Boss 一种攻击，签名互不相同 ----
+  var atk3 = BOSS_IDS3.map(function (t) { return Game.ENEMIES[t].attack; });
+  assert(new Set(atk3).size === 4, '4 种套路互不相同（' + atk3.join(',') + '）');
+  var METHODS3 = ['_bossAtkFan', '_bossAtkCharge', '_bossAtkRing', '_bossAtkSpiral'];
+  var noMethod3 = METHODS3.filter(function (m) { return typeof Game.Enemy.prototype[m] !== 'function'; });
+  assert(noMethod3.length === 0, '4 个套路都有实现（缺：' + noMethod3.join(',') + '）');
+
+  function signature3(bossType) {
+    var t = S3.createState('campaign', 'swordsman', 6300 + bossType.length);
+    var e = new Game.Enemy(bossType, 300, 300, 10, { bossTier: 1 });
+    t.enemies.push(e);
+    t.projectiles.length = 0;
+    Game.state = t;
+    e.x = 300; e.y = 300; e.facing = 0; e.attackCd = 0;
+    e.update(0.016, t.player, t);
+    Game.state = null;
+    var angs = t.projectiles.map(function (q) {
+      return (Math.atan2(q.vy, q.vx) + Math.PI * 2) % (Math.PI * 2);
+    }).sort(function (a, b) { return a - b; });
+    return {
+      n: angs.length,
+      col: t.projectiles.length ? t.projectiles[0].color : '-',
+      angs: angs.map(function (a) { return a.toFixed(3); }).join(' '),
+      key: angs.length + '|' + (t.projectiles.length ? t.projectiles[0].color : '-') + '|' +
+           angs.map(function (a) { return a.toFixed(2); }).join(','),
+      charge: !!e.charge, dash: !!e.dash,
+      dmg: t.projectiles.length ? +(t.projectiles[0].damage).toFixed(2) : 0,
+    };
+  }
+  var sigs3 = BOSS_IDS3.map(signature3);
+  sigs3.forEach(function (s, i) {
+    console.log('      ' + BOSS_IDS3[i].padEnd(12) + ' n=' + s.n + ' dmg=' + s.dmg +
+                ' charge=' + s.charge + ' dash=' + s.dash + '  ' + s.angs);
+  });
+  assert(new Set(sigs3.map(function (s) { return s.key; })).size === 4,
+         '4 只的弹幕签名互不相同');
+  assert(sigs3[0].n === 7, '年兽扇形 7 发（' + sigs3[0].n + '）');
+  assert(sigs3[2].n === 16, '咒使环绕 16 发（' + sigs3[2].n + '）');
+  assert(sigs3[3].n === 4, '蛛后每簇 4 发（' + sigs3[3].n + '）');
+  assert(sigs3[1].n === 0 && sigs3[1].charge === true,
+         '冲兽不出弹，起手进蓄力（n=' + sigs3[1].n + ' charge=' + sigs3[1].charge + '）');
+  // 环绕是 360° 均分：相邻夹角 2π/16
+  var gap3 = (sigs3[2].angs.split(' ').map(Number)[1]) - (sigs3[2].angs.split(' ').map(Number)[0]);
+  assert(Math.abs(gap3 - (Math.PI * 2 / 16)) < 0.005,
+         '环绕弹相邻夹角 22.5°（实测 ' + (gap3 * 180 / Math.PI).toFixed(1) + '°）');
+  // 四种套路的弹幕颜色各不相同（各自身上的色号）
+  var cols3 = sigs3.filter(function (s) { return s.n > 0; }).map(function (s) { return s.col; });
+  assert(new Set(cols3).size === 3, '有弹的三只颜色各不相同（' + cols3.join(',') + '）');
+
+  // ---- 4. 环绕弹错相：连续两轮要错开半步 ----
+  var ringGaps3 = [];
+  {
+    var t3 = S3.createState('campaign', 'swordsman', 6401);
+    var e3 = new Game.Enemy('boss_mage', 300, 300, 10, { bossTier: 1 });
+    t3.enemies.push(e3);
+    var rounds3 = [];
+    for (var q3 = 0; q3 < 2; q3++) {
+      t3.projectiles.length = 0;
+      e3.x = 300; e3.y = 300; e3.attackCd = 0;
+      e3.update(0.016, t3.player, t3);
+      rounds3.push(t3.projectiles.map(function (b) {
+        return (Math.atan2(b.vy, b.vx) + Math.PI * 2) % (Math.PI * 2);
+      }).sort(function (a, b) { return a - b; }));
+    }
+    ringGaps3 = rounds3[0].map(function (a, i) { return a - rounds3[1][i]; });
+  }
+  var off3 = Math.abs(ringGaps3[0]);
+  assert(Math.abs(off3 - Math.PI / 16) < 0.005,
+         '第二轮环绕错开半步 11.25°（实测 ' + (off3 * 180 / Math.PI).toFixed(1) + '°）');
+  var worst3 = 0;
+  ringGaps3.forEach(function (g) { worst3 = Math.max(worst3, Math.abs(Math.abs(g) - off3)); });
+  assert(worst3 < 1e-6, '错相在整圈上一致（最大偏差 ' + worst3.toFixed(9) + '）');
+
+  // ---- 5. 螺旋：簇的朝向逐次推进 ----
+  {
+    var t4 = S3.createState('campaign', 'swordsman', 6402);
+    var e4 = new Game.Enemy('boss_spider', 300, 300, 10, { bossTier: 1 });
+    t4.enemies.push(e4);
+    var mids3 = [];
+    for (var r3 = 0; r3 < 3; r3++) {
+      t4.projectiles.length = 0;
+      e4.x = 300; e4.y = 300; e4.facing = 0; e4.attackCd = 0;
+      e4.update(0.016, t4.player, t4);
+      var a4 = t4.projectiles.map(function (b) {
+        return (Math.atan2(b.vy, b.vx) + Math.PI * 2) % (Math.PI * 2);
+      }).sort(function (x, y) { return x - y; });
+      mids3.push((a4[1] + a4[2]) / 2);
+    }
+    var step3 = Math.abs(mids3[1] - mids3[0]);
+    assert(Math.abs(mids3[2] - mids3[1] - step3) < 1e-6, '螺旋每发推进量恒定（' + step3.toFixed(3) + '）');
+    assert(step3 > 0.3 && step3 < 0.6, '推进量足以拧成螺旋（实测 ' + step3.toFixed(3) + 'rad）');
+  }
+
+  // ---- 6. 冲撞：预警锁方向、冲上去能撞到人、预警后横移就躲得掉 ----
+  function dashRun3(dodge) {
+    var t5 = S3.createState('campaign', 'swordsman', 6403);
+    var p5 = t5.player;
+    var e5 = new Game.Enemy('boss_brute', 250, 300, 10, { bossTier: 1 });
+    t5.enemies.push(e5);
+    p5.x = 400; p5.y = 300;
+    p5.stats.hp = 1e6; p5.stats.shield = 0;
+    Game.state = t5;
+    e5.attackCd = 0;
+    var real3 = p5.takeDamage.bind(p5);
+    var hits3 = [], dodges3 = 0, frame3 = 0;
+    p5.takeDamage = function (raw, cause) {
+      var r = real3(raw, cause);
+      if (cause === 'boss') hits3.push({ frame: frame3, raw: raw });
+      return r;
+    };
+    for (; frame3 < 600; frame3++) {
+      e5.update(0.016, p5, t5);
+      if (dodge && e5.charge && e5.charge.t > 0.12 && !e5._did3) {
+        e5._did3 = true;
+        p5.y = 300 + (dodges3 % 2 ? 120 : -120);
+        dodges3++;
+      }
+      if (!e5.charge && !e5.dash) e5._did3 = false;
+    }
+    Game.state = null;
+    return { hits: hits3.length, dodges: dodges3 };
+  }
+  var stay3 = dashRun3(false), dodge3 = dashRun3(true);
+  assert(stay3.hits >= 3, '站桩会被反复撞（' + stay3.hits + ' 次 / 600 帧）');
+  assert(stay3.hits > dodge3.hits,
+         '预警后横移能躲掉大部分冲撞（站桩 ' + stay3.hits + ' 次 vs 横移 ' + dodge3.hits + ' 次）');
+  assert(stay3.hits <= 6, '冲撞不是无解连击（' + stay3.hits + ' 次 / 600 帧）');
+
+  // 预警期朝向必须锁死 —— 预警光晕就是玩家全部的躲法信息
+  {
+    var t6 = S3.createState('campaign', 'swordsman', 6404);
+    var e6 = new Game.Enemy('boss_brute', 200, 300, 10, { bossTier: 1 });
+    t6.enemies.push(e6);
+    t6.player.x = 200; t6.player.y = 100;      // 玩家在 Boss 正上方
+    Game.state = t6;
+    e6.attackCd = 0;
+    e6.update(0.016, t6.player, t6);           // 起手：朝向应为 π/2（朝上）
+    var locked3 = e6.charge ? e6.charge.angle : NaN;
+    var drift3 = 0, f6 = 0;
+    for (; f6 < 30 && e6.charge; f6++) {
+      t6.player.y = 500;                        // 预警中途把玩家挪到正下方
+      e6.update(0.016, t6.player, t6);
+      if (e6.charge) drift3 = Math.abs(e6.charge.angle - locked3);
+    }
+    Game.state = null;
+    assert(isFinite(locked3) && Math.abs(drift3) < 1e-9,
+           '预警期间朝向不追玩家（漂移 ' + drift3 + '）');
+  }
+
+  // ---- 7. 四个模型都能画，且彼此看得出来 ----
+  {
+    R3.init(makeElement('canvas'));
+    var draws3 = { boss: R3._drawBoss, boss_brute: R3._drawBossBrute,
+                   boss_mage: R3._drawBossMage, boss_spider: R3._drawBossSpider };
+    var palettes3 = {}, strokes3 = {};
+    BOSS_IDS3.forEach(function (t) {
+      var e7 = new Game.Enemy(t, 400, 300, 10, { bossTier: 1 });
+      var rc7 = rec3();
+      draws3[t].call(R3, rc7.ctx, e7, false);
+      palettes3[t] = Array.from(new Set(rc7.fills)).sort().join(',');
+      strokes3[t] = rc7.fills.length;
+    });
+    BOSS_IDS3.forEach(function (t) {
+      console.log('      ' + t.padEnd(12) + strokes3[t] + ' 笔  ' + palettes3[t]);
+    });
+    assert(new Set(Object.keys(palettes3).map(function (k) { return palettes3[k]; })).size === 4,
+           '4 个 Boss 模型调色板互不相同');
+    assert(BOSS_IDS3.every(function (t) { return strokes3[t] >= 8; }),
+           '每个模型都真的画了东西（' +
+           BOSS_IDS3.map(function (t) { return t.slice(5) + '=' + strokes3[t]; }).join(' ') + '）');
+    var sw3 = renSrc3.split('switch (e.type)')[1].split('}')[0];
+    assert(BOSS_IDS3.every(function (t) { return sw3.indexOf("'" + t + "'") >= 0; }),
+           '渲染分派表覆盖了 4 种 type');
+  }
+
+  // ---- 8. 波次轮换：第 10/20/30/40 波各刷一只，读档不丢 ----
+  assert(typeof S3.pickBossType === 'function', '有 pickBossType 轮换函数');
+  assert([1, 2, 3, 4].map(function (t) { return S3.pickBossType(t); }).join(',') ===
+         ['boss', 'boss_brute', 'boss_mage', 'boss_spider'].join(','),
+         '层数 1..4 依次对应 4 只');
+  assert(S3.pickBossType(5) === 'boss' && S3.pickBossType(6) === 'boss_brute',
+         '第 5 层起循环（5→' + S3.pickBossType(5) + '，6→' + S3.pickBossType(6) + '）');
+  // 不消耗随机数：同一波次刷谁与种子无关
+  {
+    var sA = S3.buildSpawnSchedule({ seed: 111, wave: 20 }, 20).filter(function (e) { return e.boss; });
+    var sB = S3.buildSpawnSchedule({ seed: 999, wave: 20 }, 20).filter(function (e) { return e.boss; });
+    assert(sA.length === 1 && sA[0].type === sB[0].type && sA[0].type === 'boss_brute',
+           '第 20 波两种子都刷蛮荒冲兽（' + sA[0].type + '）');
+  }
+  var waveBoss3 = {};
+  [10, 20, 30, 40].forEach(function (w) {
+    var t8 = S3.createState('campaign', 'swordsman', 6500 + w);
+    t8.screen = 'PLAYING';
+    S3.startWave(t8, w);
+    t8.player.stats.hp = 1e6;
+    var guard3 = 0;
+    while (guard3++ < 3000 && S3.updateWave(t8, 0.5) !== 'ended') {
+      t8.enemies.forEach(function (en) { en.hp = 0; en.die(t8); });
+      t8.enemies = t8.enemies.filter(function (x) { return !x.dead; });
+    }
+    waveBoss3[w] = t8.spawnSchedule.filter(function (e) { return e.boss; }).map(function (e) { return e.type; })[0];
+  });
+  assert(Object.keys(waveBoss3).map(function (w) { return waveBoss3[w]; }).join(',') ===
+         ['boss', 'boss_brute', 'boss_mage', 'boss_spider'].join(','),
+         '10/20/30/40 波依次刷 4 只（' + Object.keys(waveBoss3).map(function (w) { return waveBoss3[w]; }).join(',') + '）');
+
+  // Boss 阵亡照常给奖励与宝箱，四种都走同一条路
+  [1, 2, 3, 4].forEach(function (tier) {
+    var t9 = S3.createState('campaign', 'swordsman', 6600 + tier);
+    var bt = Game.BOSSES[tier - 1];
+    new Game.Enemy(bt, 500, 500, tier * 10).die(t9);
+    assert(t9.bossRewardPending === true, bt + ' 阵亡挂起奖励');
+    assert(t9.pickups.length >= 2, bt + ' 阵亡掉落 ' + t9.pickups.length + ' 件（至少回血 + 吸铁石）');
+  });
+
+  // 存档回环：新 Boss 类型读档后仍是 Boss（旧存档 type='boss' 也还能读）
+  {
+    var t10 = S3.createState('campaign', 'swordsman', 6610);
+    t10.screen = 'PLAYING';
+    S3.startWave(t10, 20);
+    t10.spawnIndex = t10.spawnSchedule.length;
+    t10.waveTime = 5;
+    var orig3 = new Game.Enemy('boss_mage', 400, 200, 20, { bossTier: 2 });
+    t10.enemies.push(orig3);
+    var back3 = S3.deserialize(S3.serialize(t10)).enemies[0];
+    assert(back3.type === 'boss_mage' && back3.isBoss === true,
+           '存档回环保留 Boss 类型与身份（' + back3.type + '/' + back3.isBoss + '）');
+    assert(Math.abs(back3.maxHp - orig3.maxHp) < 1e-9,
+           '存档回环保留 bossTier 血量放大（' + back3.maxHp + ' vs ' + orig3.maxHp + '）');
+  }
+
+  // ---- 9. 横幅点名 + 冲撞专用音效 ----
+  assert(/bossName/.test(uiSrc3), '波次横幅支持 Boss 名字');
+  {
+    var el3 = makeElement('div');
+    var prev3 = global.document.getElementById;
+    global.document.getElementById = function () { return el3; };
+    Game.UI.showWaveBanner(20, true, '蛮荒冲兽');
+    var named3 = { text: el3.textContent, size: el3.style.fontSize };
+    Game.UI.showWaveBanner(5, false, '');
+    var plain3 = el3.textContent;
+    global.document.getElementById = prev3;
+    assert(named3.text.indexOf('蛮荒冲兽') >= 0, '点名横幅显示名字（' + named3.text + '）');
+    assert(named3.size === '44px', '点名时字号收一档，四字名字别顶出屏（' + named3.size + '）');
+    assert(plain3 === '第 5 波' && el3.style.fontSize === '52px',
+           '非 Boss 波仍显示波次（' + plain3 + ' / ' + el3.style.fontSize + '）');
+  }
+  assert(typeof Game.Audio.dash === 'function' && typeof Game.Audio.telegraph === 'function' &&
+         typeof Game.Audio.zap === 'function',
+         '冲撞有专属预警音/撞击音，高频螺旋有轻量点音');
+  var spiralSrc3 = entSrc3.split('_bossAtkSpiral = function')[1].split('\n  };')[0];
+  assert(!/Audio\.boss\(\)/.test(spiralSrc3) && /Audio\.zap\(\)/.test(spiralSrc3),
+         '蛛后 0.85s 出手一次，不能复用低频 boss() 音效');
+  assert(typeof Game.FX.dust === 'function', '冲撞扬尘特效存在');
+  assert(/FX\.dust|fx\(\)\.dust/.test(entSrc3), '冲撞路径调用扬尘');
+  assert(/'boss'/.test(entSrc3), '冲撞走 takeDamage 的 boss 伤害来源');
+
+  // ---- 10. 回血卡再削一刀 + 概率再降 ----
+  assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.08, '回血卡权重 0.15 → 0.08（' + Game.CONST.HEAL_ITEM_WEIGHT + '）');
+  assert(Game.ITEMS.herbal.stat.healingPower === 0.08 &&
+         Game.ITEMS.vampiric.stat.lifesteal === 0.01 &&
+         Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.003 &&
+         Game.ITEMS.deathbell.stat.lifeOnKillPct === 0.005,
+         '四件回血卡数值同步下调（' +
+         Game.ITEMS.herbal.stat.healingPower + '/' + Game.ITEMS.vampiric.stat.lifesteal + '/' +
+         Game.ITEMS.lifeluck.stat.lifeOnHitPct + '/' + Game.ITEMS.deathbell.stat.lifeOnKillPct + '）');
+  assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct < 0.005 &&
+         Game.ITEMS.deathbell.stat.lifeOnKillPct < 0.008,
+         '命中/击杀回血都压到 0.5% 以下');
+  // 文案是写死的，数值降了文案不跟着降就是骗人
+  assert(/\+8%/.test(Game.ITEMS.herbal.desc), '回春药草文案改成 +8%（' + Game.ITEMS.herbal.desc + '）');
+  assert(/1%/.test(Game.ITEMS.vampiric.desc), '噬魂之牙文案改成 1%（' + Game.ITEMS.vampiric.desc + '）');
+  assert(/0\.3%/.test(Game.ITEMS.lifeluck.desc), '生机之种文案改成 0.3%（' + Game.ITEMS.lifeluck.desc + '）');
+  assert(/0\.5%/.test(Game.ITEMS.deathbell.desc), '夺命金铃文案改成 0.5%（' + Game.ITEMS.deathbell.desc + '）');
+
+  // 真在池子里量一次：回血卡占比应该明显掉下去
+  {
+    var total3 = 0, heals3 = 0;
+    for (var i3 = 0; i3 < 2000; i3++) {
+      var t11 = S3.createState('campaign', 'swordsman', 6700 + i3);
+      S3.rollLevelUpChoices(t11).forEach(function (c) {
+        total3++;
+        if (c.kind === 'item' && Game.ITEMS[c.data.itemId].healing) heals3++;
+      });
+    }
+    var share3 = heals3 / total3;
+    assert(share3 < 0.04, '回血卡在升级三选一的占比 ' + (share3 * 100).toFixed(1) +
+           '%（' + heals3 + '/' + total3 + '，降权前约 6%）');
+  }
+} catch (e) {
+  assert(false, '第三轮反馈异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

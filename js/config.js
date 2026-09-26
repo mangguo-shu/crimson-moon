@@ -16,7 +16,7 @@
     // 跑的其实是 9/21 的 assets（`npx cap sync android` 从没跑过），7 条修复一条都没
     // 上去，看起来像「一个都没修好」。有这个号以后不用猜包里到底是什么版本。
     // 每次改完 www/ 要同步进 android 工程：npm run build:web && npm run sync:android
-    BUILD: 'v260926.5',
+    BUILD: 'v260926.6',
     LOGICAL_W: 1280,      // 参考逻辑宽
     LOGICAL_H: 720,       // 固定逻辑高（横屏基准），实际可见宽度随屏幕比例扩展
     WORLD_W: 2400,        // 地图世界宽（大于屏幕，相机跟随）
@@ -50,7 +50,9 @@
     PARTICLE_MID: 500,
     PARTICLE_HIGH: 800,
     LOW_HP_RATIO: 0.3,    // 濒死阈值 30%
-    HEAL_ITEM_WEIGHT: 0.15, // 回血道具在商店/升级池里的相对权重（续航流角色不降权）
+    HEAL_ITEM_WEIGHT: 0.08, // 回血道具在商店/升级池里的相对权重（续航流角色不降权）。
+                            // 0.28 → 0.15 → 0.08：两轮真机反馈「回血太容易」，
+                            // 0.08 时同波出现 4 张卡的概率约 1/5（4 张都是回血约 1/6000）。
   };
 
   /* ---------------- 国风调色板 ---------------- */
@@ -566,12 +568,47 @@
       color: '#4a3a7a', color2: '#e8dfc0', color3: '#8a6a3a',
       projectileSpeed: 240,
     },
+    /* ---------------- Boss（4 个模型 / 4 种攻击套路） ----------------
+     * boss: true 是 Enemy 认 Boss 身份的唯一依据 —— 大血条、宝箱、奖励面板、
+     * 「Boss 阵亡即收波」全都读这个标志，别再写 type === 'boss' 判断。
+     * attack 指名套路，见 entities.js 的 Enemy.prototype._bossAttack：
+     *   fan    扇形弹幕 + 召唤小怪   （赤月年兽）
+     *   charge 蓄力预警 + 直线冲撞   （蛮荒冲兽）
+     *   ring   360° 环绕弹排         （血月咒使）
+     *   spiral 连续螺旋弹幕          （天罗蛛后）
+     * 出场轮换见 Game.BOSSES，按 bossTier 取模 —— 每 10 波换一只，四个循环。
+     *
+     * 血量刻意压在 540~700 一条窄带里：赤月年兽 600 是真机校准过的基准，
+     * 拿它当标尺。冲撞兽厚一点（血厚 + 一次 1.35× 重击），咒使脆一点
+     * （靠 16 发环绕压场），蛛后居中（出手快但单发只有 0.5×）。
+     * 别把谁堆到 900+ —— 波次成长已经 ×4 以上，再叠就是打不动。 */
     boss: {
-      id: 'boss', name: '赤月年兽', behavior: 'boss',
+      id: 'boss', name: '赤月年兽', behavior: 'boss', boss: true, attack: 'fan',
       hp: 600, speed: 55, damage: 16, radius: 42,
       xp: 30, material: 40, attackCd: 1.4,
       color: '#c8382f', color2: '#5a1018', color3: '#ffcf5e',
       projectileSpeed: 200,
+    },
+    boss_brute: {
+      id: 'boss_brute', name: '蛮荒冲兽', behavior: 'boss', boss: true, attack: 'charge',
+      hp: 700, speed: 46, damage: 22, radius: 44,
+      xp: 34, material: 44, attackCd: 2.1,
+      color: '#a8623c', color2: '#4a2418', color3: '#ffd27a',
+      dashSpeed: 620,        // 冲撞速度（px/s）：比玩家快，躲不掉只能侧移
+    },
+    boss_mage: {
+      id: 'boss_mage', name: '血月咒使', behavior: 'boss', boss: true, attack: 'ring',
+      hp: 540, speed: 50, damage: 15, radius: 34,
+      xp: 32, material: 42, attackCd: 2.0,
+      color: '#7a3f8f', color2: '#2f1240', color3: '#c48aff',
+      projectileSpeed: 210,
+    },
+    boss_spider: {
+      id: 'boss_spider', name: '天罗蛛后', behavior: 'boss', boss: true, attack: 'spiral',
+      hp: 660, speed: 58, damage: 14, radius: 38,
+      xp: 36, material: 46, attackCd: 0.85,
+      color: '#3f6b5a', color2: '#173027', color3: '#6fe3c1',
+      projectileSpeed: 190,
     },
 
     /* ---------------- 反伤系（坦克） ----------------
@@ -606,6 +643,11 @@
     },
   };
 
+  /** Boss 出场顺序：第 10 波 Game.BOSSES[0]，第 20 波 [1]……按 bossTier 取模循环。
+   *  表本体里列 Boss 还不够 —— 刷新计划得知道按什么次序抽，所以单独一张顺序表。
+   *  'boss' 必须留在第一位：旧存档刷出的 type 指向它，读档不能变成别的怪。 */
+  Game.BOSSES = ['boss', 'boss_brute', 'boss_mage', 'boss_spider'];
+
   /* ---------------- 掉落调参（2026-09-24 起集中在这里调） ----------------
    * 各怪的 xp / material 本体数值冻结不动，倍数在这一处统一加：
    * 改掉落手感只动这里，不用去翻 ENEMIES 表。 */
@@ -637,12 +679,15 @@
     // healBuild 角色（掠影/回春/禅心）不受降权。
     // 2026-09-26 大砍一刀：按「零点几」重定基线 —— 每次事件最多回复 0.x% 最大生命，
     // 治疗强度和吸血同步下调。desc 和 stat 必须同步改，文案是写死的，只改数值就是骗人。
-    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +12%',           stat: { healingPower: 0.12 }, healing: true },
-    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 1.5% 化为生命', stat: { lifesteal: 0.015 }, healing: true },
+    // 同日第二轮（「回血卡再砍一刀」）：再削 ~40%，同时 HEAL_ITEM_WEIGHT 0.15 → 0.08
+    // 让回血卡在池子里出现得更少。削值和削权一起做，否则概率降了但单件更弱，
+    // 续航流角色（healBuild）会突然打不动 Boss。
+    herbal:     { id: 'herbal',     name: '回春药草', rarity: 'common', desc: '治疗效果 +8%',            stat: { healingPower: 0.08 }, healing: true },
+    vampiric:   { id: 'vampiric',   name: '噬魂之牙', rarity: 'rare',   desc: '造成伤害的 1% 化为生命',   stat: { lifesteal: 0.01 }, healing: true },
     shieldcharm:{ id: 'shieldcharm', name: '玄武纹章', rarity: 'rare',   desc: '护盾上限 +25',            stat: { shieldMax: 25 } },
-    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 0.5%', stat: { lifeOnHitPct: 0.005 }, healing: true },
+    lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 0.3%', stat: { lifeOnHitPct: 0.003 }, healing: true },
     critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',           stat: { critMult: 0.15 } },
-    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 0.8%', stat: { lifeOnKillPct: 0.008 }, healing: true },
+    deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 0.5%', stat: { lifeOnKillPct: 0.005 }, healing: true },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */
