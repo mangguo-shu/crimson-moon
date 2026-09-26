@@ -3743,16 +3743,58 @@ try {
   assert(/grid-template-columns:\s*repeat\(4,/.test(cg2),
          '.char-grid 是 4 列（' + cg2.replace(/\s+/g, ' ').trim().slice(0, 90) + '）');
   assert(/minmax\(0,\s*1fr\)/.test(cg2), '.char-grid 用 minmax(0,1fr)，长文案能压列而不撑破');
-  // 三选一那排不能跟着变：基础 .card-row 仍是 flex、卡片仍是 220px 定宽
+  // ---- 1b. 三选一与商店都是一排等分（用户「需要放在一排」「让下面的按钮能放在一页」）----
+  // 定宽 + flex-wrap:wrap 是折行的根因：815px 宽的横屏手机上人物面板占 262px、面板还给它
+  // 让出 16px，内容只剩 ~521px；3 张 220px = 684px 折成 2+1、4 件 160px = 682px 折两行。
+  // 等分列宽后卡数变了自动适配，不用再跟着数量改 CSS。
   var crb2 = (css2.match(/\.card-row\s*\{[^}]*\}/) || [''])[0];
-  assert(/display:\s*flex/.test(crb2), '基础 .card-row 仍是 flex（升级三选一不受牵连）');
+  assert(/display:\s*flex/.test(crb2), '三选一行仍是 flex，跟 char-grid 的 grid 互不牵连');
+  assert(/flex-wrap:\s*nowrap/.test(crb2), '三选一行 nowrap —— 一排是硬要求，压窄也不折行');
   var cbase2 = (css2.match(/^\.card \{[^}]*\}/m) || [''])[0];
-  assert(/width:\s*220px/.test(cbase2),
-         '基础卡片仍是 220px 定宽，没被 char-grid 覆盖（' +
-         cbase2.replace(/\s+/g, ' ').trim().slice(0, 70) + '）');
+  assert(/flex:\s*1\s+1\s+0/.test(cbase2) && /min-width:\s*0/.test(cbase2),
+         '卡片等分列宽 flex:1 1 0 + min-width:0');
+  assert(!/width:\s*\d+px/.test(cbase2),
+         '卡片不再有 220px 定宽 —— 定宽就是当初只能塞下 2 张的原因');
+  var sg2 = (css2.match(/\.shop-grid\s*\{[^}]*\}/) || [''])[0];
+  var si2 = (css2.match(/\.shop-item\s*\{[^}]*\}/) || [''])[0];
+  assert(/flex-wrap:\s*nowrap/.test(sg2), '商店一排 nowrap，4 件不再折成 2 行');
+  assert(/flex:\s*1\s+1\s+0/.test(si2) && /min-width:\s*0/.test(si2), '商店格子等分列宽');
+  assert(!/width:\s*\d+px/.test(si2), '商店格子不再有 160px 定宽');
+  var sb2 = (css2.match(/\.shop-bar\s*\{[^}]*\}/) || [''])[0];
+  assert(/flex-wrap:\s*nowrap/.test(sb2),
+         '商店按钮条一排：原来折行后「返回主菜单」被顶出可视区，得往下滚');
+
+  // ---- 1c. 整块高度也得在可视区内：用户要的是「按钮能放在一页」，不只是「一排」----
+  // nowrap 保证一排，但把 min-height 改回 200/150 仍然会把按钮条顶出屏外。
+  // 取 815x367 的横屏手机（人物面板 262px 的下限附近、也是用户实机那一档）算一遍：
+  // 标题行 + 商品格 + 按钮条 ≤ 可视高 − 面板上下内边距 16×2。
+  function pxOf(rule, prop) {
+    var m = rule.match(new RegExp(prop + '\\s*:\\s*(\\d+)px(?:\\s+\\d+px)?'));
+    if (!m) throw new Error('「' + prop + '」取不到：' + rule.replace(/\s+/g, ' ').trim().slice(0, 90));
+    return +m[1];
+  }
+  var h2r2 = (css2.match(/\.panel h2\s*\{[^}]*\}/) || [''])[0];
+  var sbBtn2 = (css2.match(/\.shop-bar \.btn\s*\{[^}]*\}/) || [''])[0];
+  var titleH = pxOf(h2r2, 'font-size') * 1.2 + pxOf(h2r2, 'margin-bottom');
+  var btnH = pxOf(sbBtn2, 'padding') * 2 + pxOf(sbBtn2, 'font-size') * 1.2 + 2;
+  var availH = 367 - 16 * 2;
+  var shopH = titleH + pxOf(si2, 'min-height') + pxOf(sb2, 'margin-top') + btnH;
+  var lvH = titleH + pxOf(cbase2, 'min-height');
+  assert(shopH <= availH, '商店整块 ' + shopH.toFixed(1) + 'px ≤ 可视高 ' + availH +
+         'px（原来 200/150 的卡会把按钮条顶出屏外）');
+  assert(lvH <= availH, '三选一整块 ' + lvH.toFixed(1) + 'px ≤ 可视高 ' + availH + 'px');
+
   var portrait2 = (css2.match(/@media \(orientation: portrait\)\s*\{[\s\S]*?\n\}/) || [''])[0];
   assert(/\.char-grid\s*\{[^}]*repeat\(2,/.test(portrait2),
          '竖屏退回 2 列（4 张挤 358px = 每张 80px，卡名放不下）');
+  assert(/\.card-row\s*\{[^}]*flex-wrap:\s*wrap/.test(portrait2) &&
+         /\.card\s*\{[^}]*calc\(50%/.test(portrait2),
+         '竖屏三选一退回 2 列一排，而不是硬塞 3 列');
+  assert(/\.shop-grid\s*\{[^}]*flex-wrap:\s*wrap/.test(portrait2) &&
+         /\.shop-item\s*\{[^}]*calc\(50%/.test(portrait2),
+         '竖屏商店退回 2 列一排');
+  assert(/\.card\s*\{[^}]*min-width:\s*0/.test(portrait2),
+         '竖屏 min-width 必须是 0：给比一半宽还大的值，wrap 会退回到一行一张');
 
   // ---- 2. 经验条透明度 0.7 ----
   var lvl2 = (css2.match(/\.hud-lvl-row\s*\{[^}]*\}/) || [''])[0];
