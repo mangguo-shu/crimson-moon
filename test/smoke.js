@@ -3324,6 +3324,311 @@ try {
   assert(false, '环绕武器/调参异常: ' + e.stack);
 }
 
+/* ============================================================
+ * ㉘ 安卓真机适配（小米9 首轮验收 2026-09-26）
+ * ============================================================ */
+console.log('\n== ㉘ 安卓真机适配 ==');
+try {
+  var cssText = fs.readFileSync(path.join(__dirname, '..', 'css', 'style.css'), 'utf8');
+  var htmlText = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+  // 抽一条 CSS 规则块（从匹配的 { 到配平的 }）
+  function cssBlock(sel) {
+    var re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{');
+    var m = re.exec(cssText);
+    if (!m) return null;
+    var start = m.index + m[0].length, depth = 1, i = start;
+    for (; i < cssText.length; i++) {
+      if (cssText[i] === '{') depth++;
+      else if (cssText[i] === '}') { depth--; if (depth === 0) break; }
+    }
+    return cssText.slice(start, i);
+  }
+
+  // ---- 1. 画布铺满：position:fixed + inset:0，不用 100vw/100vh ----
+  var gameRule = cssBlock('#game');
+  assert(gameRule && gameRule.indexOf('position: fixed') >= 0 && gameRule.indexOf('inset: 0') >= 0,
+         '#game 用 position:fixed + inset:0 铺满整屏');
+  // 把注释剥掉再查：规则里的说明文字本身就在讲 100vw 为什么不行
+  var gameRuleClean = (gameRule || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert(gameRuleClean.indexOf('100vw') < 0 && gameRuleClean.indexOf('100vh') < 0,
+         '#game 不用 100vw/100vh（安卓 WebView 会算进滚动条宽度，画面边缘裁出白条）');
+
+  // ---- 2. 面板能下拉：body 的 touch-action:none 必须被显式恢复 ----
+  var panelRule = cssBlock('.panel');
+  assert(panelRule && /touch-action:\s*pan-y/.test(panelRule),
+         '.panel 显式恢复 touch-action:pan-y（html,body 的 none 会把手机上拉一起禁掉）');
+  assert(panelRule && panelRule.indexOf('overflow-y: auto') >= 0, '.panel 保持纵向可滚');
+  var sideRule = cssBlock('.stats-side');
+  assert(sideRule && /touch-action:\s*pan-y/.test(sideRule),
+         '.stats-side 同样恢复 pan-y（人物面板内容更长，之前也滚不动）');
+  assert(/\.panel\s*>\s*:?first-child\s*\{[^}]*margin-top:\s*auto/.test(cssText),
+         '.panel 首个子元素 margin-top:auto（溢出时不再裁掉滚不到的顶端）');
+  assert(/\.panel\s*>\s*:?last-child\s*\{[^}]*margin-bottom:\s*auto/.test(cssText),
+         '.panel 末个子元素 margin-bottom:auto');
+  assert(/\.panel\s*\{[\s\S]*?justify-content:\s*flex-start/.test(cssText),
+         '.panel 不再用 justify-content:center（内容超高时 center 会把顶端裁掉且滚不回去）');
+
+  // ---- 3. HUD 给常驻人物面板让位：右上角材料计数之前整个藏在面板底下 ----
+  var topRule = cssBlock('.hud-top');
+  assert(topRule && topRule.indexOf('var(--stats-w)') >= 0,
+         '.hud-top 右侧让出人物面板宽度（右上角没血量/材料就是这里挡的）');
+  var botRule = cssBlock('.hud-bottom');
+  assert(botRule && botRule.indexOf('var(--stats-w)') >= 0,
+         '.hud-bottom 同样让出人物面板宽度');
+  var btnRule = cssBlock('.touch-btn');
+  assert(btnRule && btnRule.indexOf('position: fixed') >= 0,
+         '.touch-btn 用 fixed 定位（不再跟着 HUD 流布局飘在半空）');
+  assert(btnRule && /right:\s*calc/.test(btnRule) && /bottom:\s*calc/.test(btnRule),
+         '.touch-btn 同时贴 right 与 bottom（之前只写了 top，看着像悬空不是角落）');
+
+  // ---- 4. 竖屏也能用（锁横屏在 MIUI 上不生效时不崩）----
+  assert(cssText.indexOf('@media (orientation: portrait)') >= 0,
+         '存在竖屏 @media 规则');
+
+  // ---- 5. 面板让位宽度必须和 CSS 的竖屏值一致（相机按同一数值让位）----
+  var savedW = global.innerWidth, savedH = global.innerHeight;
+  var savedFold = Game.UI._statsFolded;
+  Game.UI._statsFolded = false;
+  global.innerWidth = 1280; global.innerHeight = 720;
+  Game.UI._updatePanelInset();
+  assert(Math.abs(Game.Renderer.sideInset * Game.Renderer.view.scale - 262) < 1e-6,
+         '横屏让位宽度 = 262px（与 CSS --stats-w 一致）');
+  global.innerWidth = 390; global.innerHeight = 844;   // 小米9 竖屏
+  Game.UI._updatePanelInset();
+  assert(Math.abs(Game.Renderer.sideInset * Game.Renderer.view.scale - 390 * 0.42) < 1e-6,
+         '竖屏让位宽度走竖屏公式（' + (Game.Renderer.sideInset * Game.Renderer.view.scale).toFixed(0) +
+         'px，不是横屏的 262）');
+  global.innerWidth = 540; global.innerHeight = 960;   // 竖屏宽设备，走上限
+  Game.UI._updatePanelInset();
+  assert(Math.abs(Game.Renderer.sideInset * Game.Renderer.view.scale - 200) < 1e-6,
+         '竖屏让位宽度有 200px 上限（与 CSS min(200px,42vw) 一致）');
+  global.innerWidth = savedW; global.innerHeight = savedH;
+  Game.UI._updatePanelInset();
+  assert(Math.abs(Game.Renderer.sideInset * Game.Renderer.view.scale - 262) < 1e-6,
+         '竖屏测试后让位宽度还原回横屏的 262');
+  Game.UI._statsFolded = savedFold;
+  Game.UI._updatePanelInset();
+
+  // ---- 6. 商店有出口，且退出去不丢进度 ----
+  var stShop = Game.Systems.createState('campaign', 'swordsman', 900001);
+  Game.Systems.startWave(stShop, 2);
+  Game.state = stShop;
+  Game.Game._onWaveEnd();
+  assert(Game.state.screen === 'SHOP', '波次结束进商店');
+  var shopHtml = document.getElementById('shop').innerHTML;
+  assert(shopHtml.indexOf('shop-bar') >= 0, '商店底部有操作条');
+  assert(shopHtml.indexOf('Game.Game.toMenu()') >= 0,
+         '商店有「返回主菜单」出口（原来只能硬点下一波，退不出来）');
+
+  Game.Game.toMenu();
+  assert(Game.state === null && Game.uiScreen === 'MENU', '商店回主菜单后状态干净收尾');
+  var savedWave = Game.Storage.getJSON('campaign_v1');
+  assert(savedWave && savedWave.wave === 2, '商店回主菜单前已存档（第 2 波进度不丢）');
+
+  // ---- 6b. 读档不会卡在商店 ----
+  // 存档必须落在「波次真的打完了」的那一刻：波次是靠 updateWave 自己判定结束的，
+  // 那时 waveTime 已过时长。绕过 updateWave 直接调 _onWaveEnd 会存下 waveTime≈0 的
+  // 存档，读档回来会卡在第一帧（只有 debugSkipWave 会走这条异常路径）。
+  var stEnd = Game.Systems.createState('campaign', 'swordsman', 900004);
+  Game.Systems.startWave(stEnd, 2);
+  var resEnd = null;
+  for (var iEnd = 0; iEnd < 5000 && resEnd === null; iEnd++) {
+    resEnd = Game.Systems.updateWave(stEnd, 0.1);
+  }
+  assert(resEnd === 'ended', '第 2 波正常结束');
+  stEnd.screen = 'SHOP';
+  Game.state = stEnd;
+  Game.Game.toMenu();
+  assert(Game.state === null, '商店回主菜单');
+  var svEnd = Game.Storage.getJSON('campaign_v1');
+  assert(svEnd && svEnd.wave === 2 && svEnd.waveTime >= svEnd.waveDuration,
+         '商店存档记下的是已过完的波次（waveTime=' + (svEnd && svEnd.waveTime).toFixed(1) +
+         ' / ' + (svEnd && svEnd.waveDuration) + '）');
+  var sReload = Game.Systems.deserialize(svEnd);
+  assert(sReload.screen === 'PLAYING', '读档落在 PLAYING（不会卡在商店界面）');
+  assert(sReload.enemies.length === 0, '读档后场上没有残留敌人');
+  assert(Game.Systems.updateWave(sReload, 0.1) === 'ended',
+         '读档后第一帧就判定结束 → 主循环自动送回商店，不会卡死');
+
+  // ---- 7. 返回键的每条去向 ----
+  var origConfirm = Game.Game._confirmExit;
+  var origCancel = Game.Game._cancelExit;
+  var confirmCalls = 0, cancelCalls = 0;
+  Game.Game._confirmExit = function () { confirmCalls++; return origConfirm.apply(this, arguments); };
+  Game.Game._cancelExit = function () { cancelCalls++; return origCancel.apply(this, arguments); };
+  Game.Game._exitConfirmOpen = false;
+
+  function back(desc) {
+    var r = Game.Game._handleBack();
+    assert(r && r.handled === true, desc + '：返回 {handled:true}（不拦的话安卓会直接退 App）');
+  }
+
+  // 7.1 游戏中 → 暂停
+  var stB1 = Game.Systems.createState('campaign', 'swordsman', 910001);
+  Game.Systems.startWave(stB1, 1);
+  Game.state = stB1;
+  Game.uiScreen = 'PLAYING';
+  confirmCalls = 0; cancelCalls = 0;
+  back('游戏中按返回');
+  assert(Game.state.screen === 'PAUSED', '游戏中按返回 → 暂停');
+  assert(Game.uiScreen === 'PAUSED', '暂停界面显示出来');
+
+  // 7.2 暂停中 → 确认退出
+  back('暂停中按返回');
+  assert(confirmCalls === 1 && Game.Game._exitConfirmOpen === true,
+         '暂停中按返回 → 弹确认退出（不是一按就退 App）');
+
+  // 7.3 确认框开着再按一次 → 取消，回暂停界面
+  cancelCalls = 0;
+  back('确认框开着再按返回');
+  assert(cancelCalls === 1 && Game.Game._exitConfirmOpen === false, '确认框开着按返回 = 取消');
+  assert(Game.uiScreen === 'PAUSED' && Game.state.screen === 'PAUSED', '取消后回到暂停界面');
+
+  // 7.4 确认框的「确认退出」按钮要顺手关框（按钮直接调 toMenu，不会走 _cancelExit）
+  Game.Game._confirmExit();
+  Game.state.screen = 'PLAYING';
+  Game.Game.toMenu();
+  assert(Game.Game._exitConfirmOpen === false,
+         'toMenu 会关掉确认框（否则它一直盖在主菜单上面）');
+
+  // 7.5 升级三选一 → 忽略返回
+  Game.state = stB1;
+  Game.state.screen = 'LEVEL_UP';
+  Game.Game._handleBack();
+  assert(Game.state.screen === 'LEVEL_UP', '升级三选一忽略返回（必须选一项，跳过奖励会丢）');
+
+  // 7.6 商店 → 回主菜单
+  var stB2 = Game.Systems.createState('campaign', 'swordsman', 910002);
+  Game.Systems.startWave(stB2, 3);
+  Game.state = stB2;
+  Game.Game._onWaveEnd();
+  back('商店按返回');
+  assert(Game.state === null && Game.uiScreen === 'MENU', '商店按返回 → 回主菜单');
+  assert(Game.Storage.getJSON('campaign_v1').wave === 3, '商店按返回前已存档（第 3 波不丢）');
+
+  // 7.7 结算 → 回主菜单
+  var stB3 = Game.Systems.createState('endless', 'archer', 910003);
+  stB3.screen = 'GAME_OVER';
+  Game.state = stB3;
+  back('结算界面按返回');
+  assert(Game.state === null, '结算按返回 → 回主菜单');
+
+  // 7.8 选角色 → 回主菜单
+  Game.state = null;
+  Game.Game._pickCharacter('campaign');
+  assert(Game.inCharSelect === true, '进选角色界面');
+  back('选角色按返回');
+  assert(Game.inCharSelect === false && Game.state === null, '选角色按返回 → 回主菜单');
+  assert(document.getElementById('menu').className.indexOf('panel-top') < 0,
+         '回主菜单后不再停在选角色（panel-top 已清）');
+
+  // 7.9 纪录榜 / 设置 → 回主菜单
+  Game.Game.openRecords();
+  back('纪录榜按返回');
+  assert(Game.uiScreen === 'MENU', '纪录榜按返回 → 回主菜单');
+  Game.Game.openSettings();
+  back('设置按返回');
+  assert(Game.uiScreen === 'MENU', '设置按返回 → 回主菜单');
+
+  // 7.10 主菜单：没有可保存的进度，交给系统退出
+  Game.state = null; Game.uiScreen = 'MENU'; Game.inCharSelect = false;
+  Game.Game._confirmExit();
+  Game.Game._cancelExit();
+  var bkMenu = Game.Game._handleBack();
+  assert(bkMenu.handled === false,
+         '主菜单按返回交给系统（可退出 App；拦了会退不出去）');
+
+  Game.Game._confirmExit = origConfirm;
+  Game.Game._cancelExit = origCancel;
+
+  // ---- 8. vendor 的 Capacitor 必须真被加载（「返回键不暂停」的根因）----
+  var VENDOR = ['core.js', 'app.js', 'screen-orientation.js', 'status-bar.js', 'haptics.js', 'preferences.js'];
+  VENDOR.forEach(function (f) {
+    var p = path.join(__dirname, '..', 'vendor', 'capacitor', f);
+    assert(fs.existsSync(p) && fs.statSync(p).size > 0, 'vendor/capacitor/' + f + ' 存在且非空');
+    var re = new RegExp('vendor/capacitor/' + f.replace(/\./g, '\\.') + '"', 'g');
+    var n = (htmlText.match(re) || []).length;
+    assert(n === 1, 'index.html 恰好引用一次 vendor/capacitor/' + f);
+  });
+  var capIdx = htmlText.indexOf('vendor/capacitor/core.js');
+  var cfgIdx = htmlText.indexOf('js/config.js');
+  assert(capIdx > 0 && cfgIdx > 0 && capIdx < cfgIdx,
+         'Capacitor 在 js/config.js 之前加载（core 必须赶在 nativeBridge 读 window.Capacitor 前落地）');
+  var buildSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-web.js'), 'utf8');
+  assert(/ENTRIES\s*=\s*\[[^\]]*'vendor'/.test(buildSrc),
+         'build:web 把 vendor/ 拷进 www/（否则打出来的 APK 里根本没有 Capacitor 的 JS）');
+  var pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert(!!pkg.scripts['vendor:cap'], 'package.json 有 vendor:cap（vendor 文件可重新生成，不是手抄的）');
+
+  // 跑在 Capacitor 壳里但 JS 端没加载：必须大声报错，不能静默降级成浏览器
+  var origNav = Object.getOwnPropertyDescriptor(global, 'navigator');
+  var origErr = console.error;
+  var errLogs = [];
+  console.error = function () { errLogs.push(Array.prototype.join.call(arguments, ' ')); };
+  try {
+    // navigator 必须是 defineProperty：setup 里它是 {value, configurable}（writable 默认 false），
+    // 严格模式下直接赋值会抛 TypeError。restore 放 finally —— 上面这段一旦抛错，
+    // 外层的 catch 要靠 console.error 报告，而它正被收集器替换着，会把自己的失败吞掉。
+    Object.defineProperty(global, 'navigator',
+                          { value: { maxTouchPoints: 0, userAgent: 'Capacitor/7.0' }, configurable: true });
+    delete globalThis.Capacitor;
+    Game.Native.init();
+    assert(Game.Native.isNative === false, 'Capacitor 缺失时 isNative 为 false（走浏览器降级，不崩）');
+    assert(errLogs.some(function (l) { return l.indexOf('Capacitor') >= 0 && l.indexOf('core.js') >= 0; }),
+           '壳里没有 window.Capacitor 时大声报错（指向 vendor/capacitor/core.js）');
+  } finally {
+    console.error = origErr;
+    if (origNav) Object.defineProperty(global, 'navigator', origNav);
+  }
+
+  // 按页面顺序真加载一遍。不伪造原生桥：插件的 native 实现是安卓侧往核心注册的，
+  // Node 里没有，伪造只会让代理全部 reject。这里验证 JS 端能注册、方法形状齐全，
+  // 原生调用链只能在真机上验（本轮验收的对象）。
+  for (var vi = 0; vi < VENDOR.length; vi++) {
+    vm.runInThisContext(
+      fs.readFileSync(path.join(__dirname, '..', 'vendor', 'capacitor', VENDOR[vi]), 'utf8'),
+      { filename: VENDOR[vi] });
+  }
+  var Cap = globalThis.Capacitor;
+  assert(Cap && typeof Cap.getPlatform === 'function',
+         'core.js 把 Capacitor 挂到了全局（window.Capacitor 存在）');
+  assert(Cap.getPlatform() === 'web' && Cap.isNativePlatform() === false,
+         '没有原生桥时平台是 web、isNativePlatform() 为 false（桌面双击跑不受影响）');
+  var plug = Cap.Plugins || {};
+  ['App', 'ScreenOrientation', 'StatusBar', 'Haptics', 'Preferences'].forEach(function (n) {
+    assert(!!plug[n], '插件已注册：' + n);
+  });
+  assert(typeof plug.ScreenOrientation.lock === 'function', 'ScreenOrientation.lock 可调（锁横屏）');
+  assert(typeof plug.StatusBar.hide === 'function', 'StatusBar.hide 可调（全屏）');
+  assert(typeof plug.Haptics.vibrate === 'function', 'Haptics.vibrate 可调（震动）');
+  assert(typeof plug.App.addListener === 'function' && typeof plug.App.removeListeners === 'function',
+         'App.addListener/removeListeners 可调（返回键与切后台监听挂这里）');
+  assert(typeof plug.Preferences.set === 'function' && typeof plug.Preferences.get === 'function' &&
+         typeof plug.Preferences.remove === 'function', 'Preferences set/get/remove 可调（原生存档）');
+  assert(!plug.KeepAwake, 'KeepAwake 确实没装（屏幕常亮缺这一块，nativeBridge 已按可选插件处理）');
+
+  // nativeBridge 对每个插件都做了存在性判断：少一个包不能崩整条链
+  var nbSrc = fs.readFileSync(path.join(JS_DIR, 'nativeBridge.js'), 'utf8');
+  ['ScreenOrientation', 'StatusBar', 'KeepAwake', 'App'].forEach(function (n) {
+    assert(new RegExp('if \\(P && P\\.' + n + '\\)').test(nbSrc), 'nativeBridge 对 P.' + n + ' 做了存在性判断');
+  });
+  assert(Game.Native.missingPlugins instanceof Array, 'missingPlugins 初始化是空数组');
+
+  delete globalThis.Capacitor;
+
+  // 收尾：还原本节改动的全局状态
+  Game.state = null;
+  Game.uiScreen = 'MENU';
+  Game.inCharSelect = false;
+  Game.pendingMode = 'campaign';
+  Game.Game._exitConfirmOpen = false;
+  Game.Storage.remove('campaign_v1');
+  Game.Storage.remove('endless_v1');
+} catch (e) {
+  assert(false, '安卓真机适配异常: ' + e.stack);
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n================ 测试结果 ================');
 console.log('通过: ' + passed + '  失败: ' + failed);

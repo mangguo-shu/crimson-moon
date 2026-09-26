@@ -65,6 +65,19 @@
   <div id="save-toast" class="save-toast hidden">✓ 已保存</div>
 
   <!-- 脚本按依赖顺序加载：普通 script（非 ES Module），保证 file:// 双击可跑 -->
+  <!-- Capacitor 的 JS 端。必须最先加载，且在 js/nativeBridge.js 之前。
+       少了这 6 个标签 window.Capacitor 是 undefined，安卓返回键 / 锁横屏 / 震动 /
+       切后台自动暂停会**全部静默失效**（2026-09-26 小米9 真机验收才发现：这些
+       文件从来没被任何地方引用过）。它们都是 UMD var 构建，不需要打包器；
+       桌面浏览器上 window.Capacitor 会被建成 web 平台，nativeBridge 走浏览器降级。
+       用 npm run vendor:cap 从 node_modules 重新生成。 -->
+  <script src="vendor/capacitor/core.js"></script>
+  <script src="vendor/capacitor/app.js"></script>
+  <script src="vendor/capacitor/screen-orientation.js"></script>
+  <script src="vendor/capacitor/status-bar.js"></script>
+  <script src="vendor/capacitor/haptics.js"></script>
+  <script src="vendor/capacitor/preferences.js"></script>
+
   <script src="js/config.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/nativeBridge.js"></script>

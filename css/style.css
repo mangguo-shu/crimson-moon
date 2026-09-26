@@ -41,9 +41,9 @@ html, body {
   position: fixed;
   inset: 0;
   display: block;
-  /* 由 game.js 精确控制尺寸，这里占满视口 */
-  width: 100vw;
-  height: 100vh;
+  /* 不用 100vw/100vh：那会把垂直滚动条的宽度也算进视口，安卓 WebView 上会得到
+     一个比屏幕略宽的盒子，画面边缘被裁出白条（小米9 首页左侧那条白边）。
+     尺寸由 renderer.js 的 _resize 按 window.innerWidth/innerHeight 精确写入。 */
   cursor: default;
 }
 
@@ -56,16 +56,19 @@ html, body {
   pointer-events: none; /* HUD 不挡输入 */
   z-index: 10;
 }
+/* 顶部与底部都要给常驻人物面板让位，否则最右边那一格信息（材料计数）整个
+   藏在面板底下看不见 —— 小米9 上「右上角什么都没有」就是这个原因。 */
 .hud-top {
   position: absolute;
   top: calc(8px + var(--safe-top));
   left: calc(12px + var(--safe-left));
-  right: calc(12px + var(--safe-right));
+  right: calc(var(--stats-w) + 12px + var(--safe-right));
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 10px;
 }
-.hud-left { width: 220px; }
+.hud-left { width: 220px; max-width: 46vw; }
 .hp-wrap, .shield-wrap {
   position: relative;
   height: 18px;
@@ -105,7 +108,8 @@ html, body {
   position: absolute;
   bottom: calc(10px + var(--safe-bottom));
   left: calc(12px + var(--safe-left));
-  right: calc(12px + var(--safe-right));
+  /* 右下角留给暂停键（52px + 间距），经验条与武器槽往左收一点，别叠在按钮上 */
+  right: calc(var(--stats-w) + 12px + var(--safe-right) + 60px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -159,14 +163,23 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: rgba(10, 4, 4, 0.88);
+  justify-content: flex-start;
+  background: rgba(10, 4, 4, 0.9);
   padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right))
            calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
   overflow-y: auto;
+  overflow-x: hidden;
+  /* html,body 为虚拟摇杆写了 touch-action:none，会把面板的触摸滚动一起禁掉
+     —— 手机上「无法下拉」就是这里。面板是唯一需要滚的地方，必须显式恢复纵向 pan。 */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
-/* 内容超高时切到顶部对齐：justify-content:center 会把溢出部分的顶端裁掉、
-   滚不上去。角色选择页（11 张卡分 4 组）和满 10 条的纪录榜都会超高。 */
+/* 居中靠首末子元素各吃一份 auto 外边距，而不是 justify-content:center：
+   center 在内容超高时把顶端裁掉、滚不上去（角色选择 11 张卡、纪录榜满 10 条都会超高）。
+   auto 外边距是「放得下就居中、放不下就顶头」—— 两种情况内容都不会丢。 */
+.panel > :first-child { margin-top: auto; }
+.panel > :last-child { margin-bottom: auto; }
+/* 角色选择页与纪录榜必定超高，钉死顶部对齐（测试也断言这个类还在）。 */
 .panel-top { justify-content: flex-start; }
 .panel h1 {
   font-size: 46px; color: var(--color-blood);
@@ -191,6 +204,10 @@ html, body {
            calc(8px + var(--safe-bottom)) 32px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 面板内容很长（武器伤害明细），必须有可滚；body 的 touch-action:none
+     同样会把它禁掉，这里显式恢复。 */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   pointer-events: auto;
   animation: stats-slide-in 0.32s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
@@ -360,18 +377,20 @@ html, body {
   background: #222; color: #8f8; border: 1px solid #4a4; border-radius: 3px; cursor: pointer;
 }
 
-/* ===== 触摸按钮 =====
-   右下角原本的位置被常驻人物面板占了，往左让出面板宽度 */
+/* ===== 触摸暂停按钮 =====
+   贴右下角。原来浮在面板左侧 40px 高处，看起来像挂在半空、不像角落里的按键；
+   而且那个高度正好压在武器槽上方，容易点错。现在贴着面板边缘与屏幕底边，
+   是真正的角落。经验条与武器槽在 .hud-bottom 里往左让出 60px。 */
 .touch-btn {
   position: fixed;
-  right: calc(var(--stats-w) + 14px + var(--safe-right));
-  bottom: calc(40px + var(--safe-bottom));
-  width: 64px; height: 64px;
+  right: calc(var(--stats-w) + 10px + var(--safe-right));
+  bottom: calc(10px + var(--safe-bottom));
+  width: 52px; height: 52px;
   border-radius: 50%;
-  background: rgba(80,20,20,0.65);
-  border: 2px solid rgba(255,255,255,0.4);
-  color: #fff; font-size: 28px;
-  z-index: 15;
+  background: rgba(80,20,20,0.72);
+  border: 2px solid rgba(255,255,255,0.5);
+  color: #fff; font-size: 22px;
+  z-index: 35;   /* 高于人物面板(30)：贴角时边缘不会被面板吃掉 */
   touch-action: manipulation;
 }
 .touch-btn:active { background: rgba(160,40,40,0.85); transform: scale(0.92); }
@@ -389,4 +408,33 @@ html, body {
   color: #bfb;
   font-size: 14px;
   transition: opacity 0.4s ease;
+}
+
+/* ===== 竖屏适配 =====
+   游戏按横屏设计，但锁横屏在部分安卓（小米9 / MIUI）上不生效，实际跑成竖屏。
+   竖屏可视宽只有 390px 左右，面板、卡片、按钮都得缩一档，人物面板也要收窄，
+   不然 34% 的可视宽全被数据面板吃掉，卡片根本放不下。
+   宽度公式必须和 js/ui.js 的 _updatePanelInset 保持一致（相机要按同一数值让位）。 */
+@media (orientation: portrait) {
+  :root { --stats-w: min(200px, 42vw); }
+
+  .panel h1 { font-size: 34px; letter-spacing: 4px; }
+  .panel h2 { font-size: 20px; margin-bottom: 12px; }
+  .panel .subtitle { font-size: 12px; margin-bottom: 16px; }
+
+  .btn { min-width: 168px; padding: 12px 16px; font-size: 16px; }
+
+  .card { width: 184px; min-height: 148px; padding: 11px; }
+  .card .card-name { font-size: 17px; }
+  .card .card-desc { font-size: 12px; }
+  .card-row { gap: 10px; }
+
+  .shop-item { width: 142px; min-height: 128px; padding: 10px; }
+
+  .hud-left { width: 178px; max-width: 44vw; }
+  .hud-wave { font-size: 16px; }
+  .hud-timer { font-size: 11px; }
+  .stats-side > h2 { font-size: 15px; }
+  .stats-row { font-size: 11px; }
+  .stats-wname { font-size: 12px; }
 }

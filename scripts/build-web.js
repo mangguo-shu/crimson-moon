@@ -10,8 +10,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const WWW = path.join(ROOT, 'www');
 
-// 要拷贝到 www/ 的条目
-const ENTRIES = ['index.html', 'css', 'js'];
+// 要拷贝到 www/ 的条目。vendor/capacitor 是 Capacitor 的 UMD 构建，
+// 少了它安卓端 window.Capacitor 是 undefined，原生桥（返回键/锁横屏/震动）全废。
+const ENTRIES = ['index.html', 'css', 'js', 'vendor'];
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });

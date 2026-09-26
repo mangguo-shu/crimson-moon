@@ -13,9 +13,10 @@
   Game.state = null;          // 当前运行状态
   Game.pendingMode = 'campaign'; // 角色选择后进入的模式：'campaign' | 'endless'
   Game.uiScreen = null;         // 当前显示的面板名（ui.js 写入）
+  Game.inCharSelect = false;    // 是否停在选角色界面（返回键要用它回主菜单）
   Game.settings = { sound: true, vibrate: true, music: true, quality: 'high' };
 
-  var G = Game.Game = {};
+  var G = Game.Game = { _exitConfirmOpen: false };
 
   /* ---------------- 入口 ---------------- */
   Game.init = function () {
@@ -101,6 +102,7 @@
   G._pickCharacter = function (mode) {
     Game.Audio.unlock();
     Game.pendingMode = mode;
+    Game.inCharSelect = true;   // 返回键要用它区分「主菜单」和「选角色」
     Game.UI.renderCharSelect();
     Game.UI.showScreen('MENU');
   };
@@ -186,11 +188,17 @@
   };
 
   G.toMenu = function () {
+    // 「确认退出」按钮直接调 toMenu，必须顺手把确认框收掉，
+    // 否则它会一直盖在主菜单上面。
+    G._exitConfirmOpen = false;
+    var ovExit = document.getElementById('confirm-exit');
+    if (ovExit) ovExit.style.display = 'none';
     if (Game.state && ['PLAYING', 'PAUSED', 'LEVEL_UP', 'SHOP'].indexOf(Game.state.screen) >= 0) {
       G.saveGame();
     }
     Game.state = null;
     Game.pendingMode = 'campaign';
+    Game.inCharSelect = false;
     var hasCampaign = !!Game.Storage.getJSON('campaign_v1');
     var endless = Game.Storage.getJSON('endless_v1');
     var hasEndless = !!(endless && endless.player);
@@ -342,16 +350,33 @@
     return ok;
   };
 
-  /* ---------------- 返回键处理 ---------------- */
+  /* ---------------- 返回键处理 ----------------
+   * 返回键的完整去向：
+   *   游戏中 → 暂停      暂停中 → 确认退出    商店 → 回主菜单（波次已结束，进度已存）
+   *   结算 → 回主菜单    升级三选一 → 忽略（必须选，跳过会让奖励消失）
+   *   纪录榜/设置 → 回主菜单    选角色 → 回主菜单    主菜单 → 交给系统（退出 App）
+   * 有对局时一律拦下（handled:true）；只有主菜单上没得保存，才让系统接管——
+   * 玩家在这个位置按返回就是要退 App，拦了反而变成退不出去的死角。 */
   G._handleBack = function () {
-    // 纪录榜没有运行状态，不拦的话安卓返回键会直接退出 App
-    if (Game.uiScreen === 'RECORDS') { G.toMenu(); return { handled: true }; }
-    if (!Game.state) return { handled: false }; // 主菜单：交由系统退出
+    // 确认退出覆盖层开着时再按一次 = 取消，回暂停界面（别直接关 App）。
+    // 用标志位判断，不读 DOM：#confirm-exit 不在 index.html 里，是 _confirmExit
+    // 第一次点才创建的，读 display 会把「从未弹过」误判成「正开着」。
+    if (G._exitConfirmOpen) { G._cancelExit(); return { handled: true }; }
+
+    if (Game.uiScreen === 'RECORDS' || Game.uiScreen === 'SETTINGS') {
+      G.toMenu(); return { handled: true };
+    }
+    if (!Game.state) {
+      if (Game.inCharSelect) { Game.inCharSelect = false; G.toMenu(); return { handled: true }; }
+      return { handled: false };
+    }
     switch (Game.state.screen) {
       case 'PLAYING': G.pause(); return { handled: true };
-      case 'PAUSED': G._confirmExit(); return { handled: true };
-      case 'LEVEL_UP':
-      case 'SHOP': return { handled: true };
+      case 'PAUSED':  G._confirmExit(); return { handled: true };
+      // 商店原本只能硬点「下一波」，退不出来。toMenu 在 SHOP 态会先存档，
+      // 回主菜单后「继续闯关」从这一波重新开打，不丢进度。
+      case 'SHOP':    G.toMenu(); return { handled: true };
+      case 'LEVEL_UP': return { handled: true };   // 必须选一项，忽略返回
       case 'GAME_OVER':
       case 'VICTORY': G.toMenu(); return { handled: true };
       default: return { handled: true };
@@ -374,10 +399,14 @@
       '<button class="btn primary" onclick="Game.Game.toMenu()">确认退出</button>' +
       '<button class="btn" onclick="Game.Game._cancelExit()">取消</button></div>';
     ov.style.display = 'flex';
+    G._exitConfirmOpen = true;
   };
   G._cancelExit = function () {
+    G._exitConfirmOpen = false;
     var ov = document.getElementById('confirm-exit');
     if (ov) ov.style.display = 'none';
+    // 没有对局就只关框，别凭空渲染一个暂停界面盖在菜单上
+    if (!Game.state) return;
     Game.UI.showScreen('PAUSED');
     Game.UI.renderPause();
   };

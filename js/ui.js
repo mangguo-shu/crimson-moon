@@ -336,9 +336,14 @@
     },
 
     /** 把面板实际挡住的可视宽度写进相机，相机据此让位（否则角色会走进面板底下、
-     *  面板右边的敌人看不见）。CSS 里 width=min(262px,34vw)，收起后只剩 26px 露出。 */
+     *  面板右边的敌人看不见）。CSS 里 width=min(262px,34vw)，收起后只剩 26px 露出。
+     *  竖屏（锁横屏在部分安卓上跑成竖屏）时面板更窄：min(200px,42vw) ——
+     *  改 CSS 的 @media (orientation: portrait) 规则必须同步这两个数值。 */
     _updatePanelInset: function () {
-      var full = Math.min(262, window.innerWidth * 0.34);
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var full = vh > vw
+        ? Math.min(200, vw * 0.42)
+        : Math.min(262, vw * 0.34);
       Game.Renderer.setViewInset(this._statsFolded ? 26 : full);
     },
 
@@ -364,6 +369,10 @@
       html += '</div><div class="shop-bar">' +
         '<button class="btn" onclick="Game.Game.refreshShop()">刷新（◈ ' + shop.refreshCost + '）</button>' +
         '<button class="btn primary" onclick="Game.Game.nextWave()">下一波 →</button>' +
+        /* 商店是唯一没有出口的界面（原来只能硬点「下一波」，退不出来）。
+           进商店时波次已结束、进度已自动存档，所以回主菜单不丢东西 ——
+           继续闯关会从这一波重新开打。 */
+        '<button class="btn ghost" onclick="Game.Game.toMenu()">返回主菜单</button>' +
         '</div>';
       el.shop.innerHTML = html;
     },

@@ -4,6 +4,7 @@
   "description": "赤月猎场 · Crimson Moon Hunt —— 2D 俯视角自动射击肉鸽生存游戏（HTML5 Canvas + Capacitor）",
   "private": true,
   "scripts": {
+    "vendor:cap": "node scripts/vendor-capacitor.js",
     "build:web": "node scripts/build-web.js",
     "sync:android": "npx cap sync android",
     "open:android": "npx cap open android",
