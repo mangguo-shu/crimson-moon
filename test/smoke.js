@@ -1874,12 +1874,13 @@ try {
          '掉落调参集中在 Game.DROP 一张表（xp×' + D61.xpMult + ' / 材料×' + D61.matMult +
          ' / 材料率 ' + D61.matChance + '）');
 
-  // —— 道具 12 件，且每件声明的属性键都真实生效（此前有 6 个属性键根本没入口）——
+  // —— 道具 17 件，且每件声明的属性键都真实生效（此前有 6 个属性键根本没入口）——
   var ids61 = Object.keys(Game.ITEMS);
-  assert(ids61.length === 12, '道具总数 12（实 ' + ids61.length + '）');
-  var newIds61 = ['herbal', 'vampiric', 'shieldcharm', 'lifeluck', 'critemerald', 'deathbell'];
+  assert(ids61.length === 17, '道具总数 17（实 ' + ids61.length + '）');
+  var newIds61 = ['herbal', 'vampiric', 'shieldcharm', 'lifeluck', 'critemerald', 'deathbell',
+                  'bloodmoon_heart', 'war_god_bracer', 'shadow_cloak', 'bulwark_core', 'greedy_fang'];
   var missing61 = newIds61.filter(function (n) { return !Game.ITEMS[n]; });
-  assert(missing61.length === 0, '新增 6 件道具齐全（缺: ' + missing61.join(',') + '）');
+  assert(missing61.length === 0, '新增 11 件道具齐全（缺: ' + missing61.join(',') + '）');
   var dead61 = [];
   for (var i61 = 0; i61 < ids61.length; i61++) {
     var iid61 = ids61[i61];
@@ -1899,7 +1900,7 @@ try {
     if (!moved61) dead61.push(iid61 + '(应用后无变化)');
   }
   assert(dead61.length === 0,
-         '12 件道具的属性键全部真实生效（坏: ' + JSON.stringify(dead61) + '）');
+         '17 件道具的属性键全部真实生效（坏: ' + JSON.stringify(dead61) + '）');
 
   // 此前买不到的数值现在都有入口了
   var used61 = {};
@@ -1911,6 +1912,66 @@ try {
                    'lifeOnKillPct'].filter(function (k) { return !used61[k]; });
   assert(noEntry61.length === 0,
          '暴击伤害/护盾/吸血/击杀回血/治疗强度都有道具入口了（缺: ' + noEntry61.join(',') + '）');
+
+  // —— 2026-09-26 Phase 1：新增武器 / 双属性道具 / 史诗卡 ——
+  var sp61 = Game.WEAPONS.spear;
+  assert(!!sp61 && sp61.type === 'melee' && sp61.star === 1 && !sp61.exclusive,
+         '龙胆枪是 1 星近战、非专属（自动进普通升级池与商店）');
+  assert(sp61.range === 130 && Math.abs(sp61.arc - (Math.PI / 6)) < 1e-9 && sp61.pierce === 4,
+         '龙胆枪射程 130 / 弧度 30° / 穿透 4');
+  assert(sp61.cooldown === 0.85 && sp61.damage === 20 && sp61.knockback === 90,
+         '龙胆枪 CD 0.85 / 伤害 20 / 击退 90');
+  assert(typeof sp61.color === 'string' && sp61.color.charAt(0) === '#',
+         '龙胆枪有颜色（刀光与弹体颜色都读 def.color，缺了会画成 undefined）');
+
+  var spec61 = [
+    ['bloodmoon_heart', 'legend', 'lifesteal', 0.03],
+    ['war_god_bracer',  'epic', 'damage', 0.12],
+    ['war_god_bracer',  'epic', 'attackSpeed', 0.08],
+    ['shadow_cloak',    'epic', 'speed', 0.12],
+    ['shadow_cloak',    'epic', 'critChance', 0.05],
+    ['bulwark_core',    'epic', 'maxHp', 30],
+    ['bulwark_core',    'epic', 'armor', 3],
+    ['greedy_fang',     'epic', 'lifeOnHitPct', 0.004],
+    ['greedy_fang',     'epic', 'lifesteal', 0.008]
+  ];
+  var bad61 = [];
+  for (var q61 = 0; q61 < spec61.length; q61++) {
+    var row61 = spec61[q61];
+    var it61 = Game.ITEMS[row61[0]];
+    if (!it61) { bad61.push(row61[0] + '(缺)'); continue; }
+    if (it61.rarity !== row61[1]) bad61.push(row61[0] + '.rarity=' + it61.rarity);
+    if (it61.stat[row61[2]] !== row61[3]) bad61.push(row61[0] + '.' + row61[2] + '=' + it61.stat[row61[2]]);
+  }
+  assert(bad61.length === 0, '新增 5 件道具的稀有度与 stat 与文案一致（坏: ' + bad61.join(',') + '）');
+  assert(Game.ITEMS.bloodmoon_heart.rarity === 'legend',
+         '赤月之心是第一个 legend 道具（此前 legend 定义了但零条目在用，priceFor 会白算 85 基线）');
+
+  var newUps61 = [
+    ['迅影步伐', 'epic', 'speed', 0.12],
+    ['狂暴之刃', 'epic', 'damage', 0.18],
+    ['疾风连击', 'epic', 'attackSpeed', 0.18],
+    ['战神之躯', 'epic', 'armor', 4]
+  ];
+  var badUp61 = [];
+  for (var r61 = 0; r61 < newUps61.length; r61++) {
+    var u61 = Game.UPGRADES.filter(function (x) { return x.label === newUps61[r61][0]; })[0];
+    if (!u61) { badUp61.push(newUps61[r61][0] + '(缺)'); continue; }
+    if (u61.rarity !== newUps61[r61][1]) badUp61.push(u61.label + '.rarity=' + u61.rarity);
+    if (u61.apply[newUps61[r61][2]] !== newUps61[r61][3]) badUp61.push(u61.label + '.' + newUps61[r61][2]);
+  }
+  assert(badUp61.length === 0, '新增 4 张史诗卡齐全且数值一致（坏: ' + badUp61.join(',') + '）');
+
+  // Boss 奖励只收 epic/legend —— 补完这一档得凑得出三选一
+  var epicUp61 = Game.UPGRADES.filter(function (u) {
+    return u.rarity === 'epic' || u.rarity === 'legend';
+  }).length;
+  assert(epicUp61 === 5, 'epic/legend 属性卡 5 张（' + epicUp61 + '）');
+  var epicIt61 = Object.keys(Game.ITEMS).filter(function (k) {
+    return Game.ITEMS[k].rarity === 'epic' || Game.ITEMS[k].rarity === 'legend';
+  }).length;
+  assert(epicIt61 === 8, 'epic/legend 道具 8 件（' + epicIt61 + '）');
+  assert(epicUp61 + epicIt61 >= 3, 'Boss 奖励池凑得出三选一');
 
   // —— 拾取速度进了属性表，箱子拾取物能序列化回环 ——
   var pl62 = new Game.Player('swordsman');
@@ -2400,7 +2461,17 @@ try {
   assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.08, '回血卡权重系数集中在 CONST');
   var healIds95 = [];
   for (var i95 in Game.ITEMS) if (Game.ITEMS[i95].healing) healIds95.push(i95);
-  assert(healIds95.length === 4, '4 件回血道具被标记（' + healIds95.length + '）');
+  assert(healIds95.length === 6, '6 件回血道具被标记（' + healIds95.length + '）');
+  // 带吸血 / 回血的件必须标 healing，否则绕开 HEAL_ITEM_WEIGHT 降权，
+  // 「回血被砍两轮」的调参结果就会被新道具悄悄绕过。
+  var leak95 = [];
+  for (var j95 in Game.ITEMS) {
+    var st95 = Game.ITEMS[j95].stat;
+    if (st95.lifesteal > 0 || st95.lifeOnHitPct > 0 || st95.lifeOnKillPct > 0 || st95.lifeOnHit > 0 || st95.lifeOnKill > 0) {
+      if (!Game.ITEMS[j95].healing) leak95.push(j95);
+    }
+  }
+  assert(leak95.length === 0, '吸血/回血件都标了 healing，没有绕开降权的（漏: ' + leak95.join(',') + '）');
   assert(Game.ITEMS.lifeluck.stat.lifeOnHitPct === 0.003 &&
          typeof Game.ITEMS.lifeluck.stat.lifeOnHit === 'undefined',
          '生机之种改成按最大生命百分比');
@@ -4416,10 +4487,10 @@ try {
   assert(heroIds5.length === 11, '英雄栏 11 位（' + heroIds5.length + '）');
   assert(monIds5.length === 6 && bosIds5.length === 4,
          '怪物栏 6 / BOSS 栏 4（' + monIds5.length + '/' + bosIds5.length + '）');
-  assert(wpnIds5.length === 4, '装备栏 4 把（' + wpnIds5.length + '）');
-  assert(cardIds5.length === 20,
-         '卡组图鉴 20 张：7 属性 + 1 通用强化 + 12 道具（' + cardIds5.length + '）');
-  assert(CX.total().total === 45, '全部条目 45（' + CX.total().total + '）');
+  assert(wpnIds5.length === 5, '装备栏 5 把（' + wpnIds5.length + '）');
+  assert(cardIds5.length === 29,
+         '卡组图鉴 29 张：11 属性 + 1 通用强化 + 17 道具（' + cardIds5.length + '）');
+  assert(CX.total().total === 55, '全部条目 55（' + CX.total().total + '）');
 
   var missHero = Game.CHARACTERS.filter(function (c) { return heroIds5.indexOf(c.id) < 0; });
   var missWpn = Object.keys(Game.WEAPONS).filter(function (k) { return wpnIds5.indexOf(k) < 0; });
@@ -4476,8 +4547,8 @@ try {
     CX.mark('card', e.key) || unmarked5++;
   });
   assert(unmarked5 === 0, '卡组图鉴的条目 key 与登记 key 完全对齐');
-  assert(CX.progress('card').got === 20,
-         '逐张登记后收满 20 张（19 张登记 + 1 张通用强化天生收录）');
+  assert(CX.progress('card').got === 29,
+         '逐张登记后收满 29 张（28 张登记 + 1 张通用强化天生收录）');
 
   var gen5 = CX.all('card').filter(function (e) { return e.key === 'weaponUpgrade'; })[0];
   assert(!!gen5 && gen5.always === true, '武器强化卡没有 id，标记为天生已收录');
@@ -4535,7 +4606,7 @@ try {
   assert(cxHtml.indexOf('<button class="cx-tab on"') > 0, '当前页签高亮');
   assert(cxHtml.indexOf('BOSS图鉴') > 0, '内容区标题用的是完整名字');
   assert(cxHtml.indexOf('收录 0 / 4') > 0, '显示本页收录进度');
-  assert(cxHtml.indexOf('全部收录 1 / 45') > 0,
+  assert(cxHtml.indexOf('全部收录 1 / 55') > 0,
          '底部整体进度：清空后那张通用强化卡仍算已收录');
 
   // 未收录：名字盖成 ??，不泄露是什么
@@ -4564,7 +4635,7 @@ try {
   assert(fullHtml.indexOf('赤月年兽') > 0 && fullHtml.indexOf('★ 已击败') > 0,
          '已收录显示真名，打过的那只亮星');
   assert(fullHtml.indexOf('收录 4 / 4') > 0, '本页进度收满');
-  assert(fullHtml.indexOf('全部收录 16 / 45') > 0,
+  assert(fullHtml.indexOf('全部收录 16 / 55') > 0,
          '整体进度 = 11 英雄 + 4 BOSS + 1 张通用强化卡');
   assert(fullHtml.indexOf('★ 已击败') < fullHtml.indexOf('赤月年兽') + 200, '打星只加在打过的那只身上');
 

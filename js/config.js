@@ -526,6 +526,15 @@
       pierce: 0, projectileSpeed: 620, knockback: 20,
       color: '#ffd76e', desc: '远程射击，单发子弹。',
     },
+    // 龙胆枪：直线突刺点杀，和铁剑的贴脸横扫区分开。
+    // range 130 = 铁剑 66 的两倍；arc 收窄到 30° 只决定刀光宽度（不管索敌），
+    // pierce 4 是它的核心 —— 一排怪里只打一条线上的。cd 比铁剑慢，把总输出压回来。
+    spear: {
+      id: 'spear', name: '龙胆枪', type: 'melee', star: 1,
+      cooldown: 0.85, damage: 20, range: 130, arc: Math.PI / 6,
+      pierce: 4, projectileSpeed: 0, knockback: 90,
+      color: '#d9cba8', desc: '长柄突刺，射程翻倍、弧度收窄、穿透 4。',
+    },
     // —— Boss 专属武器 —— exclusive: true
     // 只从 Boss 战奖励产出（见 Systems.bossRewardChoices），
     // 普通升级池与商店都必须跳过这类武器。
@@ -688,6 +697,15 @@
     lifeluck:   { id: 'lifeluck',   name: '生机之种', rarity: 'rare',   desc: '每次命中回复最大生命 0.3%', stat: { lifeOnHitPct: 0.003 }, healing: true },
     critemerald:{ id: 'critemerald', name: '破军翠玉', rarity: 'epic',   desc: '暴击伤害 +15%',           stat: { critMult: 0.15 } },
     deathbell:  { id: 'deathbell',  name: '夺命金铃', rarity: 'epic',   desc: '每次击杀回复最大生命 0.5%', stat: { lifeOnKillPct: 0.005 }, healing: true },
+    // —— 双属性 / 传说档（2026-09-26 补 Boss 奖励池）——
+    // bossRewardChoices 只收 epic/legend，原来这档总共 4 件道具，三选一经常凑不齐。
+    // healing:true 的两件照样吃 HEAL_ITEM_WEIGHT 降权 —— 吸血 3% 是噬魂之牙的 3 倍，
+    // 不标 healing 会绕开「回血被砍两轮」的调参结果。desc 与 stat 必须同步。
+    bloodmoon_heart:{ id: 'bloodmoon_heart', name: '赤月之心', rarity: 'legend', desc: '造成伤害的 3% 化为生命',              stat: { lifesteal: 0.03 }, healing: true },
+    war_god_bracer: { id: 'war_god_bracer',  name: '战神护腕', rarity: 'epic',   desc: '伤害 +12%，攻击速度 +8%',           stat: { damage: 0.12, attackSpeed: 0.08 } },
+    shadow_cloak:   { id: 'shadow_cloak',    name: '疾影披风', rarity: 'epic',   desc: '移动速度 +12%，暴击率 +5%',         stat: { speed: 0.12, critChance: 0.05 } },
+    bulwark_core:   { id: 'bulwark_core',    name: '玄武核心', rarity: 'epic',   desc: '最大生命 +30，护甲 +3',            stat: { maxHp: 30, armor: 3 } },
+    greedy_fang:    { id: 'greedy_fang',     name: '贪狼之牙', rarity: 'epic',   desc: '每次命中回复最大生命 0.4%，造成伤害的 0.8% 化为生命', stat: { lifeOnHitPct: 0.004, lifesteal: 0.008 }, healing: true },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */
@@ -699,6 +717,14 @@
     { type: 'stat', rarity: 'rare',   label: '致命直觉',   desc: '暴击率 +8%',              apply: { critChance: 0.08 } },
     { type: 'stat', rarity: 'rare',   label: '厚实护甲',   desc: '护甲 +2',                 apply: { armor: 2 } },
     { type: 'stat', rarity: 'epic',   label: '血气旺盛',   desc: '最大生命 +35',            apply: { maxHp: 35 } },
+    // 2026-09-26 补：epic 原来只有血气旺盛一张，bossRewardChoices 只收 epic/legend，
+    // 升级池里四张卡几乎全是 common/rare 道具 —— Boss 奖励凑不齐三选一。
+    // 这四张是「比对应 rare 档高一档」的直译，不引入新属性键（键都在 _applyStatDelta 里）。
+    // label 同时是图鉴的条目 key（codex.js 'upgrade:' + label），改名字等于新增一条。
+    { type: 'stat', rarity: 'epic',   label: '迅影步伐',   desc: '移动速度 +12%',           apply: { speed: 0.12 } },
+    { type: 'stat', rarity: 'epic',   label: '狂暴之刃',   desc: '伤害 +18%',               apply: { damage: 0.18 } },
+    { type: 'stat', rarity: 'epic',   label: '疾风连击',   desc: '攻击速度 +18%',           apply: { attackSpeed: 0.18 } },
+    { type: 'stat', rarity: 'epic',   label: '战神之躯',   desc: '护甲 +4',                 apply: { armor: 4 } },
   ];
   // 即时回血卡（急救 / 大急救包）已于 2026-09-24 下线：治疗只来自角色被动与吸血，
   // 不该由一张卡瞬间补齐。商店里那张「急救包」也一并移除（见 systems.js rollShopItem）。
