@@ -33,8 +33,11 @@ function main() {
   run('node scripts/patch-android.js', ROOT);
 
   // 4. 构建 debug APK
+  // Windows 上必须写 '.\gradlew.bat'：cmd.exe 解析「不带路径的命令名」时不走 cwd
+  // （只走 PATHEXT + PATH），所以裸 'gradlew.bat' 报「不是内部或外部命令」。
+  // 2026-09-26 打包第一次就是这里断的。
   const isWin = process.platform === 'win32';
-  const gradle = isWin ? 'gradlew.bat' : './gradlew';
+  const gradle = isWin ? '.\\gradlew.bat' : './gradlew';
   run(gradle + ' assembleDebug', androidDir);
 
   const apk = path.join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
