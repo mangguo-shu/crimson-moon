@@ -288,6 +288,16 @@ html, body {
 #levelup, #shop, #pause {
   padding-right: calc(var(--stats-w) + 16px + var(--safe-right));
 }
+/* 侧栏收起后只剩 26px 的把手露出，那 262px 的面板位其实是空的 —— 覆盖层必须把
+   让位收回来，卡片才能铺满全屏、在屏幕上真正居中。不收的话卡群全挤在左边 2/3、
+   右边一大条死黑带，看着就是用户说的「靠左别扭」（2026-09-26 实机反馈）。
+   26 这个数就是 ui.js _updatePanelInset 收起时喂给相机的 inset，两边必须同步 ——
+   改了一个忘了另一个，就是又一轮「CSS 和 JS 各算各的」。 */
+body.stats-folded #levelup,
+body.stats-folded #shop,
+body.stats-folded #pause {
+  padding-right: calc(26px + 16px + var(--safe-right));
+}
 
 .btn {
   display: inline-block;

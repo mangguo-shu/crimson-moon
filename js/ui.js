@@ -44,6 +44,7 @@
       this._statsFolded = false;
       this._statsSig = '';
       this._updatePanelInset();
+      this._syncFoldClass();
       var self = this;
       window.addEventListener('resize', function () { self._updatePanelInset(); });
       console.log('[UI] 初始化完成');
@@ -347,6 +348,7 @@
       this._statsFolded = !this._statsFolded;
       this._statsShow(true);
       this._updatePanelInset();   // 收起来后相机把让出去的画面收回来
+      this._syncFoldClass();      // 覆盖层同步收回那份让位（见 CSS 的 body.stats-folded）
       var btn = document.getElementById('stats-fold');
       if (btn) btn.textContent = this._statsFolded ? '▶' : '◀';
       return this._statsFolded;
@@ -355,13 +357,24 @@
     /** 把面板实际挡住的可视宽度写进相机，相机据此让位（否则角色会走进面板底下、
      *  面板右边的敌人看不见）。CSS 里 width=min(262px,34vw)，收起后只剩 26px 露出。
      *  竖屏（锁横屏在部分安卓上跑成竖屏）时面板更窄：min(200px,42vw) ——
-     *  改 CSS 的 @media (orientation: portrait) 规则必须同步这两个数值。 */
+     *  改 CSS 的 @media (orientation: portrait) 规则必须同步这两个数值。
+     *  收起时喂相机的 26 同样被 CSS 里 body.stats-folded 的 padding-right 引用，
+     *  改这里记得同步那边（测试里有一条断言把两个 26 对上）。 */
     _updatePanelInset: function () {
       var vw = window.innerWidth, vh = window.innerHeight;
       var full = vh > vw
         ? Math.min(200, vw * 0.42)
         : Math.min(262, vw * 0.34);
       Game.Renderer.setViewInset(this._statsFolded ? 26 : full);
+    },
+
+    /** 把收起状态挂到 body 上。#levelup/#shop/#pause 的 padding-right 有这个标位就会
+     *  从「让出 262px」收回成「只让出 26px 把手」—— 侧栏收着的时候那 262px 是空的，
+     *  覆盖层还让位就会把卡群全挤到左边 2/3，看着就是「靠左别扭」。
+     *  用 className 写而不用 classList —— 测试 stub 里 classList 是 no-op。
+     *  body 上本来没有其他类，直接赋值而不是累加。 */
+    _syncFoldClass: function () {
+      document.body.className = this._statsFolded ? 'stats-folded' : '';
     },
 
     /* ---------------- 商店 ---------------- */

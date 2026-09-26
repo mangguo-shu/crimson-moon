@@ -3784,6 +3784,34 @@ try {
          'px（原来 200/150 的卡会把按钮条顶出屏外）');
   assert(lvH <= availH, '三选一整块 ' + lvH.toFixed(1) + 'px ≤ 可视高 ' + availH + 'px');
 
+  // ---- 1d. 侧栏收起时覆盖层要把让位收回来（用户「卡片靠左别扭，做下居中」）----
+  // 侧栏收着时只剩 26px 把手露出，那 262px 的面板位是空的。#levelup/#shop/#pause
+  // 原来无条件让出 262+16，于是 815px 的屏幕上卡群只占左边 521px、右边一大条死带，
+  // 看着就是「靠左」——一排等分修好了单行宽度，却没修这个让位。
+  var foldRule2 = (css2.match(/body\.stats-folded #levelup,[\s\S]{0,400}?padding-right:\s*calc\(([^)]*)\)/)
+                    || [null, ''])[1];
+  assert(foldRule2, '侧栏收起时有专门规则收回覆盖层让位（没有这条卡群会一直靠左 2/3）');
+  assert(/26px\s*\+\s*16px/.test(foldRule2),
+         '收起时只让出把手 26px + 16px 内边距（实得：' + foldRule2 + '）');
+  var fullRule2 = (css2.match(/#levelup, #shop, #pause \{[^}]*padding-right:\s*calc\(([^)]*)\)/)
+                   || [null, ''])[1];
+  assert(/var\(--stats-w/.test(fullRule2),
+         '侧栏展开时仍按 --stats-w 让位，别让位改小了把卡压到面板底下');
+  var foldJs2 = (uiSrc.match(/_syncFoldClass: function[\s\S]*?\n    \},/) || [''])[0];
+  assert(foldJs2, 'ui.js 有 _syncFoldClass');
+  assert(/document\.body\.className\s*=\s*this\._statsFolded\s*\?\s*'stats-folded'\s*:\s*''/.test(foldJs2),
+         '收起时把 stats-folded 写进 body.className，展开时清空');
+  assert(/_updatePanelInset\(\);\s*\n\s*this\._syncFoldClass\(\);/.test(uiSrc),
+         'init 里就要同步一次：开机默认展开，body 上不能残留上个进程的类');
+  assert(/toggleStatsFold[\s\S]{0,400}?_syncFoldClass\(\)/.test(uiSrc),
+         '切换收起状态时同步 body 类');
+  // 26 这个数在 CSS（body.stats-folded 的 padding-right）和 JS（喂相机的 inset）各写一份，
+  // 改一个忘了另一个卡群就会压住把手或让位不足 —— 把两个字面量对起来。
+  var jsInset2 = (uiSrc.match(/setViewInset\(\s*this\._statsFolded\s*\?\s*(\d+)\s*:/) || [null, ''])[1];
+  var cssInset2 = (foldRule2.match(/(\d+)px\s*\+\s*16px/) || [null, ''])[1];
+  assert(jsInset2 === cssInset2,
+         '收起时的把手宽度 CSS=' + cssInset2 + 'px / JS=' + jsInset2 + 'px 必须一致');
+
   var portrait2 = (css2.match(/@media \(orientation: portrait\)\s*\{[\s\S]*?\n\}/) || [''])[0];
   assert(/\.char-grid\s*\{[^}]*repeat\(2,/.test(portrait2),
          '竖屏退回 2 列（4 张挤 358px = 每张 80px，卡名放不下）');
