@@ -206,7 +206,6 @@
     var hasEndless = !!(endless && endless.player);
     Game.UI.renderMenu(hasCampaign, hasEndless, endless ? (endless.wave || 1) : 0);
     Game.UI.showScreen('MENU');
-    Game.Native.allowSleep();
   };
 
   G.pause = function () {
@@ -455,7 +454,6 @@
     Game.Storage.remove(G._saveSlot(state)); // 通关后清除进行中的存档
     Game.UI.renderVictory(state, rank);
     Game.UI.showScreen('VICTORY');
-    Game.Native.allowSleep();
     console.log('[Game] 通关！');
   };
 
@@ -466,7 +464,6 @@
     Game.Storage.remove(G._saveSlot(state)); // 死亡后清除进行中的存档
     Game.UI.renderGameOver(state, rank);
     Game.UI.showScreen('GAME_OVER');
-    Game.Native.allowSleep();
     if (Game.FX) Game.FX.flash('#ff0000', 0.5);
     console.log('[Game] 游戏结束 mode=' + state.mode + ' wave=' + state.wave);
   };

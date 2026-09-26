@@ -26,6 +26,9 @@ const ROOT = path.join(__dirname, '..');
 const NM = path.join(ROOT, 'node_modules');
 const OUT = path.join(ROOT, 'vendor', 'capacitor');
 
+// 屏幕常亮不在这个列表里，也不是漏了：安卓没有官方 @capacitor/keep-awake 包
+// （npm 搜到的都是社区分支）。它由 patch-android.js 往 MainActivity 注入的
+// FLAG_KEEP_SCREEN_ON 承担，全程生效，JS 端不需要任何调用。
 // 目标文件名 → 源文件。顺序重要：core 必须先落地（其余 UMD 包在脚本加载时会
 // 引用全局变量 capacitorExports，也就是 core 导出的那个模块对象）。
 const FILES = [

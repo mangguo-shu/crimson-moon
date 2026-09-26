@@ -3606,14 +3606,31 @@ try {
          'App.addListener/removeListeners 可调（返回键与切后台监听挂这里）');
   assert(typeof plug.Preferences.set === 'function' && typeof plug.Preferences.get === 'function' &&
          typeof plug.Preferences.remove === 'function', 'Preferences set/get/remove 可调（原生存档）');
-  assert(!plug.KeepAwake, 'KeepAwake 确实没装（屏幕常亮缺这一块，nativeBridge 已按可选插件处理）');
+  // 屏幕常亮不靠 JS 端插件：安卓没有官方 @capacitor/keep-awake 包（npm 上只有社区分支）。
+  // 之前 nativeBridge 里假装有 P.KeepAwake 并把它列进 missingPlugins，结果真机每次启动都
+  // 报「KeepAwake 未加载」、主菜单戳也显示「缺插件：KeepAwake」——纯噪音，看着像真有毛病。
+  assert(!plug.KeepAwake, '没有 KeepAwake 插件（官方不存在这个包）');
+  assert(!fs.existsSync(path.join(__dirname, '..', 'vendor', 'capacitor', 'keep-awake.js')),
+         'vendor/ 里没有 keep-awake.js（避免误导成该装没装）');
 
   // nativeBridge 对每个插件都做了存在性判断：少一个包不能崩整条链
   var nbSrc = fs.readFileSync(path.join(JS_DIR, 'nativeBridge.js'), 'utf8');
-  ['ScreenOrientation', 'StatusBar', 'KeepAwake', 'App'].forEach(function (n) {
+  ['ScreenOrientation', 'StatusBar', 'App'].forEach(function (n) {
     assert(new RegExp('if \\(P && P\\.' + n + '\\)').test(nbSrc), 'nativeBridge 对 P.' + n + ' 做了存在性判断');
   });
+  assert(nbSrc.indexOf('P.KeepAwake') < 0,
+         'nativeBridge 不再调用幻影插件 P.KeepAwake（缺它会永久污染 missingPlugins 与主菜单戳）');
+  assert(nbSrc.indexOf('keepAwakeOn') < 0, 'keepAwakeOn 已删除（无插件可调用，留着是假开关）');
+  assert(nbSrc.indexOf('allowSleep') < 0, 'allowSleep 已删除（无插件可调用，留着是假开关）');
+  var gameSrc = fs.readFileSync(path.join(JS_DIR, 'game.js'), 'utf8');
+  assert(gameSrc.indexOf('allowSleep') < 0, 'game.js 不再调用已删除的 allowSleep');
   assert(Game.Native.missingPlugins instanceof Array, 'missingPlugins 初始化是空数组');
+  var patchAndroidSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'patch-android.js'), 'utf8');
+  assert(/FLAG_KEEP_SCREEN_ON/.test(patchAndroidSrc),
+         '屏幕常亮由 MainActivity 的 FLAG_KEEP_SCREEN_ON 承担（全程生效）');
+  var vendorCapSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'vendor-capacitor.js'), 'utf8');
+  assert(/keep-awake/.test(vendorCapSrc) && !/^.*'keep-awake\.js',/m.test(vendorCapSrc),
+         'vendor-capacitor.js 说明为什么不装 keep-awake，且 FILES 里确实没有');
 
   delete globalThis.Capacitor;
 

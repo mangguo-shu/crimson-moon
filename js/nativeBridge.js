@@ -7,7 +7,8 @@
  *  - 切后台自动暂停存档 / 切回前台恢复
  *  - 安卓返回键：游戏中暂停 → 暂停界面退出确认 → 主菜单退出
  *  - 震动反馈（受伤/暴击/Boss），可开关
- *  - 屏幕常亮（keep awake）
+ *  - 屏幕常亮：由 MainActivity 的 FLAG_KEEP_SCREEN_ON 承担（见 patch-android.js），
+ *    本文件不掺和 —— 安卓没有官方 @capacitor/keep-awake 包，别在这里假装有。
  * ============================================================ */
 (function () {
   'use strict';
@@ -17,7 +18,6 @@
     isNative: false,
     platform: 'web',
     haptics: true,        // 震动开关（由设置控制）
-    keepAwakeOn: true,
     missingPlugins: [],   // init 时点名缺失的插件名（调试面板用）
 
     // 由游戏逻辑注册的回调
@@ -61,7 +61,7 @@
 
       // 逐个点名缺失的插件，别让整个原生层因为少一个包就静默变哑巴
       var missing = [];
-      ['App', 'ScreenOrientation', 'StatusBar', 'Haptics', 'KeepAwake'].forEach(function (n) {
+      ['App', 'ScreenOrientation', 'StatusBar', 'Haptics'].forEach(function (n) {
         if (!P || !P[n]) missing.push(n);
       });
       this.missingPlugins = missing;
@@ -80,13 +80,9 @@
       if (P && P.StatusBar) {
         P.StatusBar.hide().catch(function () {});
       }
-      // 3. 屏幕常亮。KeepAwake 不在依赖里，缺失时这里会被跳过——
-      // 手机上玩久了屏幕会自己熄，是缺包不是逻辑 bug。
-      if (P && P.KeepAwake && this.keepAwakeOn) {
-        P.KeepAwake.keepAwake().catch(function (e) {
-          console.warn('[Native] keepAwake 失败', e);
-        });
-      }
+      // 3. 屏幕常亮在这里什么都不做：patch-android.js 已经往 MainActivity 注入了
+      // FLAG_KEEP_SCREEN_ON，游戏进程活着屏幕就一直亮着。安卓官方没有 keep-awake 包，
+      // 之前那支 keep-awake 分支是永远进不去的死代码。
       // 4. 切后台 / 回前台
       if (P && P.App) {
         P.App.addListener('pause', function () {
@@ -119,15 +115,6 @@
         try {
           P.Haptics.vibrate({ duration: Math.max(10, ms | 0) }).catch(function () {});
         } catch (e) {}
-      }
-    },
-
-    /** 关闭屏幕常亮（退出到主菜单/结算时可释放） */
-    allowSleep: function () {
-      var C = window.Capacitor;
-      var P = C && C.Plugins;
-      if (P && P.KeepAwake) {
-        P.KeepAwake.allowSleep().catch(function () {});
       }
     },
   };
