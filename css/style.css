@@ -189,6 +189,16 @@ html, body {
 }
 .panel h2 { font-size: 24px; color: #fff; margin-bottom: 16px; }
 .panel .subtitle { color: #bbb; font-size: 14px; margin-bottom: 24px; }
+/* 版本号：真机验收时用来确认手机跑的是哪一版 assets。2026-09-26 那次「一个都没修好」
+   就是手机上跑着 9/21 的包 —— `npx cap sync android` 从没跑过，7 条修复一条都没进去。
+   有这个号就不用猜。 */
+.build-stamp {
+  margin-top: 18px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #5a4444;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ===== 人物面板：右侧常驻，开局滑入，无需点开 ===== */
 .stats-side {

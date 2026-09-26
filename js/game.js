@@ -67,7 +67,9 @@
 
     // 主菜单
     G.toMenu();
-    console.log('[Game] 初始化完成，进入主菜单');
+    // 启动就打版本号：真机上分不清装的哪一版 assets 时，先看这行
+    console.log('[Game] ' + Game.CONST.BUILD + ' platform=' + Game.Native.platform +
+                ' 初始化完成，进入主菜单');
 
     // 启动主循环
     G._last = 0;

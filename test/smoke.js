@@ -3617,6 +3617,39 @@ try {
 
   delete globalThis.Capacitor;
 
+  // ---- 9. 主菜单带版本号：手机上分不清装的哪版 assets 时不用猜 ----
+  // 2026-09-26 真机「一个都没修好」的真相是手机跑着 9/21 的 assets
+  // （`npx cap sync android` 从没跑过），7 条修复一条都没进 APK。
+  assert(Game.CONST.BUILD && Game.CONST.BUILD.indexOf('v') === 0,
+         'config 里定义了 BUILD 版本号（' + Game.CONST.BUILD + '）');
+  Game.Game.toMenu();
+  var menuHtml = document.getElementById('menu').innerHTML;
+  assert(menuHtml.indexOf(Game.CONST.BUILD) >= 0,
+         '主菜单显示 BUILD 号');
+  assert(menuHtml.indexOf(Game.Native.platform) >= 0,
+         '主菜单显示运行平台（' + Game.Native.platform + '）');
+
+  // ---- 10. assets 同步守卫：别再让旧资源打包进 APK ----
+  // 版本号只能事后帮人确认；守卫是构建期直接拦住。它挂在 gradle 的 preBuild 上，
+  // 所以从 Android Studio 直接构建也绕不过 —— 上次 9/21 的资源就是这么溜进去的。
+  var patchSrc = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'patch-android.js'), 'utf8');
+  assert(/tasks\.register\('verifyWebAssets'\)/.test(patchSrc),
+         'patch-android.js 定义 verifyWebAssets 任务');
+  assert(/vendor\/core\.js/.test(patchSrc) && /GradleException/.test(patchSrc),
+         '守卫检查 vendor/core.js 且缺失时抛 GradleException（fail fast，不是 warn）');
+  assert(/t\.name == 'preBuild'\) t\.dependsOn 'verifyWebAssets'/.test(patchSrc),
+         '守卫挂在 preBuild 上（Android Studio 构建也会触发）');
+  assert(/patchSyncGuard\(\)/.test(patchSrc), 'patch-android.js 的 main 调用了 patchSyncGuard');
+  assert(/已存在/.test(patchSrc), '守卫注入是幂等的（重复打补丁不会叠加两份任务）');
+  var gradleP = path.join(__dirname, '..', 'android', 'app', 'build.gradle');
+  if (fs.existsSync(gradleP)) {
+    var gradle = fs.readFileSync(gradleP, 'utf8');
+    var guardCount = (gradle.match(/tasks\.register\('verifyWebAssets'\)/g) || []).length;
+    assert(guardCount === 1, 'android 工程的 build.gradle 里守卫只有一份（补丁已实际执行过）');
+  } else {
+    console.log('  · （跳过：android/ 工程不在本地，只校验补丁脚本本身）');
+  }
+
   // 收尾：还原本节改动的全局状态
   Game.state = null;
   Game.uiScreen = 'MENU';

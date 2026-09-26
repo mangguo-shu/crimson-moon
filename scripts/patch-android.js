@@ -6,6 +6,7 @@
  *  3. build.gradle：versionName 1.0.0（versionCode 已在生成时为 1）
  *  4. variables.gradle：minSdkVersion 26 / targetSdkVersion 34
  *  5. MainActivity.java：屏幕常亮（FLAG_KEEP_SCREEN_ON）
+ *  6. app/build.gradle：注入 web assets 同步守卫（防跳过 cap sync 打包旧资源）
  * 所有替换均幂等，可重复执行。
  * ============================================================ */
 'use strict';
@@ -96,6 +97,47 @@ function patchAppGradle() {
   else console.log('[patch] app/build.gradle: 无变化');
 }
 
+/* ---------- 3b. web assets 同步守卫 ---------- */
+// 2026-09-26 真机验收的教训：手机装的是 9/21 的 assets，因为 `npx cap sync android`
+// 从没跑过（多半是在 Android Studio 里直接点 Build APK，那步只编译不拷 web 资源）。
+// 结果 7 条修复一条都没进包，看起来像「代码全是坏的」。
+// 守卫挂在 preBuild 上，任何构建入口（npm script / Android Studio / CI）都绕不过。
+var SYNC_GUARD =
+  '\n' +
+  '// ---- 赤月猎场：web assets 同步守卫（scripts/patch-android.js 注入，勿手改） ----\n' +
+  "// 直接用 Android Studio 构建不会执行 `npx cap sync android`，assets/public 会\n" +
+  "// 停留在上一次同步时的旧资源，打出来的 APK 看着像修复没生效。\n" +
+  "tasks.register('verifyWebAssets') {\n" +
+  "    doLast {\n" +
+  "        def pub = file('src/main/assets/public')\n" +
+  "        def missing = []\n" +
+  "        if (!new File(pub, 'vendor/core.js').exists()) missing << 'vendor/core.js'\n" +
+  "        def idx = new File(pub, 'index.html')\n" +
+  "        if (idx.exists() && idx.text.indexOf('vendor/capacitor/core.js') < 0)\n" +
+  "            missing << 'index.html 未引用 Capacitor'\n" +
+  "        if (missing.size() > 0) {\n" +
+  "            logger.error('[assets] assets/public 是旧资源，缺：' + missing.join('；'))\n" +
+  "            logger.error('[assets] 请先执行  npm run sync:android  再重新构建')\n" +
+  "            throw new GradleException('web assets 未同步，拒绝打包旧版本')\n" +
+  "        }\n" +
+  "        logger.lifecycle('[assets] assets/public 已是最新')\n" +
+  "    }\n" +
+  "}\n" +
+  "tasks.whenTaskAdded { t -> if (t.name == 'preBuild') t.dependsOn 'verifyWebAssets' }\n" +
+  '// ---- web assets 同步守卫结束 ----\n';
+
+function patchSyncGuard() {
+  const p = path.join(ANDROID, 'app', 'build.gradle');
+  if (!fs.existsSync(p)) { console.warn('[patch] 未找到 app/build.gradle，跳过 assets 守卫'); return; }
+  let s = read(p);
+  if (s.includes("tasks.register('verifyWebAssets')")) {
+    console.log('[patch] build.gradle: assets 同步守卫已存在');
+    return;
+  }
+  write(p, s.replace(/\s*$/, '') + SYNC_GUARD);
+  console.log('[patch] build.gradle: 注入 assets 同步守卫');
+}
+
 /* ---------- 4. variables.gradle ---------- */
 function patchVariables() {
   const p = path.join(ANDROID, 'variables.gradle');
@@ -162,6 +204,7 @@ function main() {
   patchManifest();
   patchStyles();
   patchAppGradle();
+  patchSyncGuard();
   patchVariables();
   patchMainActivity();
   console.log('[patch] 安卓工程补丁完成');

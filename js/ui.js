@@ -114,7 +114,11 @@
         '<button class="btn ghost" onclick="Game.Game.openSettings()">设置</button>' +
         '<button class="btn ghost" ' + ((hasCampaignSave || hasEndlessSave) ? '' : 'disabled') +
         ' onclick="Game.Game.deleteSave()">删除存档</button>' +
-        '<div class="subtitle">' + (Game.Input.touchMode ? '触屏：左摇杆移动，右下角暂停' : '键盘：WASD 移动 · 空格暂停 · F5 存档 · F9 读档 · ~ 调试') + '</div>';
+        '<div class="subtitle">' + (Game.Input.touchMode ? '触屏：左摇杆移动，右下角暂停' : '键盘：WASD 移动 · 空格暂停 · F5 存档 · F9 读档 · ~ 调试') + '</div>' +
+        '<div class="build-stamp">' + Game.CONST.BUILD +
+          ' · ' + (Game.Native.platform === 'android' ? '安卓' : Game.Native.platform) +
+          (Game.Native.isNative && Game.Native.missingPlugins.length ?
+            ' · 缺插件：' + Game.Native.missingPlugins.join('/') : '') + '</div>';
       // 主菜单内容不高，恢复垂直居中；角色选择页会覆盖成 panel-top（见下）。
       el.menu.className = 'panel';
     },
