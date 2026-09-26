@@ -402,9 +402,32 @@
     this._drawFlash(ctx, dt);
     if (Game.Input && Game.Input.touchMode) this._drawJoystick(ctx);
 
+    // 主菜单在画布角落也印一份版本号。面板里的戳跟着 CSS 走 —— CSS 要是旧的，
+    // 戳就跟着一起看不见，而画布是最后还能用来确认的东西。2026-09-26 用户手上
+    // 一直是一份 9/21 的 APK，反复验收都说「没改」，光靠面板戳根本发现不了。
+    if (!state && CONST.BUILD) this._drawBuildStamp(ctx);
+
     // 更新粒子与特效（逻辑更新放这里即可）
     this._updateParticles(dt);
     this._updateEffects(dt);
+  };
+
+  /** 画布右下角的版本号水印（仅主菜单）：半透明底 + 金字，贴在世界画面上。
+   *  不走 DOM，CSS 旧不旧都照样画出来 —— 这是「装的到底哪一版」的唯一可靠依据。 */
+  R._drawBuildStamp = function (ctx) {
+    var v = this.view;
+    var plat = (Game.Native && Game.Native.platform === 'android') ? ' · 安卓' : '';
+    var txt = CONST.BUILD + plat;
+    ctx.save();
+    ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    var w = ctx.measureText(txt).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(v.w - w - 14, v.h - 22, w + 12, 16);
+    ctx.fillStyle = 'rgba(255,207,94,0.9)';
+    ctx.fillText(txt, v.w - 8, v.h - 9);
+    ctx.restore();
   };
 
   R._drawGround = function (ctx) {

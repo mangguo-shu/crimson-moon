@@ -3667,6 +3667,34 @@ try {
     console.log('  · （跳过：android/ 工程不在本地，只校验补丁脚本本身）');
   }
 
+  // ---- 11. 画布上也画一份版本号 ----
+  // 面板里的戳跟着 CSS 走：CSS 要是旧的，戳跟着一起消失。2026-09-26 用户手上
+  // 一直是一份 9/21 的 APK，反复验收都说「一个都没修好」，光看面板根本发现不了。
+  // 画布是最后还能用来确认的东西 —— 它旧不旧都得把画面画出来。
+  var rSrc = fs.readFileSync(path.join(JS_DIR, 'renderer.js'), 'utf8');
+  assert(/_drawBuildStamp/.test(rSrc), 'renderer 定义 _drawBuildStamp（画布版本水印）');
+  assert(/if \(!state && CONST\.BUILD\) this\._drawBuildStamp/.test(rSrc),
+         '画布版本号只在无对局（主菜单）时画，不打扰游戏画面');
+
+  // 功能验证：真跑一遍 render，抓 fillText 看里面有没有 BUILD
+  var R = Game.Renderer;
+  R.init(makeElement('canvas'));
+  var drawn = [];
+  var realFillText = R.ctx.fillText;
+  R.ctx.fillText = function (t) { drawn.push(String(t)); };
+  try {
+    R.render(null, 0);
+    assert(drawn.some(function (t) { return t.indexOf(Game.CONST.BUILD) >= 0; }),
+           '主菜单画布上真的画出了 BUILD 号（' + Game.CONST.BUILD + '）');
+    drawn = [];
+    R.render(Game.Systems.createState('campaign', 'swordsman', 1), 0);
+    assert(!drawn.some(function (t) { return t.indexOf(Game.CONST.BUILD) >= 0; }),
+           '对局进行中不画版本水印');
+  } finally {
+    R.ctx.fillText = realFillText;
+    Game.state = null;
+  }
+
   // 收尾：还原本节改动的全局状态
   Game.state = null;
   Game.uiScreen = 'MENU';
