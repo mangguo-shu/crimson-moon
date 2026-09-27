@@ -852,24 +852,18 @@
     jade_crossbow: '_drawCrossbow',
   };
 
-  /* 出手位移幅值（世界单位）：突刺型武器不是绕剑柄挥过去，而是沿 aim 直推。
-   * 按武器 id 派生，和 ORBIT_ICON 同源。12 单位 ≈ 图标高度的 6 成 —— 16px 的小图标
-   * 不到这个量级看不出「扎出去」。没登记 = 0，横扫武器只转角度不位移。 */
-  var LUNGE_AMT = {
-    spear: 12,
-  };
-
-  // 画一把卫星武器。th 是它当前朝向（静止时 = 径向朝外，挥砍时绕过去）。
+  // 画一把卫星武器。x/y 已经是「这一帧它该站的位置」（玩家局部坐标）：
+  // 静止时在轨道布置点上，出手时由 _drawOrbitWeapons 插值到特效线的尽头，
+  // 前推不在这里做 —— 这里只负责造型和朝向，所以图标比例（scale 0.62）
+  // 恒为定值，「弹出去」靠位置变，不靠画大。
+  // th 是它当前朝向（静止时 = 径向朝外，挥砍/突刺时绕过去）。
   // fire 是放箭进度（1 = 刚扣扳机/扣弦），枪口焰、弩弦回弹、箭飞出都挂在这上面。
-  // lunge 是突刺前推量（世界单位），沿局部 -y 往前移 —— 平移不改变朝向，
-  // 所以枪身照样跟着 th 转，只是整把枪在刺出去的瞬间往前探。
   // 支点在剑柄/弩身上（局部 +2.5y），挥砍是绕着手转的，不是原地飘。
-  R._drawOrbitIcon = function (ctx, w, x, y, th, fire, lunge) {
+  R._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(th);
     if (fire > 0) ctx.translate(0, fire * 3.4);
-    if (lunge > 0) ctx.translate(0, -lunge);   // 局部 -y 是前，突刺沿它前推
     ctx.scale(0.62, 0.62);
     ctx.translate(0, 2.5);
     var fn = ORBIT_ICON[w.def.id];
@@ -911,10 +905,24 @@
         dAng = ((w.swingAim + Math.PI / 2) - rest + Math.PI * 3) % (Math.PI * 2) - Math.PI;
       }
       var fire = w.def.type === 'ranged' && dAng !== 0 ? (1 - t) : 0;
-      // 突刺幅值：只在出手余韵里推，sin 相位和刀光同一套 —— t = 0.5 推得最远，
-      // 起落都回 0，前后帧不会跳。不走 dAng 判定：dAng 为 0 表示目标正好在
-      // 静止位上，枪尖照样要扎出去，不能因为「不用转角度」就没了动作。
-      var lungeAmp = swinging ? (LUNGE_AMT[w.def.id] || 0) : 0;
+      // 位置：近战武器出手时整把弹出去再收回来，落点是「这条特效线能打多远」
+      // —— 逻辑层在出手瞬间记下的有效射程 w.swingRange（×MELEE_RANGE_SCALE 的
+      // 权威值在 weapons.js，渲染侧不重算公式）。从轨道布置点插值到线的尽头
+      // （玩家 + 射程 × 朝向），所以枪尖/刀尖确实踩在白线上，不是凭空往前飞。
+      // sin(π·gt) 让起落都回静止位、前后帧不跳，峰值在 t = 0.5 —— 和朝向
+      // 同一套相位，图标到位的同一帧刀光也铺满。比例不放大（_drawOrbitIcon 里的
+      // 0.62 是定值），只是位置弹出去。
+      // 光晕和强化圈仍钉在轨道上：那是「这一格正在出手」和「这把武器几星」的
+      // 标记，跟着图标飞走就看不清哪一把被强化过。
+      var lungeTo = (w.def.type === 'melee' && swinging &&
+                     w.swingAim !== undefined && w.swingRange) ? w.swingRange : 0;
+      var pose = function (gt) {
+        var s = Math.sin(Math.PI * gt);
+        if (!lungeTo) return { x: x, y: y, th: rest + dAng * s };
+        var tx = w.swingRange * Math.cos(w.swingAim);
+        var ty = w.swingRange * Math.sin(w.swingAim);
+        return { x: x + (tx - x) * s, y: y + (ty - y) * s, th: rest + dAng * s };
+      };
       // 光晕：出手瞬间膨一圈，每把武器都有独立反馈
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -924,21 +932,19 @@
       ctx.beginPath(); ctx.arc(x, y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
       ctx.restore();
       // 拖影：上一两帧的位置，alpha 更低 —— 16px 的小图标全靠这个看出速度。
-      // 纯位移的突刺也要带拖影，所以判定条件除了 dAng 还要看 lungeAmp。
-      for (var g = 2; g >= 1 && (dAng !== 0 || lungeAmp > 0); g--) {
+      // 纯位移的突刺也要带拖影，所以判定条件除了 dAng 还要看 lungeTo。
+      for (var g = 2; g >= 1 && (dAng !== 0 || lungeTo > 0); g--) {
         var gt = t - g * 0.16;
         if (gt <= 0 || gt >= t) continue;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.26 * (1 - t) / g;
-        this._drawOrbitIcon(ctx, w, x, y,
-          rest + dAng * Math.sin(Math.PI * gt), fire,
-          lungeAmp * Math.sin(Math.PI * gt));
+        var pg = pose(gt);
+        this._drawOrbitIcon(ctx, w, pg.x, pg.y, pg.th, fire);
         ctx.restore();
       }
-      this._drawOrbitIcon(ctx, w, x, y,
-        rest + dAng * Math.sin(Math.PI * t), fire,
-        lungeAmp * Math.sin(Math.PI * t));
+      var pm = pose(t);
+      this._drawOrbitIcon(ctx, w, pm.x, pm.y, pm.th, fire);
       // 强化等级：一圈一圈，Lv1 光晕、Lv2 起每级多一圈
       if (w.level > 1) {
         ctx.save();

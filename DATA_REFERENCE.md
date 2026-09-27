@@ -131,8 +131,15 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
   `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
   `pistol → _drawPistol`、`jade_crossbow → _drawCrossbow`。
   漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）—— 龙胆枪就这样顶着剑的造型出场过。
-- 出手**位移幅值**同样按 id 派生：`renderer.js LUNGE_AMT`（`spear: 12`，世界单位）。
-  横扫武器只绕剑柄转、不位移；突刺型沿 aim 直推。不登记 = 0。
+- 出手**位移**已经不按 id 派生 —— `renderer.js` 里没有 `LUNGE_AMT` 那张表了。近战武器
+  整把从轨道布置点**插值到特效线的尽头**再收回来（`sin(πt)`，起落都回静止位，
+  峰值在余韵中点 = `SWING_DUR` 一半），落点距离 = `WeaponInstance.swingRange`。
+  这个字段由 `weapons.js` 在近战出手瞬间写成 `this.range()`（已含 ×`MELEE_RANGE_SCALE`），
+  和 `swingAim` 同源 —— 判定与画面用同一个数，不会出现「图标刺的距离和枪线长度对不上」。
+  图标缩放恒为 `0.62`：**「弹出去」只靠位置变，不靠画大**。远程武器不弹
+  （`swingRange` 只在近战分支记）。
+  光晕和强化圈仍钉在轨道布置点上 —— 那是「这一格正在出手」和「这把武器几星」的标记，
+  跟着图标飞走就看不清哪一把被强化过。
 - 近战特效两种：横扫 `FX.slash`（扇形，宽 = `WEAPON_ARC`）、突刺 `FX.thrust`（枪线，长 = 有效射程、
   半宽 = 走廊半宽）。两者都从玩家身上发出 —— 特效和命中范围必须同圆心。
 - 远程伤害 ×0.6、近战射程 ×1.25 —— 走 CONST 系数，表本体不动。
@@ -410,7 +417,8 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | weapons.js `MELEE_STYLE` | 近战出手方式按武器 id 派生，**漏登记 = 走横扫**（想要突刺/回旋必须登记） |
 | weapons.js `THRUST_HALF` | 突刺走廊半宽比例（模块本地常量，不在表里） |
 | renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**） |
-| renderer.js `LUNGE_AMT` | 出手位移幅值按武器 id 派生（**漏登记 = 只转角度不位移**） |
+| weapons.js `swingRange` | 近战出手瞬间记下的有效射程（`this.range()`），卫星图标弹到的落点距离；**渲染侧不重算 `def.range × MELEE_RANGE_SCALE`**，和 `swingAim` 同源 |
+| renderer.js `_drawOrbitWeapons` 里的 `pose()` | 图标位置从轨道布置点插值到特效线尽头（近战），远程不动 |
 | renderer.js `_drawEffects` | 特效 `switch(f.type)`，新特效类型要在这里加分支 |
 | renderer.js:507 | `R._PLAYER_BODY` | 4 套姿态绘制 |
 | renderer.js:1001 | `_drawEnemy` 的 `switch(e.type)` | **新怪不加 case 会画成跳尸** |
@@ -447,8 +455,10 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 1. `WEAPONS` 加一条（记得带 `color` —— 刀光/枪线特效 `renderer.js` 和弹体颜色都读它，缺了画成 `undefined`）
 2. 远程弹补 `weapons.js PROJ_SHAPE`
 3. **`renderer.js ORBIT_ICON` 登记图标**（漏了不报错，会静默顶着剑或弩的造型出场）
-4. **不是横扫就补 `weapons.js MELEE_STYLE`**，并在 `renderer.js LUNGE_AMT` 登记位移幅值；
-   写一个 `_xxxAttack`（签名 `(owner, state, aim, claimed)`）+ 新的 `FX.xxx` 特效
+4. **不是横扫就补 `weapons.js MELEE_STYLE`**，写一个 `_xxxAttack`（签名
+   `(owner, state, aim, claimed)`）+ 新的 `FX.xxx` 特效。图标前推**不用登记任何东西**
+   —— 它自动从轨道弹到「这条特效线能打多远」（落点 = 近战分支里写下的 `swingRange`，
+   见第 3 章那条），横扫和突刺一视同仁
 5. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
 
 `commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
@@ -459,7 +469,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 **加属性卡**：`UPGRADES` 加一条即可。注意 `bossRewardChoices` 只收 `epic/legend`。
 
-**改完跑 `npm test`** —— 基线 850 + 10 全绿。哪张表漏了登记点会立刻红。
+**改完跑 `npm test`** —— 基线 913 + 10 全绿。哪张表漏了登记点会立刻红。
 
 ---
 

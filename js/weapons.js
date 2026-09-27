@@ -77,6 +77,7 @@
     this.slot = slot || 0;   // 槽位序号 → 轨道角度
     this.swingTime = 0;      // 距上次出手多久（渲染画出手余韵用；不持久化）
     this.swingAim;           // 上次出手的朝向：剑身绕它挥、弩机朝它放箭（不持久化）
+    this.swingRange;         // 上次出手的有效射程：卫星图标弹到「线的尽头」用它（不持久化）
   }
 
   /** 本把武器挂在轨道上的位置。纯查询、不改状态：
@@ -149,6 +150,10 @@
 
     if (this.def.type === 'melee') {
       if (t.dist > this.range() + enemy.radius) return;   // 最近的那个都够不着
+      // 渲染用：这条刀光/枪线能打多远。有效射程的权威值在这（已含 ×MELEE_RANGE_SCALE），
+      // 和 swingAim 一样在出手瞬间写进实例，卫星图标就弹到这个距离 —— 判定和画面
+      // 用同一个数，不会出现「图标刺的距离和枪线长度对不上」。
+      this.swingRange = this.range();
       // 出手方式按武器 id 派生：没登记的走横扫扇形，登记过的走自己的招式
       this[MELEE_STYLE[this.defId] || '_meleeAttack'](owner, state, aim, claimed);
     } else {

@@ -3539,71 +3539,97 @@ try {
   assert(Math.abs(fx216b.slash.arc - K.WEAPON_ARC) < 1e-9,
          '铁剑的扇形宽度没被这次改动碰过（' + (K.WEAPON_ARC * 180 / Math.PI).toFixed(0) + '°）');
 
-  // 4) 图标：枪是往前扎（沿 aim 平移），剑照旧只绕剑柄转
-  // 钉住卫星位置 (0,0) 和朝向 th=0（局部 -y = 屏幕上方 = 前），只变 lunge，
-  // 读矩阵 e/f 的差 —— 差值就是前推幅度，和 0.62 缩放、+2.5 支点互不干扰。
-  var ghostSp216 = { def: Game.WEAPONS.spear, x: 0, y: 0 };
-  function iconPose216(lunge) {
-    var ctxx = Game.Renderer.ctx;
-    var mx = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-    var tr = function (n) {
-      mx = {
-        a: mx.a * n.a + mx.c * n.b, b: mx.b * n.a + mx.d * n.b,
-        c: mx.a * n.c + mx.c * n.d, d: mx.b * n.c + mx.d * n.d,
-        e: mx.a * n.e + mx.c * n.f + mx.e,
-        f: mx.b * n.e + mx.d * n.f + mx.f,
-      };
-    };
-    var o = {}, st = [];
-    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) { o[m] = ctxx[m]; });
-    ctxx.save = function () { st.push({ a: mx.a, b: mx.b, c: mx.c, d: mx.d, e: mx.e, f: mx.f }); };
-    ctxx.restore = function () { if (st.length) mx = st.pop(); };
-    ctxx.translate = function (x, y) { tr({ a: 1, b: 0, c: 0, d: 1, e: x, f: y }); };
-    ctxx.rotate = function (t) { tr({ a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t), e: 0, f: 0 }); };
-    ctxx.scale = function (x, y) { tr({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 }); };
-    var got = [];
-    ctxx.fill = function () { got.push({ e: mx.e, f: mx.f }); };
-    Game.Renderer._drawOrbitIcon(ctxx, ghostSp216, 0, 0, 0, 0, lunge);
-    ['save', 'restore', 'translate', 'rotate', 'scale', 'fill'].forEach(function (m) { ctxx[m] = o[m]; });
-    return got.length ? got[got.length - 1] : null;
-  }
-  var q0216 = iconPose216(0), q1216 = iconPose216(12);
-  assert(q0216 && q1216, '枪的图标真的画了形状（拿到 ' +
-         ((q0216 && q1216) ? 2 : 0) + ' 组矩阵）');
-  assert(Math.abs((q0216.f - q1216.f) - 12) < 0.01,
-         '突刺沿前方把图标推了 12 单位（实得 ' + (q0216.f - q1216.f).toFixed(2) +
-         '；f 变小 = 屏幕上方 = 局部 -y = 前）');
-
-  // 集成：真渲染里枪在前推、剑完全没位移
-  var lungeSeen216 = [];
-  var origOIC216 = Game.Renderer._drawOrbitIcon;
-  Game.Renderer._drawOrbitIcon = function (ctx, w, x, y, th, fire, lunge) {
-    lungeSeen216.push(lunge || 0);
-    return origOIC216.apply(this, arguments);
+  // 4) 图标：近战武器整把弹到「特效线的尽头」再收回来，比例不变；远程不动
+  // 用户 2026-09-27：「白线能打多远，长枪就能刺多远，比例不要变，只是弹出去有
+  // 收回来那种。刀也一样，只有手枪这种远程攻击的武器可以不动。」
+  // 位置插值不在 _drawOrbitIcon 里（那里只管造型和朝向，scale 恒 0.62），所以在
+  // 集成层看「调它时传的 x/y」—— 拖影在主图标之前画，最后一笔就是主图标。
+  var oicCalls217 = [];
+  var allScale217 = [];
+  var origOIC217 = Game.Renderer._drawOrbitIcon;
+  Game.Renderer._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
+    oicCalls217.push({ x: x, y: y, id: w.def.id });
+    var o = ctx.scale;
+    ctx.scale = function (a, b) { allScale217.push(a + '/' + b); return o.call(ctx, a, b); };
+    try { return origOIC217.apply(this, arguments); }
+    finally { ctx.scale = o; }
   };
-  function maxLunge216(s) {
-    lungeSeen216.length = 0;
+  function mainPose217(s) {
+    oicCalls217.length = 0;
     Game.Renderer.render(s, 0.016);
-    return Math.max.apply(null, lungeSeen216);
+    return oicCalls217.length ? oicCalls217[oicCalls217.length - 1] : null;
   }
-  var s216f = guardMelee216('spear', 7770166);
-  var pl216f = s216f.player;
-  s216f.enemies.push(new Game.Enemy('zombie', pl216f.x + 60, pl216f.y, 1));
-  var w216f = pl216f.weapons[0];
-  w216f.cooldownRemaining = 0;
-  w216f.update(0.016, pl216f, s216f);
-  w216f.swingTime = 0.11;                       // SWING_DUR/2，前推峰值
-  var midL216 = maxLunge216(s216f);
-  w216f.swingTime = 0.4;                        // 余韵放完
-  var endL216 = maxLunge216(s216f);
-  var swMaxL216 = (function () {
-    sw216c.swingTime = 0.11;
-    return maxLunge216(s216c);
-  })();
-  Game.Renderer._drawOrbitIcon = origOIC216;
-  assert(midL216 > 8, '枪出手余韵里图标真的在往前扎（峰值 lunge ' + midL216.toFixed(1) + '）');
-  assert(endL216 < 0.01, '余韵放完归零，图标不卡在枪尖伸出的位置（lunge ' + endL216.toFixed(2) + '）');
-  assert(swMaxL216 < 0.01, '铁剑照旧只绕剑柄转、没有位移（lunge ' + swMaxL216.toFixed(2) + '）');
+
+  // 三把近战都弹：龙胆枪、铁剑、赤月斩
+  var melee217 = ['spear', 'iron_sword', 'moon_sword'];
+  for (var m217 = 0; m217 < melee217.length; m217++) {
+    var wid217 = melee217[m217];
+    var s217 = guardMelee216(wid217, 7770166 + m217);
+    var pl217 = s217.player;
+    var en217 = new Game.Enemy('zombie', pl217.x + 60, pl217.y, 1);
+    en217.hp = 1e9;
+    s217.enemies.push(en217);
+    var w217 = pl217.weapons[0];
+    w217.cooldownRemaining = 0;
+    w217.update(0.016, pl217, s217);
+    var reach217 = Game.WEAPONS[wid217].range * K.MELEE_RANGE_SCALE;
+    var aim217 = Game.util.angleTo(pl217.x, pl217.y, en217.x, en217.y);
+    var orb217 = { x: w217.x - pl217.x, y: w217.y - pl217.y };
+    assert(Math.abs(w217.swingRange - reach217) < 1e-9,
+           wid217 + ' 记下的是有效射程 ' + reach217.toFixed(1) +
+           '（已含 ×' + K.MELEE_RANGE_SCALE + '），不是表里的原始 ' +
+           Game.WEAPONS[wid217].range);
+
+    w217.swingTime = 0;                                  // 刚出手：还在轨道上
+    var p0217 = mainPose217(s217);
+    assert(p0217 && Math.abs(p0217.x - orb217.x) < 0.01 &&
+           Math.abs(p0217.y - orb217.y) < 0.01,
+           wid217 + ' 出手那一帧图标还在轨道布置点（起点不跳）');
+
+    w217.swingTime = 0.11;                               // SWING_DUR/2 = 峰值
+    var pm217 = mainPose217(s217);
+    assert(pm217 && Math.abs(pm217.x - reach217 * Math.cos(aim217)) < 0.01 &&
+           Math.abs(pm217.y - reach217 * Math.sin(aim217)) < 0.01,
+           wid217 + ' 出手中点图标踩在特效线的尽头（' + reach217.toFixed(1) +
+           ' 单位，不是写死的短距离）');
+
+    w217.swingTime = 0.4;                                // 余韵放完：收回轨道
+    var pe217 = mainPose217(s217);
+    assert(pe217 && Math.abs(pe217.x - orb217.x) < 0.01 &&
+           Math.abs(pe217.y - orb217.y) < 0.01,
+           wid217 + ' 余韵放完图标收回轨道布置点（弹出去有收回来）');
+  }
+
+  // 远程不动：手枪钉在轨道上，连 swingRange 都没记
+  var sR217 = guardMelee216('pistol', 7770170);
+  var plR217 = sR217.player;
+  sR217.enemies.push(new Game.Enemy('zombie', plR217.x + 60, plR217.y, 1));
+  var wR217 = plR217.weapons[0];
+  wR217.cooldownRemaining = 0;
+  wR217.update(0.016, plR217, sR217);
+  assert(wR217.swingRange === undefined, '远程武器不记 swingRange（没走进近战的分支）');
+  wR217.swingTime = 0.11;
+  var pr217 = mainPose217(sR217);
+  assert(pr217 && Math.abs(pr217.x - (wR217.x - plR217.x)) < 0.01 &&
+         Math.abs(pr217.y - (wR217.y - plR217.y)) < 0.01,
+         '手枪出手时图标钉在轨道上不动（只有远程可以不动）');
+
+  Game.Renderer._drawOrbitIcon = origOIC217;
+
+  // 比例不变：弹出去靠位置变，不靠画大
+  var badScl217 = allScale217.filter(function (v) { return v !== '0.62/0.62'; });
+  assert(allScale217.length >= 4 && badScl217.length === 0,
+         '卫星图标全程同一个缩放 0.62（' + allScale217.length + ' 次绘制含拖影，' +
+         '没放大过；异常: ' + (badScl217.join(',') || '无') + '）');
+
+  // swingRange 和 swingAim / swingTime 一样是纯运行期动画状态，不进存档
+  var sLunge217 = guardMelee216('spear', 7770171);
+  sLunge217.enemies.push(new Game.Enemy('zombie',
+    sLunge217.player.x + 60, sLunge217.player.y, 1));
+  sLunge217.player.weapons[0].cooldownRemaining = 0;
+  sLunge217.player.weapons[0].update(0.016, sLunge217.player, sLunge217);
+  assert(!JSON.stringify(Game.Systems.serialize(sLunge217)).includes('swingRange'),
+         'swingRange 不进存档');
 
   // ---- 13. 远程朝目标出膛，不沿径向固定往外打 ----
   // 目标是扇形里离玩家最近的敌人，可能落在内环（布置圈之内）。固定朝外的话
