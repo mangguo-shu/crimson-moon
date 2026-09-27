@@ -3059,39 +3059,41 @@ try {
   assert(typeof Game.Renderer._drawOrbitWeapons === 'function', '渲染器有环绕武器绘制入口');
   pl211.weapons.forEach(function (w) {
     w.update(0.016, pl211, s211);   // 让逻辑先算好本帧位置
-    w.swingTime = 1;                // 移出挥砍余韵窗口，光晕半径固定为 11 便于断言
+    w.swingTime = 1;                // 移出挥砍余韵窗口：卫星钉在轨道布置点、无拖影
   });
   var ctx211 = Game.Renderer.ctx;
-  var arcs211 = [];
-  var origArc211 = ctx211.arc;
-  ctx211.arc = function () { arcs211.push([].slice.call(arguments)); };
-  Game.Renderer.render(s211, 0.016);
-  ctx211.arc = origArc211;
   // ⚠ 卫星必须画在「玩家局部坐标」里：_drawPlayer 已经 ctx.translate(p.x, p.y)，
   // 原点就是玩家中心。画绝对坐标 w.x/w.y 会把卫星搬到世界坐标「玩家 + 武器」，
   // 飞到镜头外 —— 真机上只剩刀光特效、看不到武器，读成「攻击延迟」。
-  var satRings211 = arcs211.filter(function (a) {
-    if (Math.abs(a[2] - 11) > 0.5) return false;
-    for (var q211 = 0; q211 < pl211.weapons.length; q211++) {
-      var wq = pl211.weapons[q211];
-      var lx = wq.x - pl211.x, ly = wq.y - pl211.y;
-      if (Math.abs(a[0] - lx) < 1 && Math.abs(a[1] - ly) < 1) return true;
-    }
-    return false;
+  // 之前拿光晕圈的半径 11 当这个断言的标记；光晕按用户 2026-09-27「移除白色
+  // 光晕」删掉了，改从 _drawOrbitIcon 拿到的 x/y 断言 —— 那正是卫星画下去的
+  // 局部坐标，比数 canvas 弧线更直接。
+  var oicPos211 = [];
+  var origOIC211 = Game.Renderer._drawOrbitIcon;
+  Game.Renderer._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
+    oicPos211.push({ x: x, y: y, id: w.def.id });
+    return origOIC211.apply(this, arguments);
+  };
+  Game.Renderer.render(s211, 0.016);
+  Game.Renderer._drawOrbitIcon = origOIC211;
+  assert(oicPos211.length === pl211.weapons.length,
+         '每把环绕武器都画出了自己的卫星（' + oicPos211.length + ' 次绘制 / ' +
+         pl211.weapons.length + ' 把武器，静止时不带拖影）');
+  var posOk211 = oicPos211.length === pl211.weapons.length && oicPos211.every(function (q, i) {
+    var wq = pl211.weapons[i];
+    return Math.abs(q.x - (wq.x - pl211.x)) < 1 && Math.abs(q.y - (wq.y - pl211.y)) < 1;
   });
-  assert(satRings211.length === pl211.weapons.length,
-         '每把环绕武器都画出了自己的光晕圈（' + satRings211.length + ' 圈 / ' +
-         pl211.weapons.length + ' 把武器）');
-  var onOrbit211 = satRings211.length === pl211.weapons.length &&
-    satRings211.every(function (a) {
-      return Math.abs(Math.sqrt(a[0] * a[0] + a[1] * a[1]) - K.WEAPON_ORBIT_R) < 1;
-    });
-  assert(onOrbit211, '卫星画在距玩家中心 ' + K.WEAPON_ORBIT_R +
+  assert(posOk211, '卫星画在距玩家中心 ' + K.WEAPON_ORBIT_R +
          ' 的局部坐标上（画成绝对坐标会飞到镜头外，只剩特效）');
-  // 不能退化成「画在玩家身上」：至少一把卫星离原点有明显距离
-  assert(satRings211.some(function (a) {
-    return Math.sqrt(a[0] * a[0] + a[1] * a[1]) > K.WEAPON_ORBIT_R * 0.9;
-  }), '卫星确实挂在轨道上，不是叠在玩家身上');
+  var dists211 = oicPos211.map(function (q) { return Math.sqrt(q.x * q.x + q.y * q.y); });
+  // 不能退化成「画在玩家身上」：每把卫星离原点都有明显距离
+  assert(dists211.length === pl211.weapons.length &&
+         dists211.every(function (d) { return d > K.WEAPON_ORBIT_R * 0.9; }),
+         '卫星确实挂在轨道上，不是叠在玩家身上');
+  // 也不能退化成「六把全画成一把」：每把武器都按自己的 id 走了绘制
+  var idsDrawn211 = oicPos211.map(function (q) { return q.id; });
+  assert(pl211.weapons.every(function (w) { return idsDrawn211.indexOf(w.def.id) >= 0; }),
+         '每把武器都按自己的 id 画出来（' + idsDrawn211.join(',') + '）');
 
   // 朝向：剑尖/箭头必须沿径向朝外（剑柄朝玩家），近战远程都一样。
   // 追变换矩阵把「武器局部空间的上」映射到世界方向再断言 —— 只盯 rotate 的角度值
@@ -3218,16 +3220,29 @@ try {
   assert(d021b && Math.abs(d021b.x) < 1e-3 && Math.abs(d021b.y + 1) < 1e-3,
          '刚出手时剑身还在静止位（径向朝外），不会瞬间跳向目标');
 
-  sw211b.swingTime = 0.11;                     // 挥砍中点（SWING_DUR/2）
-  var mid21b = orbitSat21b(s211b);
-  assert(mid21b.dir && Math.abs(mid21b.dir.x - 1) < 0.02 && Math.abs(mid21b.dir.y) < 0.02,
-         '挥砍中点剑身指向目标（朝正右方，实得 (' + mid21b.dir.x.toFixed(2) +
-         ', ' + mid21b.dir.y.toFixed(2) + ')）');
+  // 峰值时刻**不钉死在余韵中点**：走 STRIKE_PROFILE 的波形（windup → strike →
+  // hold → 收回），峰值相位由 windup + strike 决定，铁剑 0.16+0.30 = 0.46。
+  // 之前按 sin 峰值钉在 SWING_DUR/2，改波形就得改测试 —— 那等于给渲染侧留了个
+  // 「为了让测试绿」的后门。改成扫整个余韵窗口找「精确指向目标」的那一帧。
+  var best21b = null, bestErr21b = Infinity;
+  for (var i21b = 0; i21b <= 200; i21b++) {
+    sw211b.swingTime = i21b / 200 * 0.42;      // 0 → 0.42s（SWING_DUR_MELEE）
+    var d21b = orbitSat21b(s211b).dir;
+    if (!d21b) continue;
+    var err21b = Math.abs(d21b.x - 1) + Math.abs(d21b.y);
+    if (err21b < bestErr21b) { bestErr21b = err21b; best21b = d21b; }
+  }
+  assert(best21b && bestErr21b < 0.005,
+         '挥砍窗口里存在一帧剑身精确指向目标（误差 ' + bestErr21b.toFixed(4) +
+         '，实得 (' + best21b.x.toFixed(2) + ', ' + best21b.y.toFixed(2) + ')）');
 
   sw211b.swingTime = 1;                        // 余韵放完，回到静止
   var dEnd21b = orbitSat21b(s211b);
   assert(dEnd21b.dir && Math.abs(dEnd21b.dir.x) < 1e-3 && Math.abs(dEnd21b.dir.y + 1) < 1e-3,
          '余韵放完剑身回到静止位（不是停在目标方向上）');
+  // 拖影：取窗口中段（在 hold 平台上，主图标 + 两帧拖影都在）
+  sw211b.swingTime = 0.21;
+  var mid21b = orbitSat21b(s211b);
   assert(mid21b.count > dEnd21b.count,
          '挥砍中带拖影、静止时不带（挥砍 ' + mid21b.count + ' 笔 / 静止 ' +
          dEnd21b.count + ' 笔）');
@@ -3255,9 +3270,10 @@ try {
   // 目标方向和手枪静止位（朝玩家正下方 (0,1)）确实不同，否则下一条断言没意义
   assert(vx21b < -0.3 && vy21b < -0.3,
          '目标方向不在弩机的静止位上（' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) + '）');
-  // 手枪放枪不能只是把图标转个角度 —— 枪口焰、后坐亮线都得靠 fire 进度驱动。
-  // 分两相采样：中点看朝向（正弦峰值正好对准目标），初期看 fire 有没有真的
-  // 从大往小衰减 —— 写死成常量的实现两相一样大，会被抓住。
+  // 手枪放枪不能只是把图标转个角度 —— 枪口焰、弩弦回弹、箭飞出都得靠 fire 进度驱动。
+  // 分两相采样：中点看朝向（STRIKE_DEFAULT 在 t = 0.5 落在 hold 平台上，正好对准
+  // 目标），初期看 fire 有没有真的从大往小衰减 —— 写死成常量的实现两相一样大，
+  // 会被抓住。fire 在主帧和拖影之间共用同一个值（拖影是运动模糊，不需要各自算）。
   function fireAt21c(tSec) {
     rg211c.swingTime = tSec;
     var fs21c = [];
@@ -3271,7 +3287,7 @@ try {
   }
   var origPi21c = Game.Renderer._drawPistol;
   var rgEarly21c = fireAt21c(0.04);   // t ≈ 0.18
-  var rgMid21c = fireAt21c(0.11);     // t = 0.5，正弦峰值
+  var rgMid21c = fireAt21c(0.11);     // t = 0.5，落在 hold 平台
   assert(rgMid21c.dir && Math.abs(rgMid21c.dir.x - vx21b) < 0.02 &&
          Math.abs(rgMid21c.dir.y - vy21b) < 0.02,
          '手枪放枪中点枪口正对目标（期望 (' + vx21b.toFixed(2) + ', ' + vy21b.toFixed(2) +
@@ -3504,28 +3520,50 @@ try {
          '（对照）同样的摆法换成铁剑横扫，斜 28° 的侧翼会被扫到 —— ' +
          '上面的「扎不到」是走廊本来就窄，不是漏了命中');
 
-  // 3) 特效分家：枪画枪线，剑照旧画扇形
+  // 3) 枪线**已下线**：用户 2026-09-27「移除白色特效，只有枪尖有一点特效即可」——
+  // 原来那条 162px 的枪线（武器色辉光 + #fff6d8 鎏金亮芯 + 白枪尖点）整条删掉，
+  // 突刺动作改由环绕卫星自己演（renderer 的 STRIKE_PROFILE：后撤 → 前推 → 扎住
+  // → 慢慢收回），枪尖那一点光挂在 _drawSpear 的 fire 上。
   var fx216 = { thrust: null, slash: null };
   var oTh216 = Game.FX.thrust, oSl216 = Game.FX.slash;
   var stubFxc216 = function (box) {
     Game.FX.thrust = function (x, y, a, r, hw, c) { box.thrust = { x: x, y: y, a: a, r: r, hw: hw, c: c }; };
     Game.FX.slash = function (x, y, a, r, c, arc) { box.slash = { x: x, y: y, a: a, r: r, c: c, arc: arc }; };
   };
+  assert(typeof Game.FX.thrust !== 'function', 'Game.FX.thrust 已下线（枪线不再发特效）');
   stubFxc216(fx216);
   var s216d = guardMelee216('spear', 7770164);
   var pl216d = s216d.player;
   s216d.enemies.push(new Game.Enemy('zombie', pl216d.x + 60, pl216d.y, 1));
   pl216d.weapons[0].cooldownRemaining = 0;
   pl216d.weapons[0].update(0.016, pl216d, s216d);
-  assert(fx216.thrust && !fx216.slash, '龙胆枪出的是枪线，不是扇形刀光');
-  assert(Math.abs(fx216.thrust.x - pl216d.x) < 1e-6 && Math.abs(fx216.thrust.y - pl216d.y) < 1e-6,
-         '枪线从玩家身上发出（和横扫同一个约定：特效与命中范围同圆心）');
-  assert(Math.abs(fx216.thrust.a) < 1e-9, '枪线朝向 = 玩家指向目标的方向');
-  assert(Math.abs(fx216.thrust.r - rng216) < 1e-9,
-         '枪线长度 = 有效射程（已含 ×' + K.MELEE_RANGE_SCALE + '）');
-  assert(Math.abs(fx216.thrust.hw - halfW216) < 1e-9,
-         '枪线半宽 = 判定用的走廊半宽（画面和命中同一个数）');
-  assert(fx216.thrust.c === spDef216.color, '枪线颜色取自武器表 color');
+  assert(!fx216.thrust, '龙胆枪不出枪线特效（那条白色亮线已移除）');
+  assert(!fx216.slash, '龙胆枪也不出扇形刀光（走的是突刺，不是横扫）');
+  // 枪尖的光挂在 _drawSpear 的 fire 上：满程最亮、静止归零。
+  // 峰值时刻由 STRIKE_PROFILE 的 windup + strike 决定（枪 0.10 + 0.30），
+  // 不钉死成余韵中点 —— 扫整个窗口取最大 fire。
+  var os216 = Game.Renderer._drawSpear;
+  var spFire216 = [];
+  Game.Renderer._drawSpear = function (ctx, hx, hy, color, fire) {
+    spFire216.push(fire || 0);
+    return os216.call(this, ctx, hx, hy, color, fire);
+  };
+  function spearFire216(tSec) {
+    pl216d.weapons[0].swingTime = tSec;
+    spFire216.length = 0;
+    Game.Renderer.render(s216d, 0.016);
+    return spFire216.length ? Math.max.apply(null, spFire216) : 0;
+  }
+  var sfPeak216 = -1;
+  for (var i216f = 0; i216f <= 200; i216f++) {
+    var sv216 = spearFire216(i216f / 200 * 0.42);
+    if (sv216 > sfPeak216) sfPeak216 = sv216;
+  }
+  assert(sfPeak216 > 0.95,
+         '枪尖在满程那几帧有一点光（fire 峰值 ' + sfPeak216.toFixed(2) +
+         '，只挂在枪尖上，不是一整条线）');
+  assert(spearFire216(2) === 0, '静止时枪尖不发光（fire = 0）');
+  Game.Renderer._drawSpear = os216;
 
   var fx216b = { thrust: null, slash: null };
   stubFxc216(fx216b);
@@ -3535,9 +3573,40 @@ try {
   pl216e.weapons[0].cooldownRemaining = 0;
   pl216e.weapons[0].update(0.016, pl216e, s216e);
   Game.FX.thrust = oTh216; Game.FX.slash = oSl216;
-  assert(fx216b.slash && !fx216b.thrust, '铁剑照旧画扇形刀光，没跟着枪改成枪线');
+  assert(fx216b.slash && !fx216b.thrust, '铁剑照旧画扇形刀光（剑的特性是扫，不是刺）');
   assert(Math.abs(fx216b.slash.arc - K.WEAPON_ARC) < 1e-9,
          '铁剑的扇形宽度没被这次改动碰过（' + (K.WEAPON_ARC * 180 / Math.PI).toFixed(0) + '°）');
+
+  // 3b) 「移除白色特效」的反向守卫：刀光与枪口焰只能用自己的武器本色。
+  // 之前 slash 内层是 #fff6d8 鎏金亮芯（lighter 叠加下读成一条白边）、muzzle
+  // 是纯白 #fff —— 两者都是把武器本色之外再叠一层更亮的颜色。这里把「只画
+  // 武器本色」钉死，任何加回来的亮芯都会立刻红。
+  var ctxFx216f = Game.Renderer.ctx;
+  var slashCols216f = [];
+  // ctx 是 Proxy 桩，`ctx.strokeStyle = fn` 只是把函数存进去、不会回调 ——
+  // 得装 accessor 才能拦到渲染器真正的赋值。
+  var rec216f = function (v) { slashCols216f.push(v); };
+  ['strokeStyle', 'fillStyle'].forEach(function (k) {
+    Object.defineProperty(ctxFx216f, k, {
+      configurable: true,
+      get: function () { return ''; },
+      set: rec216f,
+    });
+  });
+  Game.Renderer.effects.length = 0;   // 前置用例留下的特效不能混进来
+  Game.Renderer.effects.push({ type: 'slash', x: 0, y: 0, angle: 0,
+    arc: K.WEAPON_ARC, range: 82.5, color: Game.WEAPONS.iron_sword.color,
+    life: 0.16, maxLife: 0.16 });
+  Game.Renderer.effects.push({ type: 'muzzle', x: 0, y: 0,
+    color: Game.WEAPONS.pistol.color, life: 0.08, maxLife: 0.08 });
+  Game.Renderer._drawEffects(ctxFx216f, 0.016);
+  Game.Renderer.effects.length = 0;
+  ['strokeStyle', 'fillStyle'].forEach(function (k) { delete ctxFx216f[k]; });
+  var sw216f = [Game.WEAPONS.iron_sword.color, Game.WEAPONS.pistol.color];
+  var extra216f = slashCols216f.filter(function (c) { return sw216f.indexOf(c) < 0; });
+  assert(extra216f.length === 0,
+         '刀光与枪口焰只用武器本色，不再叠白色/鎏金亮芯（用户「移除白色特效」；' +
+         '异常: ' + (extra216f.join(',') || '无') + '）');
 
   // 4) 图标：近战武器整把弹到「特效线的尽头」再收回来，比例不变；远程不动
   // 用户 2026-09-27：「白线能打多远，长枪就能刺多远，比例不要变，只是弹出去有
@@ -3586,18 +3655,60 @@ try {
            Math.abs(p0217.y - orb217.y) < 0.01,
            wid217 + ' 出手那一帧图标还在轨道布置点（起点不跳）');
 
-    w217.swingTime = 0.11;                               // SWING_DUR/2 = 峰值
-    var pm217 = mainPose217(s217);
-    assert(pm217 && Math.abs(pm217.x - reach217 * Math.cos(aim217)) < 0.01 &&
-           Math.abs(pm217.y - reach217 * Math.sin(aim217)) < 0.01,
-           wid217 + ' 出手中点图标踩在特效线的尽头（' + reach217.toFixed(1) +
-           ' 单位，不是写死的短距离）');
+    // 峰值时刻由 STRIKE_PROFILE 的 windup + strike 决定（枪 0.40 / 铁剑 0.46 /
+    // 赤月斩 0.42），不再是余韵中点 —— 扫整个窗口，取沿瞄准方向投影最远的一帧。
+    var peakD217 = -1, peakP217 = null;
+    for (var i217s = 0; i217s <= 200; i217s++) {
+      w217.swingTime = i217s / 200 * 0.42;
+      var pp217 = mainPose217(s217);
+      if (!pp217) continue;
+      var proj217 = pp217.x * Math.cos(aim217) + pp217.y * Math.sin(aim217);
+      if (proj217 > peakD217) { peakD217 = proj217; peakP217 = pp217; }
+    }
+    assert(peakP217 && peakD217 > reach217 - 0.5,
+           wid217 + ' 出手峰值踩在有效射程尽头（投影 ' + peakD217.toFixed(1) +
+           ' / 射程 ' + reach217.toFixed(1) + '，不是写死的短距离）');
 
-    w217.swingTime = 0.4;                                // 余韵放完：收回轨道
+    w217.swingTime = 1;                                  // 余韵放完：收回轨道
     var pe217 = mainPose217(s217);
     assert(pe217 && Math.abs(pe217.x - orb217.x) < 0.01 &&
            Math.abs(pe217.y - orb217.y) < 0.01,
            wid217 + ' 余韵放完图标收回轨道布置点（弹出去有收回来）');
+
+    // 突出武器特性：枪是**直线**突刺（bow = 0），剑是横扫（bow > 0，路径向侧方
+    // 鼓出一道弧）。判据是「前推路径相对自己首尾连线」的最大弯曲量。
+    // 不能用绝对横向量来量：轨道布置点本身就在瞄准线侧方 62 单位，前推是把
+    // 武器从轨道搬到枪尖，那段位移自带 62 的横向分量 —— 每一把都一样，和武器
+    // 特性无关。枪（bow = 0）整条路径都落在同一条线上，弯曲量恒为 0。
+    var saA217 = Math.sin(aim217), caA217 = Math.cos(aim217);
+    var pts217 = [];
+    for (var j217s = 0; j217s <= 60; j217s++) {
+      w217.swingTime = j217s / 60 * 0.42;
+      var qp217 = mainPose217(s217);
+      if (qp217) pts217.push({
+        a: qp217.x * caA217 + qp217.y * saA217,
+        p: -qp217.x * saA217 + qp217.y * caA217,
+      });
+    }
+    var ai0217 = 0, ai1217 = 0;
+    for (var k217s = 0; k217s < pts217.length; k217s++) {
+      if (pts217[k217s].a < pts217[ai0217].a) ai0217 = k217s;
+      if (pts217[k217s].a > pts217[ai1217].a) ai1217 = k217s;
+    }
+    var ex217 = pts217[ai1217].a - pts217[ai0217].a;
+    var ey217 = pts217[ai1217].p - pts217[ai0217].p;
+    var elen217 = Math.sqrt(ex217 * ex217 + ey217 * ey217) || 1;
+    var bend217 = 0;
+    for (var k217b = 0; k217b < pts217.length; k217b++) {
+      var bx217 = pts217[k217b].a - pts217[ai0217].a;
+      var by217 = pts217[k217b].p - pts217[ai0217].p;
+      var d217 = Math.abs(ex217 * by217 - ey217 * bx217) / elen217;
+      if (d217 > bend217) bend217 = d217;
+    }
+    assert(wid217 === 'spear' ? bend217 < 0.01 : bend217 > 3,
+           wid217 + (wid217 === 'spear' ? ' 全程沿直线突刺（弯曲 ' :
+                                     ' 在弓段中点鼓出横扫弧（弯曲 ') +
+           bend217.toFixed(2) + '）');
   }
 
   // 远程不动：手枪钉在轨道上，连 swingRange 都没记
@@ -3621,6 +3732,42 @@ try {
   assert(allScale217.length >= 4 && badScl217.length === 0,
          '卫星图标全程同一个缩放 0.62（' + allScale217.length + ' 次绘制含拖影，' +
          '没放大过；异常: ' + (badScl217.join(',') || '无') + '）');
+
+  // 用户 2026-09-27「移除白色光晕」：卫星图标（主帧和拖影）都**不能**在
+  // lighter 叠加下绘制 —— 叠加会把武器本色洗成白斑，原来每把武器外那圈
+  // 「白色光晕」和白色拖影就是这么来的。枪尖那一点光是图标**内部**
+  // save/restore 之后才切到 lighter 的，不落在这里。
+  var spk217 = guardMelee216('spear', 7770172);
+  spk217.enemies.push(new Game.Enemy('zombie', spk217.player.x + 60, spk217.player.y, 1));
+  spk217.player.weapons[0].cooldownRemaining = 0;
+  spk217.player.weapons[0].update(0.016, spk217.player, spk217);
+  spk217.player.weapons[0].swingTime = 0.21;   // 余韵中段：主帧 + 两帧拖影都在
+  var lighterIcon217 = [];
+  var ctxg217 = Game.Renderer.ctx;
+  var origOICg217 = Game.Renderer._drawOrbitIcon;
+  // 测试桩里 save/restore 是 no-op，叠加模式不会被回滚 —— 前面的用例一画特效
+  // 就一直是 'lighter'，那不是渲染器的 bug（真实 canvas 的 save/restore 都生效）。
+  // 这里按真实 canvas 的语义手工记账：记下每次 save 时的叠加模式，restore 回滚，
+  // 于是能判断「进 _drawOrbitIcon 那一刻到底是不是叠加态」。
+  var oCo217 = ctxg217.globalCompositeOperation;
+  ctxg217.globalCompositeOperation = 'source-over';   // 干净基线，不被前置用例污染
+  var coStack217 = [];
+  var oSv217 = ctxg217.save, oRs217 = ctxg217.restore;
+  ctxg217.save = function () { coStack217.push(ctxg217.globalCompositeOperation); };
+  ctxg217.restore = function () {
+    if (coStack217.length) ctxg217.globalCompositeOperation = coStack217.pop();
+  };
+  Game.Renderer._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
+    if (ctx.globalCompositeOperation === 'lighter') lighterIcon217.push(w.def.id);
+    return origOICg217.apply(this, arguments);
+  };
+  Game.Renderer.render(spk217, 0.016);
+  Game.Renderer._drawOrbitIcon = origOICg217;
+  ctxg217.save = oSv217; ctxg217.restore = oRs217;
+  ctxg217.globalCompositeOperation = oCo217;
+  assert(lighterIcon217.length === 0,
+         '卫星图标（含拖影）不进 lighter 叠加（用户「移除白色光晕」；异常: ' +
+         (lighterIcon217.join(',') || '无') + '）');
 
   // swingRange 和 swingAim / swingTime 一样是纯运行期动画状态，不进存档
   var sLunge217 = guardMelee216('spear', 7770171);

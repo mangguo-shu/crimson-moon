@@ -131,17 +131,29 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
   `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
   `pistol → _drawPistol`、`jade_crossbow → _drawCrossbow`。
   漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）—— 龙胆枪就这样顶着剑的造型出场过。
+- 出手**动作**按武器 id 派生：`renderer.js STRIKE_PROFILE` 给每把武器一套相位占比
+  （`windup` 起手后撤 / `strike` 前推 / `hold` 扎住 / `bow` 路径侧向鼓弧），
+  缺省回落 `STRIKE_DEFAULT`。波形是「先微幅往后撤 → 前推（ease-out，末端速度归零
+  = 扎住了）→ 扎住 → 慢慢收回」，起止都精确落回静止位，前后帧不跳。
+  持枪时长 `SWING_DUR_MELEE = 0.42` / `SWING_DUR_RANGED = 0.22`，都在渲染侧本地，
+  不进 CONST —— 纯表现参数，逻辑层的冷却不受影响。
+  峰值相位 = `windup + strike`，**各武器不一样**，所以测试按窗口采样而不钉死时间。
 - 出手**位移**已经不按 id 派生 —— `renderer.js` 里没有 `LUNGE_AMT` 那张表了。近战武器
-  整把从轨道布置点**插值到特效线的尽头**再收回来（`sin(πt)`，起落都回静止位，
-  峰值在余韵中点 = `SWING_DUR` 一半），落点距离 = `WeaponInstance.swingRange`。
+  整把从轨道布置点**插值到最远处**再收回来，落点距离 = `WeaponInstance.swingRange`。
   这个字段由 `weapons.js` 在近战出手瞬间写成 `this.range()`（已含 ×`MELEE_RANGE_SCALE`），
-  和 `swingAim` 同源 —— 判定与画面用同一个数，不会出现「图标刺的距离和枪线长度对不上」。
+  和 `swingAim` 同源 —— 判定与画面用同一个数。
   图标缩放恒为 `0.62`：**「弹出去」只靠位置变，不靠画大**。远程武器不弹
   （`swingRange` 只在近战分支记）。
-  光晕和强化圈仍钉在轨道布置点上 —— 那是「这一格正在出手」和「这把武器几星」的标记，
-  跟着图标飞走就看不清哪一把被强化过。
-- 近战特效两种：横扫 `FX.slash`（扇形，宽 = `WEAPON_ARC`）、突刺 `FX.thrust`（枪线，长 = 有效射程、
-  半宽 = 走廊半宽）。两者都从玩家身上发出 —— 特效和命中范围必须同圆心。
+  **光晕已删**（用户 2026-09-27「移除白色光晕」）：原来每把武器外那圈 11px 的脉动环
+  走 `lighter` 叠加，武器本色被洗成白斑。现在只剩**强化圈**（Lv2 起每级一圈），
+  仍钉在轨道布置点上 —— 那是「这把武器几星」的标记，跟着图标飞走就看不清。
+  拖影也改成普通半透明（不用 `lighter`），读起来是运动模糊而不是发光。
+- 近战特效只剩横扫 `FX.slash`（扇形，宽 = `WEAPON_ARC`）。**`FX.thrust` 已下线** ——
+  原来那条枪线（武器色辉光 + `#fff6d8` 鎏金亮芯 + 白枪尖点）就是被点名的白色特效。
+  突刺改由环绕卫星自己演（`STRIKE_PROFILE` 推出去、扎住、收回），
+  **枪尖那一点光**挂在 `_drawSpear` 的 `fire` 上（鎏金小菱形，武器本体长度的 8%）。
+  `FX.slash` 也去掉了 `#fff6d8` 亮芯，只剩武器本色。
+  刀光仍从玩家身上发出 —— 特效和命中范围必须同圆心。
 - 远程伤害 ×0.6、近战射程 ×1.25 —— 走 CONST 系数，表本体不动。
 
 ---
@@ -417,9 +429,15 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | weapons.js `MELEE_STYLE` | 近战出手方式按武器 id 派生，**漏登记 = 走横扫**（想要突刺/回旋必须登记） |
 | weapons.js `THRUST_HALF` | 突刺走廊半宽比例（模块本地常量，不在表里） |
 | renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**） |
-| weapons.js `swingRange` | 近战出手瞬间记下的有效射程（`this.range()`），卫星图标弹到的落点距离；**渲染侧不重算 `def.range × MELEE_RANGE_SCALE`**，和 `swingAim` 同源 |
-| renderer.js `_drawOrbitWeapons` 里的 `pose()` | 图标位置从轨道布置点插值到特效线尽头（近战），远程不动 |
-| renderer.js `_drawEffects` | 特效 `switch(f.type)`，新特效类型要在这里加分支 |
+| renderer.js `STRIKE_PROFILE` | 出手**动作**按武器 id 派生（windup/strike/hold/bow 四个相位占比），
+  **漏登记回落 `STRIKE_DEFAULT`**（通用挥砍，不鼓弧） |
+| weapons.js `swingRange` | 近战出手瞬间记下的有效射程（`this.range()`），卫星图标弹到的落点距离；
+  **渲染侧不重算 `def.range × MELEE_RANGE_SCALE`**，和 `swingAim` 同源 |
+| renderer.js `_drawOrbitWeapons` 里的 `pose()` | 图标位置按 `STRIKE_PROFILE` 的波形从轨道布置点插值到 `swingRange`（近战），
+  远程不动；`bow > 0` 时路径中段向侧向鼓弧（枪要直、刀要弯） |
+| renderer.js `SWING_DUR_MELEE` / `SWING_DUR_RANGED` | 持枪时长（0.42 / 0.22s），渲染侧本地，**不进 CONST** |
+| renderer.js `_drawEffects` | 特效 `switch(f.type)`：`slash`（横扫）、`muzzle`（枪口焰）。
+  **`thrust` 分支已删** —— 突刺不再有特效线，改由卫星自己演 |
 | renderer.js:507 | `R._PLAYER_BODY` | 4 套姿态绘制 |
 | renderer.js:1001 | `_drawEnemy` 的 `switch(e.type)` | **新怪不加 case 会画成跳尸** |
 | renderer.js | `FOOT_Y` | 各怪的脚底支点（缺省 `FOOT_Y_DEFAULT`） |
@@ -456,10 +474,15 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 2. 远程弹补 `weapons.js PROJ_SHAPE`
 3. **`renderer.js ORBIT_ICON` 登记图标**（漏了不报错，会静默顶着剑或弩的造型出场）
 4. **不是横扫就补 `weapons.js MELEE_STYLE`**，写一个 `_xxxAttack`（签名
-   `(owner, state, aim, claimed)`）+ 新的 `FX.xxx` 特效。图标前推**不用登记任何东西**
-   —— 它自动从轨道弹到「这条特效线能打多远」（落点 = 近战分支里写下的 `swingRange`，
-   见第 3 章那条），横扫和突刺一视同仁
-5. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
+   `(owner, state, aim, claimed)`）。**不用为它写 `FX.xxx` 特效** —— 突刺那条枪线
+   已经下线了（第 3 章），动作由环绕卫星自己演，枪尖那一点光挂在 `_drawSpear` 的
+   `fire` 参数上。走廊的宽度不画出来：被扎中的怪自己会闪白掉血字。
+5. **想要和默认不同的出手节奏就补 `renderer.js STRIKE_PROFILE` 一行**（windup/strike/hold/bow）。
+   不补也行 —— 回落 `STRIKE_DEFAULT`（通用挥砍波形，不鼓弧）。
+   枪要「直着扎出去、扎住、慢慢收回」就把 `bow` 留 0；刀要「划一道弧」就给 0.10~0.13。
+   图标前推**不用登记任何东西** —— 它自动从轨道弹到 `swingRange`（近战分支里写下的
+   有效射程，见第 3 章那条），横扫和突刺一视同仁
+6. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
 
 `commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
 商店武器权重是 `0.5 / 武器数` —— **多一把非专属武器会摊薄所有武器在商店的出现率**，
@@ -469,7 +492,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 **加属性卡**：`UPGRADES` 加一条即可。注意 `bossRewardChoices` 只收 `epic/legend`。
 
-**改完跑 `npm test`** —— 基线 913 + 10 全绿。哪张表漏了登记点会立刻红。
+**改完跑 `npm test`** —— 基线 918 + 10 全绿。哪张表漏了登记点会立刻红。
 
 ---
 

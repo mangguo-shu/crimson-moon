@@ -262,7 +262,11 @@
       if (claimed) claimed[e.uid] = true;
       hit++;
     }
-    if (fx()) fx().thrust(px, py, aim, rng, halfW, this.def.color);
+    // 不发作物特效：枪的突刺动作由环绕卫星自己演（renderer 的 STRIKE_PROFILE 波形
+    // 推出去、扎住、收回），枪尖那一点光挂在 _drawSpear 上。
+    // 原来这里发一条 0.22s 的长枪线（两条亮芯 + 白枪尖），正是用户 2026-09-27
+    // 「移除白色特效、只有枪尖有一点特效」点名要去的。走廊的宽度不画出来了 ——
+    // 被扎中的怪自己会闪白掉血字，够用了。
     if (this._primary() && Game.Audio) Game.Audio.hit();
   };
 
@@ -288,7 +292,7 @@
       owner: owner,
     });
     state.projectiles.push(p);
-    if (fx()) fx().muzzle(this.x, this.y, a);
+    if (fx()) fx().muzzle(this.x, this.y, a, this.def.color);
     if (this._primary() && Game.Audio) Game.Audio.shoot();
   };
 

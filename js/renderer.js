@@ -769,7 +769,7 @@
       ctx.restore();
     }
 
-    this._drawOrbitWeapons(ctx, p, now);
+    this._drawOrbitWeapons(ctx, p);
 
     // 直立化：不再随朝向整体旋转（旧做法会让角色「横躺」），改镜像 + 绕脚底微倾
     var dirX = upright(ctx, p.facing, FOOT_Y.player);
@@ -836,8 +836,58 @@
   /* ---------------- 环绕武器动画 ----------------
    * 动画时钟直接复用 weapons.js 的 swingTime：出手瞬间它归零，余韵期间递增。
    * 不在渲染这边另起计时器 —— 那样会出现「画面还在挥砍、逻辑已经进入下一枪」
-   * 的错位。t = 0 刚出手，t = 1 余韵放完、回到静止位。 */
-  var SWING_DUR = 0.22;
+   * 的错位。t = 0 刚出手，t = 1 余韵放完、回到静止位。
+   *
+   * 时长按类型分家：近战是一次「出 → 扎住 → 收回」的完整动作，用户 2026-09-27
+   * 点名「出枪和收枪慢一些」，所以给足 0.42s；射击是一瞬的事，保持 0.22s。
+   * 两个都留在渲染侧本地（不进 CONST）—— 纯表现参数，逻辑层的冷却不受影响。 */
+  var SWING_DUR_MELEE = 0.42;
+  var SWING_DUR_RANGED = 0.22;
+
+  /* 出手波形按武器 id 派生，和 ORBIT_ICON / weapons.js 的 MELEE_STYLE 一个路数
+   * —— 手感差异不进 WEAPONS 表（那张表是冻结区）。没登记的 id 走 STRIKE_DEFAULT。
+   *
+   * windup  起手蓄力占比：武器先微幅**往后撤**一点再出手（真实挥砍都有这个
+   *          预兆动作，缺了它动作读起来像瞬移）
+   * strike  前推占比：ease-out，末端速度归零 = 「扎住了」
+   * hold    扎住占比：满程停一下。枪的 hold 明显长于剑 —— 枪是「刺入并压住」，
+   *          剑是「扫过去」
+   * bow     路径外凸占比：0 = 沿直线突刺（枪），> 0 = 中途向侧方鼓出一道弧
+   *          （剑是绕手臂横扫，不是直线平移）。凸量在起止两端恒为 0，所以
+   *          起始位和满程位都不受影响。
+   * 收回段 = 1 − windup − strike − hold，ease-in-out，刻意最长 —— 收枪比出枪慢。
+   * 这些占比之和必须 ≤ 1，否则收回段消失、图标会停在满程。 */
+  var STRIKE_PROFILE = {
+    spear:      { windup: 0.10, strike: 0.30, hold: 0.16, bow: 0.00 },
+    iron_sword: { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.10 },
+    moon_sword: { windup: 0.14, strike: 0.28, hold: 0.06, bow: 0.13 },
+  };
+  var STRIKE_DEFAULT = { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.00 };
+  // 蓄力期的后撤幅度（负行程，满程是 1）
+  var WINDUP_BACK = 0.07;
+
+  /** 出手延伸量：gt∈[0,1] → e∈[−WINDUP_BACK, 1]。
+   *  e = 0   静止位（轨道布置点）
+   *  e < 0   蓄力后撤
+   *  e = 1   满程（这次出手能打到的最远处）
+   * 起止都精确落回 0（gt = 0 和 gt = 1 都返回 0），前后帧不跳；满程段是
+   * **平台**而不是尖峰，所以「扎住」那几帧图标稳稳停在最远处。 */
+  function strikeExt(gt, pr) {
+    if (gt <= 0 || gt >= 1) return 0;
+    var t1 = pr.windup, t2 = pr.windup + pr.strike, t3 = t2 + pr.hold;
+    if (gt < t1) {
+      var u0 = gt / t1;
+      return -WINDUP_BACK * u0 * u0;                     // 蓄力：越走越深
+    }
+    if (gt < t2) {
+      var u1 = (gt - t1) / pr.strike;
+      var o = 1 - (1 - u1) * (1 - u1);                    // ease-out
+      return -WINDUP_BACK + (1 + WINDUP_BACK) * o;        // u1 = 1 时精确落 1
+    }
+    if (gt < t3) return 1;                                // 扎住
+    var u2 = (gt - t3) / (1 - t3);
+    return 1 - (u2 < 0.5 ? 2 * u2 * u2 : 1 - Math.pow(-2 * u2 + 2, 2) / 2);
+  }
 
   /* 环绕武器图标按武器 id 派生，和 weapons.js 的 PROJ_SHAPE 一个路数 —— 造型不进
    * WEAPONS 表（那张表是冻结区），renderer 侧认 id。
@@ -857,21 +907,23 @@
   // 前推不在这里做 —— 这里只负责造型和朝向，所以图标比例（scale 0.62）
   // 恒为定值，「弹出去」靠位置变，不靠画大。
   // th 是它当前朝向（静止时 = 径向朝外，挥砍/突刺时绕过去）。
-  // fire 是放箭进度（1 = 刚扣扳机/扣弦），枪口焰、弩弦回弹、箭飞出都挂在这上面。
+  // fire 是「这一击现在有多实」：远程 = 放箭进度（1 = 刚扣扳机/扣弦），
+  // 枪口焰、弩弦回弹、箭飞出挂在这上面；近战 = 延伸量 e（扎到最远时最实），
+  // 只有枪尖那一点光挂在这上面，剑和巨剑不吃它。
   // 支点在剑柄/弩身上（局部 +2.5y），挥砍是绕着手转的，不是原地飘。
   R._drawOrbitIcon = function (ctx, w, x, y, th, fire) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(th);
-    if (fire > 0) ctx.translate(0, fire * 3.4);
+    var melee = w.def.type === 'melee';
+    // 后坐只给远程：枪往后退一截、弩弦回弹，读起来是「击发」。近战不吃这个位移
+    // —— 它的前推由 pose() 的延伸量管着，枪尖要精确踩在 swingRange 上（和判定
+    // 同一个数），再多一截后坐就把「枪尖 = 命中边缘」这条对齐弄丢了。
+    if (!melee && fire > 0) ctx.translate(0, fire * 3.4);
     ctx.scale(0.62, 0.62);
     ctx.translate(0, 2.5);
     var fn = ORBIT_ICON[w.def.id];
-    if (w.def.type === 'melee') {
-      this[fn || '_drawSword'](ctx, 0, 0, w.def.color);
-    } else {
-      this[fn || '_drawCrossbow'](ctx, 0, 0, w.def.color, fire);
-    }
+    this[fn || (melee ? '_drawSword' : '_drawCrossbow')](ctx, 0, 0, w.def.color, fire);
     ctx.restore();
   };
 
@@ -886,66 +938,78 @@
   // 搬到世界坐标「玩家 + 武器」的位置，飞到镜头外 —— 玩家只看到刀光特效、
   // 看不到武器，于是读成「攻击延迟」。刀光走 FX 系统是绝对世界坐标，
   // 两者必须落在同一点。
-  R._drawOrbitWeapons = function (ctx, p, now) {
+  R._drawOrbitWeapons = function (ctx, p) {
     for (var i = 0; i < p.weapons.length; i++) {
       var w = p.weapons[i];
       if (w.x === undefined) continue;   // 首次 update 之前还没算过位置
       var x = w.x - p.x, y = w.y - p.y;  // 世界坐标 → 玩家局部坐标
       var sw = (w.swingTime || 0);
-      var t = sw < SWING_DUR ? sw / SWING_DUR : 1;   // 1 = 余韵放完，回到静止位
+      var dur = w.def.type === 'ranged' ? SWING_DUR_RANGED : SWING_DUR_MELEE;
+      var t = sw < dur ? sw / dur : 1;   // 1 = 余韵放完，回到静止位
       var swinging = t < 1;
-      // 朝向：静止时沿径向朝外站好等下一枪；出手这 0.22s 里绕剑柄往 swingAim
-      // 挥过去，t = 0.5 时正好指到目标 —— 也就是刀光画的那个方向（见 weapons.js
-      // _meleeAttack），剑身、刀光、真正被打到的那只怪在出手那一帧是对齐的。
-      // 用正弦而不是线性插值：t = 0 和 t = 1 都落在静止位，前后帧不会跳，
-      // 峰值时刻就是 SWING_DUR 的中点（测试也是按中点断言的）。
+      // 朝向：静止时沿径向朝外站好等下一枪；出手这段里绕剑柄往 swingAim
+      // 挥过去，满程那几帧正好指到目标 —— 也就是刀光画的那个方向（见 weapons.js
+      // _meleeAttack），剑身、真正被打到的那只怪在满程那一帧是对齐的。
+      // 不做线性插值：走 STRIKE_PROFILE 的波形（先微幅回摆蓄力 → 前推 → 扎住
+      // → 慢慢收回），起止都落回静止位，前后帧不会跳。峰值时刻不再固定在中点
+      // —— 它由 windup + strike 决定，各武器不一样，所以测试不能钉死时间。
       var rest = w.aimAngle + Math.PI / 2;
       var dAng = 0;
-      if (swinging && w.swingAim !== undefined) {
+      var armed = swinging && w.swingAim !== undefined;
+      if (armed) {
         dAng = ((w.swingAim + Math.PI / 2) - rest + Math.PI * 3) % (Math.PI * 2) - Math.PI;
       }
-      var fire = w.def.type === 'ranged' && dAng !== 0 ? (1 - t) : 0;
-      // 位置：近战武器出手时整把弹出去再收回来，落点是「这条特效线能打多远」
+      // 位置：近战武器出手时整把弹出去再收回来，落点是「这次出手能打多远」
       // —— 逻辑层在出手瞬间记下的有效射程 w.swingRange（×MELEE_RANGE_SCALE 的
-      // 权威值在 weapons.js，渲染侧不重算公式）。从轨道布置点插值到线的尽头
-      // （玩家 + 射程 × 朝向），所以枪尖/刀尖确实踩在白线上，不是凭空往前飞。
-      // sin(π·gt) 让起落都回静止位、前后帧不跳，峰值在 t = 0.5 —— 和朝向
-      // 同一套相位，图标到位的同一帧刀光也铺满。比例不放大（_drawOrbitIcon 里的
-      // 0.62 是定值），只是位置弹出去。
-      // 光晕和强化圈仍钉在轨道上：那是「这一格正在出手」和「这把武器几星」的
-      // 标记，跟着图标飞走就看不清哪一把被强化过。
-      var lungeTo = (w.def.type === 'melee' && swinging &&
-                     w.swingAim !== undefined && w.swingRange) ? w.swingRange : 0;
+      // 权威值在 weapons.js，渲染侧不重算公式）。从轨道布置点插值到最远处，
+      // 所以枪尖/刀尖确实踩在判定的边缘，不是凭空往前飞。
+      // 远程武器钉在轨道上不动。
+      var melee = w.def.type === 'melee';
+      var lungeTo = (melee && armed && w.swingRange) ? w.swingRange : 0;
+      var pr = STRIKE_PROFILE[w.def.id] || STRIKE_DEFAULT;
+      var ca = Math.cos(w.swingAim || 0), sa = Math.sin(w.swingAim || 0);
+      // pose(gt) → 该相位的位置 + 朝向。
       var pose = function (gt) {
-        var s = Math.sin(Math.PI * gt);
-        if (!lungeTo) return { x: x, y: y, th: rest + dAng * s };
-        var tx = w.swingRange * Math.cos(w.swingAim);
-        var ty = w.swingRange * Math.sin(w.swingAim);
-        return { x: x + (tx - x) * s, y: y + (ty - y) * s, th: rest + dAng * s };
+        var e = armed ? strikeExt(gt, pr) : 0;
+        var th = rest + dAng * e;
+        if (!lungeTo) return { x: x, y: y, th: th };
+        var px = x + (lungeTo * ca - x) * e;
+        var py = y + (lungeTo * sa - y) * e;
+        if (pr.bow) {
+          // 剑是绕手臂横扫，路径向侧方鼓出一道弧；e*(1−e) 在起止两端为 0，
+          // 所以起始位与满程位都不受影响（满程仍精确踩在射程尽头）
+          var amp = pr.bow * lungeTo * 4 * e * (1 - e);
+          px += -sa * amp; py += ca * amp;
+        }
+        return { x: px, y: py, th: th };
       };
-      // 光晕：出手瞬间膨一圈，每把武器都有独立反馈
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.30 + Math.sin(now * 0.004 + i * 1.3) * 0.09;
-      ctx.strokeStyle = w.def.color;
-      ctx.lineWidth = swinging ? 4 : 2.2;
-      ctx.beginPath(); ctx.arc(x, y, 11 + (swinging ? 4.5 : 0), 0, TAU); ctx.stroke();
-      ctx.restore();
+      // fire = 「这一击现在有多实」，主帧和拖影共用同一个值：
+      //   远程 = 1 − t（刚扣扳机/扣弦最实，随后衰减）→ 枪口焰、弩弦回弹、箭飞出
+      //   近战 = 延伸量 e（扎到最远时最实）→ 枪尖那一点光
+      // 故意不按拖影各自的相位重算：拖影是 20% 透明度的运动模糊，
+      // 「那一帧有多实」在这个亮度上没有可分辨的意义。
+      var ext = armed ? strikeExt(t, pr) : 0;
+      var fire = melee ? (ext > 0 ? ext : 0) : (armed ? Math.max(0, 1 - t) : 0);
       // 拖影：上一两帧的位置，alpha 更低 —— 16px 的小图标全靠这个看出速度。
       // 纯位移的突刺也要带拖影，所以判定条件除了 dAng 还要看 lungeTo。
-      for (var g = 2; g >= 1 && (dAng !== 0 || lungeTo > 0); g--) {
-        var gt = t - g * 0.16;
-        if (gt <= 0 || gt >= t) continue;
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.26 * (1 - t) / g;
-        var pg = pose(gt);
-        this._drawOrbitIcon(ctx, w, pg.x, pg.y, pg.th, fire);
-        ctx.restore();
+      // 故意**不用 lighter 叠加**：叠加发光会把拖影洗成白色（用户 2026-09-27
+      // 「移除白色特效」），改成普通半透明，读起来是运动模糊而不是发光。
+      var moving = armed && (dAng !== 0 || lungeTo > 0);
+      if (moving) {
+        for (var g = 2; g >= 1; g--) {
+          var gt = t - g * 0.16;
+          if (gt <= 0 || gt >= t) continue;
+          ctx.save();
+          ctx.globalAlpha = 0.20 * (1 - t) / g;
+          var pg = pose(gt);
+          this._drawOrbitIcon(ctx, w, pg.x, pg.y, pg.th, fire);
+          ctx.restore();
+        }
       }
       var pm = pose(t);
       this._drawOrbitIcon(ctx, w, pm.x, pm.y, pm.th, fire);
-      // 强化等级：一圈一圈，Lv1 光晕、Lv2 起每级多一圈
+      // 强化等级：一圈一圈，Lv2 起每级多一圈。钉在轨道布置点上 —— 那是
+      // 「这把武器几星」的标记，跟着图标飞走就看不清哪一把被强化过。
       if (w.level > 1) {
         ctx.save();
         ctx.globalAlpha = 0.45;
@@ -1012,8 +1076,14 @@
 
   // 龙胆枪：长柄 + 细尖。靠「长」而不是「大」卖出突刺感 —— 全长 44 单位，
   // 是铁剑 31 单位的 1.4 倍，和它 range 66 → 130 的量级差对得上。
-  R._drawSpear = function (ctx, hx, hy, color) {
+  // fire = 延伸量（扎到最远时 = 1）：整把枪的突刺位移由 pose() 管，这里只在
+  // **枪尖**上点一下光。用户 2026-09-27 点名「只有枪尖有一点特效即可」——
+  // 之前的 FX.thrust 整条 162px 亮线（白色亮芯 + 鎏金）读起来是发光，不是枪，
+  // 已经删掉。这里换成枪尖上一个 3.4 单位的菱形，是武器本体长度的 8%。
+  // 颜色用鎏金而不是枪本色 #d9cba8：枪本色太接近白，lighter 叠加下还是会洗白。
+  R._drawSpear = function (ctx, hx, hy, color, fire) {
     var O = this.outline;
+    fire = fire || 0;
     ctx.save();
     ctx.translate(hx, hy);
     // 长柄（木纹）
@@ -1036,6 +1106,18 @@
     // 尖部反光
     ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.9;
     ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(0, -22); ctx.stroke();
+    // 枪尖一点光：扎到最远时最亮，蓄力阶段（fire < 0.06）不点，避免刚举枪就发亮
+    if (fire > 0.06) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fire * 0.85;
+      ctx.fillStyle = PAL.gold;
+      ctx.beginPath();
+      ctx.moveTo(0, -40); ctx.lineTo(1.9, -36); ctx.lineTo(0, -32); ctx.lineTo(-1.9, -36);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   };
 
@@ -1060,20 +1142,20 @@
     // 套筒高光
     ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.moveTo(-3.4, -1.7); ctx.lineTo(3.4, -1.7); ctx.stroke();
-    // 枪口焰：只在刚出手的余韵里亮
+    // 枪口焰：只在刚出手的余韵里亮。
+    // 颜色换成鎏金、**不再用 lighter**：原来 #e6ecf2 冷白 + 叠加，在亮砖上会
+    // 整块洗成白斑（用户 2026-09-27「移除白色特效」）。鎏金和武器本色
+    // #ffd76e 同族，是「击发」该有的暖色，但不靠叠加发光。
+    // 也删掉了原来那条 26→46 的亮线残影 —— 和枪线一样属于「一条长亮线」，
+    // 手枪的轨迹感交给飞出去的子弹本身。
     if (fire > 0.02) {
-      var FLASH = '#e6ecf2';
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = fire;
-      ctx.fillStyle = FLASH;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = PAL.gold;
       ctx.beginPath();
-      ctx.moveTo(-3.2, -8); ctx.lineTo(0, -8 - fire * 11); ctx.lineTo(3.2, -8);
+      ctx.moveTo(-2.6, -8); ctx.lineTo(0, -8 - fire * 9); ctx.lineTo(2.6, -8);
       ctx.closePath();
       ctx.fill();
-      // 亮线残影：把「击发」拉成一条可看见的轨迹
-      ctx.strokeStyle = FLASH; ctx.lineWidth = 2.2 * fire; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0, -fire * 26); ctx.lineTo(0, -fire * 46); ctx.stroke();
       ctx.restore();
     }
     ctx.restore();
@@ -2154,43 +2236,17 @@
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       if (f.type === 'slash') {
-        // 外层辉光（剑气）
+        // 剑气：武器本色的一道弧，没有内层亮芯。
+        // 原来的 #fff6d8 鎏金亮芯在 lighter 下读起来是一条白边（用户 2026-09-27
+        // 「移除白色特效」）；只剩武器本色，弧线还是弧线，但不再发光。
+        // 线宽也收了一档（12→7）—— 没有亮芯撑住，粗线只会糊成一片。
         ctx.strokeStyle = f.color;
-        ctx.globalAlpha = t * 0.5;
-        ctx.lineWidth = 12 * t + 2;
-        ctx.beginPath();
-        ctx.arc(f.x, f.y, f.range * 0.7, f.angle - f.arc / 2, f.angle + f.arc / 2);
-        ctx.stroke();
-        // 内层亮芯（鎏金）
-        ctx.globalAlpha = t;
-        ctx.strokeStyle = '#fff6d8';
-        ctx.lineWidth = 3.5 * t + 0.8;
-        ctx.beginPath();
-        ctx.arc(f.x, f.y, f.range * 0.7, f.angle - f.arc / 2, f.angle + f.arc / 2);
-        ctx.stroke();
-      } else if (f.type === 'thrust') {
-        // 突刺：从玩家身上往前扎的一条枪线。出生时短，前 1/3 生命推到满长，
-        // 之后整条淡出 —— 读起来是「刺出去」，不是「凭空亮一根」。
-        // 画到 f.range 为止，和 _thrustAttack 的前向判定同一个数（判定多留半个
-        // 怪半径的擦边量，枪线的亮芯 3px + 辉光约 6px，那点误差肉眼看不出）。
-        var thPush = Math.min(1, (1 - t) * 3);
-        var thReach = f.range * (0.42 + 0.58 * thPush);
-        ctx.translate(f.x, f.y);
-        ctx.rotate(f.angle);
-        // 外层辉光（枪势）：宽度跟着走廊走，半宽之外的邻居确实扎不到
-        ctx.strokeStyle = f.color;
-        ctx.globalAlpha = t * 0.5;
-        ctx.lineWidth = f.halfW * 2 + 6 * t;
+        ctx.globalAlpha = t * 0.42;
+        ctx.lineWidth = 7 * t + 1.4;
         ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(thReach, 0); ctx.stroke();
-        // 内层亮芯（鎏金）
-        ctx.globalAlpha = t;
-        ctx.strokeStyle = '#fff6d8';
-        ctx.lineWidth = 3 * t + 0.8;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(thReach, 0); ctx.stroke();
-        // 枪尖
-        ctx.fillStyle = '#fff6d8';
-        ctx.beginPath(); ctx.arc(thReach, 0, 3.4 * t + 0.8, 0, TAU); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.range * 0.7, f.angle - f.arc / 2, f.angle + f.arc / 2);
+        ctx.stroke();
       } else if (f.type === 'ring') {
         var r = f.range * (1 - t) + 6;
         ctx.strokeStyle = f.color;
@@ -2215,9 +2271,12 @@
         ctx.strokeStyle = PAL.lantern; ctx.lineWidth = 1.4; ctx.stroke();
         ctx.restore();
       } else if (f.type === 'muzzle') {
-        ctx.fillStyle = '#fff';
-        ctx.globalAlpha = t;
-        ctx.beginPath(); ctx.arc(f.x, f.y, 6 * t + 1, 0, TAU); ctx.fill();
+        // 枪口焰：武器本色（手枪鎏金、青玉弩青玉色），不再用纯白 —— 纯白在暗场上
+        // 是一整块硬边亮斑，读起来像坏点而不是火光。尺寸也压小了。
+        // 没带 color 的老调用（历史存档外的直接调用）回落鎏金。
+        ctx.fillStyle = f.color || PAL.gold;
+        ctx.globalAlpha = t * 0.85;
+        ctx.beginPath(); ctx.arc(f.x, f.y, 4.2 * t + 0.8, 0, TAU); ctx.fill();
       } else if (f.type === 'dmgtext') {
         // 伤害飘字：不叠加发光，且必须描边才读得清（压在高对比的粒子和暗场上）。
         // 后 25% 生命淡出，前半段全亮，别在数字刚出现时就看不清。
@@ -2332,15 +2391,16 @@
     slash: function (x, y, angle, range, color, arc) {
       R.addEffect({ type: 'slash', x: x, y: y, angle: angle, arc: arc || Game.WEAPONS.iron_sword.arc, range: range, color: color, life: 0.16, maxLife: 0.16 });
     },
-    // 突刺：一条枪线，和 slash 的扇形对应。range/halfW 都是从 _thrustAttack 的
-    // 判定值传过来的 —— 特效画宽了就又是一次「打得着的比看见的窄」。
-    // 时长比刀光长一点（0.22 vs 0.16）：突刺要看得见「扎出去」那段位移。
-    thrust: function (x, y, angle, range, halfW, color) {
-      R.addEffect({ type: 'thrust', x: x, y: y, angle: angle, range: range, halfW: halfW, color: color, life: 0.22, maxLife: 0.22 });
-    },
-    muzzle: function (x, y, angle) {
+    // 突刺**不再发特效**：原来这里发一条 0.22s 的长枪线（鎏金亮芯 + 白亮芯 +
+    // 白枪尖），正是用户 2026-09-27 要去的白色特效。枪的动作改由环绕卫星自己演 ——
+    // 整把枪沿 swingAim 推出去、扎住、再收回来（renderer 的 STRIKE_PROFILE），
+    // 枪尖那一点光挂在 _drawSpear 的 fire 上。走廊的判定宽度不再需要在画面上
+    // 标出来：看得见的就是枪本身。
+    // muzzle 带上武器 color：手枪和青玉弩的击发要能分出颜色，
+    // 否则两把远程武器在画面上只有一个白点。
+    muzzle: function (x, y, angle, color) {
       var p = util.onCircle(x, y, 16, angle);
-      R.addEffect({ type: 'muzzle', x: p.x, y: p.y, life: 0.08, maxLife: 0.08 });
+      R.addEffect({ type: 'muzzle', x: p.x, y: p.y, color: color, life: 0.08, maxLife: 0.08 });
     },
     // 升级：金色灵光环 + 上升光点
     levelUp: function (x, y) {
