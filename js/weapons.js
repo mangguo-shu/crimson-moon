@@ -92,8 +92,11 @@
 
   WeaponInstance.prototype.damage = function (owner) {
     var d = this.def.damage * (1 + 0.5 * (this.level - 1));
-    // 远程统一压一档：环绕后近战能打到玩家身后，远程该让位（用户 2026-09-25 点名）
-    if (this.def.type === 'ranged') d *= Game.CONST.RANGED_DMG_SCALE;
+    // 两类都压一档，乘的是各自的系数：环绕后近战能打到玩家身后，远程先让位
+    // （用户 2026-09-25 点名）；后来「远程和近战伤害还要再削」（2026-09-27）
+    // 就是给近战补上这一档 —— 近战一直全价在打，凭什么只有远程受罚。
+    var K = Game.CONST;
+    d *= this.def.type === 'ranged' ? K.RANGED_DMG_SCALE : K.MELEE_DMG_SCALE;
     return d * owner.stats.damage;
   };
   WeaponInstance.prototype.cooldown = function (owner) {

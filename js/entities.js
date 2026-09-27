@@ -244,11 +244,16 @@
     // 读档还原也会经过这里，等于「存档里出现过的怪早就见过」，行为一致。
     if (Game.Codex) Game.Codex.mark(def.boss ? 'boss' : 'monster', type);
 
-    // 波次成长系数
+    // 波次成长系数。斜率走 CONST.ENEMY_HP_K1/K2 / ENEMY_DMG_K1，
+    // ENEMIES 表本体（def.hp / def.damage）一字未改。
+    // HP 带二次项：玩家输出按乘法涨（武器等级 ×1.5/级、属性卡、暴击、多把武器），
+    // 纯线性追不上 —— 第 40 波之前怪在玩家身边就已经全倒完了。详见 CONST 注释。
     var w = Math.max(1, wave);
-    var hpScale = 1 + 0.18 * (w - 1);
-    var dmgScale = 1 + 0.12 * (w - 1);
-    var spdScale = Math.min(1.6, 1 + 0.02 * (w - 1));
+    var K = Game.CONST;
+    var lin = w - 1;
+    var hpScale = 1 + K.ENEMY_HP_K1 * lin + K.ENEMY_HP_K2 * lin * lin;
+    var dmgScale = 1 + K.ENEMY_DMG_K1 * lin;
+    var spdScale = Math.min(1.6, 1 + 0.02 * lin);
 
     this.maxHp = def.hp * hpScale;
     if (this.isBoss) this.maxHp = def.hp * hpScale * (1 + 0.5 * ((opts.bossTier || 1) - 1));

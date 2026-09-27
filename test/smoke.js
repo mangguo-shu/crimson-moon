@@ -566,7 +566,12 @@ try {
   while (g20++ < 400) { res20 = Game.Systems.updateWave(st20, 0.2); if (res20 === 'ended') break; }
   assert(res20 === 'ended', '时间到波次立即结束（共推进 ' + (g20 * 0.2).toFixed(1) + ' 秒）');
   assert(st20.stats.kills === 0, '结束时一只怪都没杀（kills=' + st20.stats.kills + '）');
-  assert(st20.enemies.length === 0, '残怪已被清场');
+  // ①a 残怪不清（2026-09-27「每波结束后不清空怪物」）：全程没击杀，所以刷出来的
+  //     每一只都该还活着躺在场上，等下一波接着打。旧的「波末归零」断言已反了。
+  var alive20 = 0;
+  for (var i20 = 0; i20 < st20.enemies.length; i20++) if (!st20.enemies[i20].dead) alive20++;
+  assert(st20.enemies.length > 0 && alive20 === st20.enemies.length,
+         '波末活怪不清、滚进下一波（留着 ' + st20.enemies.length + ' 只，全是活着的）');
 
   // ①b 残留在场的敌人投射物也要清掉，玩家自己的保留
   st20.projectiles.length = 0;
@@ -576,9 +581,9 @@ try {
   st20.projectiles.push(new Game.Projectile({
     x: 420, y: 300, vx: 100, vy: 0, radius: 6, damage: 5, fromPlayer: true, life: 3, type: 'bullet',
   }));
-  Game.Systems.clearEnemies(st20);
+  Game.Systems.endWaveCleanup(st20);
   assert(st20.projectiles.length === 1 && st20.projectiles[0].fromPlayer === true,
-         '清场时敌人投射物被移除，玩家投射物保留');
+         '收场时敌人投射物被移除，玩家投射物保留');
 
   // ② 波末血量回满
   st20.player.stats.hp = 30;
@@ -775,14 +780,19 @@ try {
   tp26.weapons = st26.player.weapons;   // 接回起始武器（Player 构造不带武器）
   st26.player = tp26; st26.enemies = []; st26.projectiles = []; st26.pickups = [];
   var w26 = tp26.weapons[0];
+  // 期望值跟着系数算，不写死 —— 近战 2026-09-27 补了 MELEE_DMG_SCALE，
+  // 写死的 28 会在下一次调参时变成自欺。
+  var exp26 = Game.WEAPONS.iron_sword.damage * Game.CONST.MELEE_DMG_SCALE * 2;
   var me26 = atWeapon(w26, tp26, 40, 'zombie', 1);
   var hp026 = me26.hp;
   st26.enemies.push(me26);
   w26.cooldownRemaining = 0;
   w26.update(0.016, tp26, st26);
-  assert(me26.dead === true, 'onHit 生效：铁剑 14 翻成 28，一刀打死 20 血的跳尸');
-  assert(tp26.damageDealt === 28, '记账伤害 = 28（被动加成后，不是原始 14）');
-  assert(hp026 - me26.hp === 28, '敌人实扣 = 28（记账与实扣一致，没漏算）');
+  assert(me26.dead === true, 'onHit 生效：铁剑 14×' + Game.CONST.MELEE_DMG_SCALE +
+         ' 再翻成 ' + exp26.toFixed(1) + '，一刀打死 20 血的跳尸');
+  assert(tp26.damageDealt === exp26, '记账伤害 = ' + exp26.toFixed(1) +
+         '（被动加成后，不是原始 14 也不是没削的 ' + (14 * 2) + '）');
+  assert(hp026 - me26.hp === exp26, '敌人实扣 = ' + exp26.toFixed(1) + '（记账与实扣一致，没漏算）');
   assert(tp26.passiveState.stacks === undefined, '测试被动不污染连击内部状态');
   assert(tp26.passiveState.kills === 1, 'onKill 挂点被调用');
 
@@ -1633,8 +1643,8 @@ try {
          '狂战：叠满 10 层后伤害 +30%（' + bd0 + ' → ' + br38.stats.damage.toFixed(2) + '）');
   assert(br38.passiveState.dmgStacks === 10, '狂战叠层封顶在 10 层（第 12 次击杀不再加）');
   var w39 = Game.createWeapon('iron_sword', 1);
-  assert(Math.abs(w39.damage(br38) - w39.def.damage * (bd0 + 0.30)) < 1e-9,
-         '狂战叠层后的倍率进入武器实际伤害');
+  assert(Math.abs(w39.damage(br38) - w39.def.damage * Game.CONST.MELEE_DMG_SCALE * (bd0 + 0.30)) < 1e-9,
+         '狂战叠层后的倍率进入武器实际伤害（表伤害 × 近战系数 × 角色倍率）');
 
   // ⑳ 存档往返：叠层数与已被动改过的属性一起保存，读档不会二次累加
   var st46 = Game.Systems.createState('endless', 'crossbowman', 702);
@@ -2008,20 +2018,27 @@ try {
 
   // 1 星新武器不越级：不高于现有最强 1 星（同类型）的一档。上限留 30% ——
   // 贯石弩比手枪 DPS 高，是用穿透 4 换的，不算越级。
-  var spearDps = Game.WEAPONS.spear.damage / Game.WEAPONS.spear.cooldown;
-  var RDSPh2 = Game.CONST.RANGED_DMG_SCALE;
-  var pistolDpsPh2 = (Game.WEAPONS.pistol.damage * RDSPh2) /
-                     Game.WEAPONS.pistol.cooldown;
-  assert(Math.abs(spearDps - 23.53) < 0.01 && Math.abs(pistolDpsPh2 - 10.91) < 0.01,
-         '前置：对标标尺是龙胆枪 23.5 / 手枪 10.9（' + spearDps.toFixed(2) +
+  // 两侧都用**有效 DPS**（含 RANGED/MELEE_DMG_SCALE），衡量的是玩家实际打出来的
+  // 输出，而不是 WEAPONS 表里的原始值 —— 2026-09-27 给近战补了 MELEE_DMG_SCALE，
+  // 这里跟着改，否则近战这半区量的是「没削过的数」。
+  var KDSPh2 = Game.CONST;
+  var effDps = function (id) {
+    var w = Game.WEAPONS[id];
+    var d = w.damage / w.cooldown;
+    return w.type === 'ranged' ? d * KDSPh2.RANGED_DMG_SCALE : d * KDSPh2.MELEE_DMG_SCALE;
+  };
+  var spearDps = effDps('spear');
+  var pistolDpsPh2 = effDps('pistol');
+  assert(Math.abs(spearDps - 18.82) < 0.01 && Math.abs(pistolDpsPh2 - 9.09) < 0.01,
+         '前置：对标标尺是龙胆枪 18.8 / 手枪 9.1（' + spearDps.toFixed(2) +
          ' / ' + pistolDpsPh2.toFixed(2) + '）');
   ['warhammer', 'temple_staff'].forEach(function (id) {
-    var d = Game.WEAPONS[id].damage / Game.WEAPONS[id].cooldown;
+    var d = effDps(id);
     assert(d <= spearDps * 1.3, id + ' DPS ' + d.toFixed(1) + ' 没越过龙胆枪 ' +
            spearDps.toFixed(1) + ' 的一档（上限 ' + (spearDps * 1.3).toFixed(1) + '）');
   });
   ['wood_bow', 'heavy_crossbow'].forEach(function (id) {
-    var d = (Game.WEAPONS[id].damage * RDSPh2) / Game.WEAPONS[id].cooldown;
+    var d = effDps(id);
     assert(d <= pistolDpsPh2 * 1.3, id + ' DPS ' + d.toFixed(1) + ' 没越出手枪 ' +
            pistolDpsPh2.toFixed(1) + ' 的一档（上限 ' + (pistolDpsPh2 * 1.3).toFixed(1) + '）');
   });
@@ -2638,7 +2655,11 @@ try {
   var s99 = Game.Systems.createState('campaign', 'swordsman', 230000);
   s99.player.applyItem('lifeluck', 1);
   s99.player.applyItem('deathbell', 1);
-  var wp99 = s99.player.weapons[0];
+  // 这一节要的是「一刀打死」—— 1 星近战被 MELEE_DMG_SCALE 压到 11.2，打不死 12 血的蝙蝠，
+  // 击杀回血那一路就永远不会触发。拿满星武器顶上，测试意图不变。
+  var wp99 = Game.createWeapon(s99.player.weapons[0].def.id, Game.CONST.MAX_WEAPON_LEVEL);
+  s99.player.weapons[0] = wp99;
+  Game.Systems.normalizeSlots(s99.player);
   var e99 = atWeapon(wp99, s99.player, 30, 'bat', 1);
   s99.enemies.push(e99);
   var calls99 = [];
@@ -2827,8 +2848,8 @@ try {
          '轨道转速 0.25 rad/s 与挥砍扇形 60°（360°/6）两个开关就位');
   assert(typeof K.RANGED_FIRE_ARC === 'undefined',
          '旧的 RANGED_FIRE_ARC 已删：扇形不再限制索敌');
-  assert(K.RANGED_DMG_SCALE === 0.6 && K.MELEE_RANGE_SCALE === 1.25,
-         '远程伤害 ×0.6 / 近战范围 ×1.25 两个开关就位');
+  assert(K.RANGED_DMG_SCALE === 0.5 && K.MELEE_DMG_SCALE === 0.8 && K.MELEE_RANGE_SCALE === 1.25,
+         '远程伤害 ×0.5 / 近战伤害 ×0.8 / 近战范围 ×1.25 三个开关就位');
   assert(Game.WEAPONS.pistol.damage === 10 && Game.WEAPONS.iron_sword.range === 66,
          'WEAPONS 表本体数值未被改动（系数在 WeaponInstance 里应用，不是改表）');
 
@@ -2836,13 +2857,20 @@ try {
   var pistol201 = Game.createWeapon('pistol', 1);
   var sword201 = Game.createWeapon('iron_sword', 1);
   var moon201 = Game.createWeapon('moon_sword', 1);
-  assert(Math.abs(pistol201.damage(pl201) - 10 * 0.6) < 1e-9, '手枪伤害被压到 10×0.6=6');
-  assert(Math.abs(sword201.damage(pl201) - 14) < 1e-9, '铁剑伤害不受远程系数影响（仍 14）');
+  // 期望值用「表本体 × 系数」拼出来，不写死数字 —— 系数一调就自动跟着改，
+  // 不会出现「断言还在比旧系数」这种自欺。
+  assert(Math.abs(pistol201.damage(pl201) - 10 * K.RANGED_DMG_SCALE) < 1e-9,
+         '手枪伤害被远程系数压到 10×' + K.RANGED_DMG_SCALE + '=' +
+         (10 * K.RANGED_DMG_SCALE).toFixed(1));
+  assert(Math.abs(sword201.damage(pl201) - 14 * K.MELEE_DMG_SCALE) < 1e-9,
+         '铁剑伤害被近战系数压到 14×' + K.MELEE_DMG_SCALE + '=' +
+         (14 * K.MELEE_DMG_SCALE).toFixed(1));
   assert(Math.abs(sword201.range() - 66 * 1.25) < 1e-9, '铁剑范围 66 → 82.5');
   assert(Math.abs(moon201.range() - 86 * 1.25) < 1e-9, '赤月斩范围 86 → 107.5');
-  assert(Math.abs(pistol201.damage(pl201) - 6) < 1e-9 &&
-         Math.abs(Game.createWeapon('pistol', 3).damage(pl201) - 6 * 2) < 1e-9,
-         '远程系数与等级成长叠乘（Lv.3 手枪 6×2=12）');
+  var lv3Pistol201 = Game.createWeapon('pistol', 3).damage(pl201);
+  assert(Math.abs(lv3Pistol201 - 10 * K.RANGED_DMG_SCALE * 2) < 1e-9,
+         '远程系数与等级成长叠乘（Lv.3 手枪 = 10×' + K.RANGED_DMG_SCALE + '×2=' +
+         lv3Pistol201.toFixed(1) + '）');
 
   // ---- 2. 轨道公式：均分、越界安全、武器数变化会重新均分 ----
   assert(typeof Game.orbitSlot === 'function', 'Game.orbitSlot 是逻辑与渲染共用的唯一角度公式');
@@ -3129,8 +3157,13 @@ try {
   });
   assert(swings207 === 2,
          '敌人比武器少时两把武器都出手（' + swings207 + ' 刀，不因为别人先要了目标就闲置）');
-  assert(lone207.hp === 1e9 - 14 - 30,
-         '同一个目标挨了两把武器各一刀（铁剑 14 + 赤月斩 30 = 44）');
+  // 两把都是近战，都吃 MELEE_DMG_SCALE。用容差比而不是 ===：1e9 量级上 14×0.8
+  // 会带出 11.200000000000001，位级相等是运气而不是正确。
+  assert(Math.abs(lone207.hp - (1e9 - 14 * Game.CONST.MELEE_DMG_SCALE -
+                                30 * Game.CONST.MELEE_DMG_SCALE)) < 0.01,
+         '同一个目标挨了两把武器各一刀（铁剑 14 + 赤月斩 30 = 44，各含 ×' +
+         Game.CONST.MELEE_DMG_SCALE + ' 的近战系数 → ' +
+         (44 * Game.CONST.MELEE_DMG_SCALE).toFixed(1) + '）');
 
   // ---- 8. 挤掉旧武器后槽位重排，轨道不会歪 ----
   var s208 = Game.Systems.createState('campaign', 'swordsman', 777007);
@@ -3178,12 +3211,16 @@ try {
   var w210b = Game.createWeapon('iron_sword', 1, 1);
   s210x.player.weapons = [w210a, w210b];
   var html210 = Game.UI.renderStatsHTML(s210x);
-  assert(html210.indexOf('× 远程 0.6') >= 0, '面板写出远程系数（本体 10 × 远程 0.6 才等于压过之后的伤害）');
+  assert(html210.indexOf('× 远程 ' + Game.CONST.RANGED_DMG_SCALE) >= 0,
+         '面板写出远程系数（本体 10 × 远程 ' + Game.CONST.RANGED_DMG_SCALE + ' 才等于压过之后的伤害）');
+  assert(html210.indexOf('× 近战 ' + Game.CONST.MELEE_DMG_SCALE) >= 0,
+         '面板也写出近战系数 —— 漏掉它，左列连乘 14×1×1=14 会对不上右列的 ' +
+         w210b.damage(s210x.player).toFixed(1));
   assert(html210.indexOf('射程 82.5') >= 0, '面板显示近战有效射程（已含 ×1.25，不是表上的 66）');
   assert(html210.indexOf('>' + w210a.damage(s210x.player).toFixed(2) + '<') >= 0,
          '远程伤害栏的数字等于 WeaponInstance.damage() 算出的实际值');
   assert(html210.indexOf('>' + w210b.damage(s210x.player).toFixed(2) + '<') >= 0,
-         '近战伤害栏的数字等于 WeaponInstance.damage()，不受远程系数影响');
+         '近战伤害栏的数字等于 WeaponInstance.damage()（已含近战系数）');
 
   // ---- 11. 渲染：每把武器画出自己的卫星，且不崩 ----
   var s211 = Game.Systems.createState('campaign', 'swordsman', 777010);
@@ -3614,8 +3651,9 @@ try {
          '第 5 只在走廊内、也在射程内，但超过 pierce 上限，留给下一刺');
   assert(Object.keys(cl216).length === spDef216.pierce,
          '贯穿的每一只都记进 claimed，同帧下一把武器不会重打这一排');
-  assert(Math.abs(hit216[0].hp - (1e9 - 20)) < 1e-6,
-         '突刺伤害 = 武器表伤害 × 角色系数（实得 ' + (1e9 - hit216[0].hp).toFixed(1) + '）');
+  assert(Math.abs(hit216[0].hp - (1e9 - 20 * K.MELEE_DMG_SCALE)) < 1e-6,
+         '突刺伤害 = 武器表伤害 × 近战系数 × 角色系数（' + 20 + ' × ' +
+         K.MELEE_DMG_SCALE + ' × 1.0，实得 ' + (1e9 - hit216[0].hp).toFixed(1) + '）');
   assert(hit216[0].knockbackX > 89 && Math.abs(hit216[0].knockbackY) < 1e-6,
          '击退沿枪尖方向往前飞（' + hit216[0].knockbackX.toFixed(1) + ', ' +
          hit216[0].knockbackY.toFixed(2) + '），不是横扫那样往玩家外侧推');
@@ -4082,7 +4120,11 @@ try {
          ' / ' + (svEnd && svEnd.waveDuration) + '）');
   var sReload = Game.Systems.deserialize(svEnd);
   assert(sReload.screen === 'PLAYING', '读档落在 PLAYING（不会卡在商店界面）');
-  assert(sReload.enemies.length === 0, '读档后场上没有残留敌人');
+  // 波末不清场之后，存档会带着上一波没死透的残怪 —— 这是特性而不是残留：
+  // 下一波 startWave 会把它们撤到地图边缘，玩家接手时怪还在追，只是换了个方向。
+  // 「不会卡死」的真正保证是下面那句「第一帧就 ended」，不是场上空不空。
+  assert(sReload.enemies.every(function (e) { return !e.dead; }),
+         '读档带来的怪都是活着的（死怪已在收场时清掉，共 ' + sReload.enemies.length + ' 只）');
   assert(Game.Systems.updateWave(sReload, 0.1) === 'ended',
          '读档后第一帧就判定结束 → 主循环自动送回商店，不会卡死');
 
@@ -4543,10 +4585,12 @@ try {
   assert(t5.player.weapons[0].level === 2 && t5.shop.items[0].sold === true,
          '未满星买强化卡正常升一级（Lv.' + t5.player.weapons[0].level + '）');
 
-  // ---- 4. 护盾回充削峰 ----
-  assert(K.SHIELD_REGEN_SCALE === 0.25, '护盾回充系数 0.25（' + K.SHIELD_REGEN_SCALE + '）');
+  // ---- 4. 护盾不回充：只断「站着自动回」这一条，治疗溢出仍然补盾 ----
+  assert(K.SHIELD_REGEN_SCALE === 0,
+         '护盾回充系数归零（' + K.SHIELD_REGEN_SCALE + '，2026-09-27「打完就没了」）');
   assert(/\+ 2 \* dt \* CONST\.SHIELD_REGEN_SCALE/.test(sysSrc2),
-         '护盾回充走 CONST.SHIELD_REGEN_SCALE，不留裸 2*dt');
+         '回充速率仍走 CONST.SHIELD_REGEN_SCALE —— 不留裸 2*dt，改系数即可恢复，' +
+         '否则这里变成「表里躺着但不生效」');
   var t6 = S.createState('campaign', 'swordsman', 4001);
   var p6 = t6.player;
   p6.stats.shieldMax = 25; p6.stats.shield = 0;
@@ -4556,8 +4600,19 @@ try {
   try {
     for (var f2 = 0; f2 < 60; f2++) S.updatePlayer(t6, 1 / 60);
   } finally { Game.Input.getMove = moveReal; Game.state = null; }
-  assert(Math.abs(p6.stats.shield - 0.5) < 0.2,
-         '护盾回充实得 ' + p6.stats.shield.toFixed(2) + '/秒（原来 2/秒，压 4 倍）');
+  assert(p6.stats.shield === 0,
+         '站满 1 秒护盾纹丝不动（' + p6.stats.shield.toFixed(2) + '，原来 1 秒回 2）');
+
+  // 「打完就没了」不等于「再也回不来」：治疗溢出仍然灌进盾。这条必须活着 ——
+  // 断了它，吸血/回血被动和回血道具对盾型角色就全是废纸。
+  var t6b = S.createState('campaign', 'swordsman', 4002);
+  var p6b = t6b.player;
+  p6b.stats.shieldMax = 25; p6b.stats.shield = 0;
+  p6b.stats.hp = p6b.stats.maxHp;         // 满血，治疗的整份溢出都该进盾
+  p6b.heal(40, { fx: false, audio: false });
+  assert(p6b.stats.shield === 25 && p6b.stats.hp === p6b.stats.maxHp,
+         '治疗溢出仍灌进护盾（回 40、盾上限 25 → 盾满 25、血不动 ' +
+         p6b.stats.hp.toFixed(0) + '/' + p6b.stats.maxHp.toFixed(0) + '）');
 
   // ---- 5. 回血削峰到「零点几」----
   assert(D.chestHeal === undefined && typeof D.chestHealPct === 'number',
@@ -5243,6 +5298,156 @@ try {
   Game.Game._codexTab = 'hero';
 } catch (e) {
   assert(false, '图鉴异常: ' + e.stack);
+}
+
+/* ---------------- ㉛ 残怪滚进下一波 / 怪物逐波加强 / 双系伤害再削 / 护盾不回充 ---------------- */
+console.log('\n== ㉛ 波次不清场 + 怪物成长 + 伤害双削 + 满星不出武器卡 ==');
+try {
+  var K13 = Game.CONST, S13 = Game.Systems;
+
+  // ---- 1. 波末收场：只清「死的」和「Boss」，活怪滚进下一波 ----
+  //     「每波结束后不清空怪物」（2026-09-27）。原来这里把残怪全删了，等于每波
+  //     重新铺一张干净的桌子，玩家从不欠账，也就感觉不到怪有多难缠。
+  var st13 = S13.createState('campaign', 'swordsman', 611);
+  var alive13 = new Game.Enemy('zombie', 100, 100, 1);
+  var dead13 = new Game.Enemy('zombie', 200, 200, 1);
+  dead13.dead = true;
+  var boss13 = new Game.Enemy('boss', 300, 300, 10, { bossTier: 1 });
+  st13.enemies.push(alive13, dead13, boss13);
+  st13.projectiles.push(
+    new Game.Projectile({ x: 10, y: 10, vx: 0, vy: 0, radius: 7, damage: 5, fromPlayer: false, life: 3, type: 'spell' }),
+    new Game.Projectile({ x: 20, y: 20, vx: 0, vy: 0, radius: 6, damage: 5, fromPlayer: true, life: 3, type: 'bullet' })
+  );
+  S13.endWaveCleanup(st13);
+  assert(st13.enemies.length === 1 && st13.enemies[0] === alive13,
+         '波末只留活着的普通怪（留着 ' + st13.enemies.length + ' 只：死的与 Boss 各清 1 只）');
+  assert(st13.projectiles.length === 1 && st13.projectiles[0].fromPlayer === true,
+         '敌人弹照清（会冻在商店界面上）、玩家弹保留');
+
+  // ---- 2. 同屏上限：刷怪停手但不丢弃，波次总数不变 ----
+  var st13b = S13.createState('campaign', 'swordsman', 612);
+  S13.startWave(st13b, 1);
+  st13b.spawnSchedule.forEach(function (ev) { ev.time = 0; });   // 全压到同一帧，逼出上限
+  S13.updateWave(st13b, 5);
+  var held13 = 0;
+  for (var c13 = 0; c13 < st13b.enemies.length; c13++) if (!st13b.enemies[c13].dead) held13++;
+  assert(st13b.spawnSchedule.length > K13.MAX_ALIVE_ENEMIES,
+         '本测例的刷怪表比上限大（' + st13b.spawnSchedule.length + ' > ' + K13.MAX_ALIVE_ENEMIES +
+         '），上限真的会被压到');
+  assert(held13 === K13.MAX_ALIVE_ENEMIES,
+         '同屏活怪封顶 ' + K13.MAX_ALIVE_ENEMIES + '（实得 ' + held13 + '）');
+  assert(st13b.spawnIndex < st13b.spawnSchedule.length,
+         '被压住的刷新事件停在原地、不跳过也不丢弃（刷了 ' + st13b.spawnIndex + '/' +
+         st13b.spawnSchedule.length + '，腾出空位就接着刷，所以一波的总数没变）');
+
+  // ---- 3. 撤边：位置由 uid 派生、不偷吃 state.rng、全部退到世界外 ----
+  //     不清场意味着残怪带着上一波结束时的坐标进下一波，那一刻它们多半正贴着
+  //     玩家。不撤边的话「连续压力」会退化成「每波开局被贴脸点杀」。
+  var st13c = S13.createState('campaign', 'swordsman', 613);
+  var st13ref = S13.createState('campaign', 'swordsman', 613);   // 同种子参照流
+  for (var i13 = 0; i13 < 6; i13++) {
+    st13c.enemies.push(new Game.Enemy('zombie', 500 + i13 * 20, 500, 1));
+    st13ref.enemies.push(new Game.Enemy('zombie', 500 + i13 * 20, 500, 1));
+  }
+  var ref13 = [], j13;
+  for (j13 = 0; j13 < 6; j13++) ref13.push(st13ref.rng());
+  S13.retreatSurvivors(st13c);
+  var snap13 = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
+  var got13 = [];
+  for (j13 = 0; j13 < 6; j13++) got13.push(st13c.rng());
+  assert(ref13.join(',') === got13.join(','),
+         '撤边不消费 state.rng —— 偷吃一次，buildSpawnSchedule 的排程就整局漂移');
+  S13.retreatSurvivors(st13c);
+  var snap13b = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
+  assert(JSON.stringify(snap13) === JSON.stringify(snap13b),
+         '撤边位置由 uid 派生、可复现（连续撤两次逐只一致，不掷骰子）');
+  var m13 = 24;
+  assert(st13c.enemies.every(function (e) {
+    return e.x < -m13 + 1 || e.x > K13.WORLD_W + m13 - 1 ||
+           e.y < -m13 + 1 || e.y > K13.WORLD_H + m13 - 1;
+  }), '撤边后全部退到世界外，下一波开头有一段接近的缓冲期');
+  // startWave 接上这条路径（wave > 1 才撤，第 1 波场上本来就是空的）
+  var st13d = S13.createState('campaign', 'swordsman', 614);
+  st13d.enemies.push(new Game.Enemy('zombie', 500, 500, 1));   // 模拟上一波留下的残怪
+  S13.startWave(st13d, 3);
+  assert(st13d.enemies[0].x !== 500 || st13d.enemies[0].y !== 500,
+         'startWave 会调用撤边（残怪离开原位）');
+
+  // ---- 4. 怪物逐波加强：ENEMIES 表本体不动，只动成长斜率 ----
+  assert(Game.ENEMIES.zombie.hp === 20 && Game.ENEMIES.zombie.damage === 8,
+         'ENEMIES 表本体未被改动（跳尸 hp=20 / dmg=8）—— 成长全在构造函数里');
+  var curve13 = [1, 10, 20, 40].map(function (w) { return new Game.Enemy('zombie', 0, 0, w); });
+  assert(Math.abs(curve13[0].maxHp - 20) < 1e-9, '第 1 波血量 = 表本体 20（没有第 0 波的加成）');
+  var hpExp10 = 20 * (1 + K13.ENEMY_HP_K1 * 9 + K13.ENEMY_HP_K2 * 9 * 9);
+  assert(Math.abs(curve13[1].maxHp - hpExp10) < 1e-6,
+         '第 10 波血量 = 1 + K1(w-1) + K2(w-1)²（K1=' + K13.ENEMY_HP_K1 + ' / K2=' +
+         K13.ENEMY_HP_K2 + ' → ' + hpExp10.toFixed(1) + '，实得 ' + curve13[1].maxHp.toFixed(1) + '）');
+  var linearOnly40 = 20 * (1 + K13.ENEMY_HP_K1 * 39);
+  assert(curve13[3].maxHp > linearOnly40 * 1.3,
+         '第 40 波血量显著高于纯线性（实测 ' + curve13[3].maxHp.toFixed(0) + ' > 线性 ' +
+         linearOnly40.toFixed(0) + ' 的 1.3 倍）—— 玩家输出按乘法涨（等级×1.5/级、卡、暴击、多把武器），' +
+         '只有二次项才追得上');
+  var dmgCurve = curve13.map(function (e) { return e.damage; });
+  assert(Math.abs(dmgCurve[1] - 8 * (1 + K13.ENEMY_DMG_K1 * 9)) < 1e-9,
+         '第 10 波伤害 = 1 + K1(w-1)（K1=' + K13.ENEMY_DMG_K1 + ' → ' +
+         dmgCurve[1].toFixed(1) + '，实得 ' + dmgCurve[1].toFixed(1) + '）');
+  assert(dmgCurve[0] < dmgCurve[1] && dmgCurve[1] < curve13[3].damage &&
+         dmgCurve[2] > dmgCurve[1],
+         '伤害逐波单调加强（w1 ' + dmgCurve[0].toFixed(0) + ' → w10 ' + dmgCurve[1].toFixed(1) +
+         ' → w20 ' + dmgCurve[2].toFixed(0) + ' → w40 ' + curve13[3].damage.toFixed(0) + '）');
+
+  // ---- 5. 双系伤害再削：近战这次也压一档 ----
+  //     之前只有远程被 RANGED_DMG_SCALE 压过，近战一直全价在打；环绕之后近战能
+  //     打到玩家身后，凭什么只有远程让位。系数在 WeaponInstance.damage 里乘，
+  //     WEAPONS 表本体不动。
+  var pl13 = new Game.Player('swordsman');
+  assert(Math.abs(Game.createWeapon('iron_sword', 1).damage(pl13) - 14 * K13.MELEE_DMG_SCALE) < 1e-9,
+         '近战走 MELEE_DMG_SCALE（铁剑 14×' + K13.MELEE_DMG_SCALE + '=' +
+         (14 * K13.MELEE_DMG_SCALE).toFixed(1) + '）');
+  assert(Math.abs(Game.createWeapon('pistol', 1).damage(pl13) - 10 * K13.RANGED_DMG_SCALE) < 1e-9,
+         '远程走 RANGED_DMG_SCALE（手枪 10×' + K13.RANGED_DMG_SCALE + '=' +
+         (10 * K13.RANGED_DMG_SCALE).toFixed(1) + '）');
+  assert(Game.WEAPONS.iron_sword.damage === 14 && Game.WEAPONS.pistol.damage === 10,
+         'WEAPONS 表本体未被改动（系数不在表里）');
+
+  // ---- 6. 武器满星后不再出武器卡：三个出货口都要拦 ----
+  function allMaxed13(seed) {
+    var s = S13.createState('campaign', 'swordsman', seed);
+    s.player.weapons = [];
+    for (var i = 0; i < K13.MAX_WEAPONS; i++) s.player.weapons.push(Game.createWeapon('pistol', 1, i));
+    s.player.weapons.forEach(function (w) { w.level = K13.MAX_WEAPON_LEVEL; });
+    S13.normalizeSlots(s.player);
+    return s;
+  }
+  var st13e = allMaxed13(615);
+  var kinds13 = function (arr) { return (arr || []).map(function (c) { return c.kind; }); };
+  var upKinds13 = kinds13(S13.rollLevelUpChoices(st13e));
+  assert(upKinds13.indexOf('weapon') === -1 && upKinds13.indexOf('weaponUpgrade') === -1,
+         '满星时升级三选一不给任何武器卡（实际: ' + JSON.stringify(upKinds13) + '）');
+  var bossKinds13 = kinds13(S13.bossRewardChoices(st13e));
+  assert(bossKinds13.indexOf('weapon') === -1 && bossKinds13.indexOf('weaponUpgrade') === -1,
+         '满星时 Boss 奖励不给任何武器卡（实际: ' + JSON.stringify(bossKinds13) + '）');
+  var shopHits13 = 0;
+  for (var i13b = 0; i13b < 120; i13b++) {
+    var sh13 = S13.rollShopItem(allMaxed13(6200 + i13b), allMaxed13(6300 + i13b).rng);
+    if (sh13 && (sh13.type === 'weapon' || sh13.type === 'weaponUpgrade')) shopHits13++;
+  }
+  assert(shopHits13 === 0, '满星时商店 120 次滚动 0 张武器卡（死卡会扣钱却什么都没发生）');
+
+  // 对照：槽满但还没满星，武器卡照常给 —— 上面的拦截不能连正常情况一起误伤
+  var st13f = allMaxed13(616);
+  st13f.player.weapons[0].level = 1;
+  var shopUp13 = 0, tot13 = 0;
+  for (var i13c = 0; i13c < 120; i13c++) {
+    var s13g = allMaxed13(6400 + i13c);
+    s13g.player.weapons[0].level = 1;
+    tot13++;
+    if (S13.rollShopItem(s13g, s13g.rng).type === 'weaponUpgrade') shopUp13++;
+  }
+  assert(shopUp13 > tot13 * 0.3,
+         '槽满但未满星时商店仍正常给强化卡（' + shopUp13 + '/' + tot13 + '，武器半区权重 0.5）');
+} catch (e) {
+  assert(false, '㉛ 异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

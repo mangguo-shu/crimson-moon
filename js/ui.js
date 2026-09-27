@@ -291,14 +291,17 @@
           var dmg = w.damage(p);              // 已含等级成长、远程系数与角色倍率
           var cd = w.cooldown(p);             // 已除攻击速度
           var lvlUp = 1 + 0.5 * (w.level - 1);
-          var scale = w.def.type === 'ranged' ? Game.CONST.RANGED_DMG_SCALE : 1;
+          // 两类各有一个系数：分解式必须写全，否则右列的 dmg 对不上左列的连乘。
+          // 近战系数是 2026-09-27 补的，漏了它面板就会写「14 × 1 × 1 = 14」而右边显示 11.2。
+          var scale = w.def.type === 'ranged' ? Game.CONST.RANGED_DMG_SCALE : Game.CONST.MELEE_DMG_SCALE;
+          var scaleName = w.def.type === 'ranged' ? '远程' : '近战';
           var rng = w.def.type === 'melee' ? w.range() : 0;
           html += '<div class="stats-weapon">' +
             '<div class="stats-wname">' +
             '<span>' + (w.def.type === 'melee' ? '🗡' : '🔫') + ' ' + w.def.name + '</span>' +
             '<span class="stats-wlvl">Lv.' + w.level + '/' + MAXLVL + ' ' + stars(w.level) + '</span></div>' +
             '<div class="stats-wstat"><span>本体 ' + w.def.damage +
-              (scale !== 1 ? ' × 远程 ' + scale : '') + ' × 等级 ' +
+              (scale !== 1 ? ' × ' + scaleName + ' ' + scale : '') + ' × 等级 ' +
               num(lvlUp) + ' × 角色 ' + num(s.damage) + '</span><span class="v">' + num(dmg) + '</span></div>' +
             '<div class="stats-wstat"><span>攻速 ' + num(1 / cd) + ' 次/秒' +
               (w.def.pierce ? ' · 穿透 ' + w.def.pierce : '') +

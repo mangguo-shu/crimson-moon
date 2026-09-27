@@ -47,6 +47,11 @@
     state.player.weapons.push(Game.createWeapon(w, 1, 0));
     // 回指：拾取物只拿到 player，但吸铁石要遍历整个 state.pickups
     state.player.state = state;
+    // uid 基准：撤边位置要从「本局内第几只怪」派生，而不是从全局自增的
+    // Enemy._uid 直接派生 —— 那个计数器在同一会话的多局之间会累积，不扣
+    // 基准的话，同一种子在不同会话位置会退到不同的边。放最后赋值：前面任何
+    // 一步若意外造过敌人，基准都已经把它们包进去了。
+    state.uidBase = Game.Enemy._uid;
     return state;
   };
 
@@ -176,8 +181,48 @@
       if (Game.Audio) Game.Audio.boss();
     }
 
+    // 残怪撤到地图边缘，下一波再从边缘压回来（见 endWaveCleanup 的注释）。
+    if (wave > 1) S.retreatSurvivors(state);
+
     // 角色被动：波次开始（开局护盾、重置叠层等）
     if (state.player) Game.invokePassive(state.player, 'onWaveStart', state, wave);
+  };
+
+  /** 确定性 32-bit 哈希 → [0,1)。同一个输入永远给同一个输出。
+   *  刻意不碰 state.rng 也不用 Math.random()：buildSpawnSchedule 吃 state.rng
+   *  排刷怪表，只要这条路径上多消费一次随机数，同一个种子的刷怪排程就会
+   *  整局漂移（表现为「为什么我两个存档第 7 波刷的不一样」）。uid 派生则
+   *  让残怪退到哪儿可复现 —— 同一只怪每次换波都退同一个边、同一条线上。 */
+  S._hash01 = function (n) {
+    var h = Math.imul(n | 0, 2654435761);
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    h = h ^ (h >>> 16);
+    return (h >>> 0) / 4294967296;
+  };
+
+  /** 把上一波的残怪撤到地图外边缘。怪一只不少，但下一波开头有一段接近的
+   *  缓冲期，跟改前「怪从边缘刷进来」的节奏一致。
+   *
+   *  这一步是必须的，不是可选的体感优化：不清场意味着残怪带着上一波结束
+   *  时的那一刻坐标进入下一波，而那一时刻它们多半正贴着玩家（它们就是追到
+   *  身上的）。没有这一步，「连续压力」会退化成「每波开局就被贴脸点杀」——
+   *  实测成型构建 2 波就翻车，纯粹是因为开局没有任何走位时间。
+   *  撤到世界边缘后敌人照常会走回来（update 不做边界钳制），等于把节奏
+   *  从「瞬时被围」拉回「从屏外压上来」。 */
+  S.retreatSurvivors = function (state) {
+    var m = 24, n = state.enemies.length, base = state.uidBase || 0;
+    for (var i = 0; i < n; i++) {
+      var e = state.enemies[i];
+      if (e.dead || e.isBoss) continue;
+      var id = e.uid - base;   // 本局内序号，不受会话累积影响
+      var side = Math.floor(S._hash01(id) * 4);
+      // 沿边线的分布位置：换一个不相干的乘子，别让 side 和 along 相关
+      var along = S._hash01(Math.imul(id | 0, 0x9e3779b9));
+      if (side === 0) { e.x = along * CONST.WORLD_W; e.y = -m; }
+      else if (side === 1) { e.x = along * CONST.WORLD_W; e.y = CONST.WORLD_H + m; }
+      else if (side === 2) { e.x = -m; e.y = along * CONST.WORLD_H; }
+      else { e.x = CONST.WORLD_W + m; e.y = along * CONST.WORLD_H; }
+    }
   };
 
   /** 每帧更新波次；返回 'ended' 表示本波结束 */
@@ -186,10 +231,17 @@
     state.waveTime += dt;
     state.elapsed += dt;
 
-    // 按计划刷新敌人
+    // 按计划刷新敌人。场上活怪到 MAX_ALIVE_ENEMIES 就停手 —— 波次结束不清场之后
+    // 残怪会滚进下一波，不封顶就变成无限滚雪球（见 CONST 里那条注释）。
+    // 被压住的刷新事件**不跳过、不丢弃**：spawnIndex 停在原地，场上腾出空位就
+    // 接着刷，所以一波的总数不变，只是分布被压平、不再堆到几百只。
+    // Boss 不吃这个上限 —— 它必须按时出场，卡住了就是卡关。
+    var aliveNow = 0;
+    for (var q = 0; q < state.enemies.length; q++) if (!state.enemies[q].dead) aliveNow++;
     while (state.spawnIndex < state.spawnSchedule.length &&
            state.spawnSchedule[state.spawnIndex].time <= state.waveTime) {
       var ev = state.spawnSchedule[state.spawnIndex];
+      if (!ev.boss && aliveNow >= CONST.MAX_ALIVE_ENEMIES) break;
       if (ev.boss) {
         state.bossSpawned = true;
         state.enemies.push(new Game.Enemy(ev.type || 'boss', ev.x, ev.y, state.wave,
@@ -200,6 +252,7 @@
         state.enemies.push(new Game.Enemy(ev.type, ev.x, ev.y, state.wave));
       }
       state.spawnIndex++;
+      aliveNow++;
     }
 
     // 波次结束判定
@@ -208,46 +261,48 @@
       var anyBoss = false;
       for (var i = 0; i < state.enemies.length; i++) if (state.enemies[i].isBoss) anyBoss = true;
       if (state.bossSpawned && !anyBoss) {
-        this.clearEnemies(state);
+        this.endWaveCleanup(state);
         return 'ended';
       }
       // 硬超时兜底：Boss 战不可能无限拖，到时直接收场（防止卡关）
       if (state.waveTime >= state.waveDuration) {
-        this.clearEnemies(state);
+        this.endWaveCleanup(state);
         return 'ended';
       }
     } else {
-      // 普通波：时间一到立即结束，不必清空场上的怪（残怪由 clearEnemies 收掉）。
+      // 普通波：时间一到立即结束，不必追完场上的怪 —— 残怪滚进下一波。
       // 旧实现要求 aliveCount === 0，玩家必须追杀全场才能进商店，节奏被拖死。
       var aliveCount = 0;
       for (var k = 0; k < state.enemies.length; k++) if (!state.enemies[k].dead) aliveCount++;
       if (state.waveTime >= state.waveDuration) {
-        this.clearEnemies(state);
+        this.endWaveCleanup(state);
         return 'ended';
       }
-      // 提前收场：刷新已排完且场上已无存活，不必等倒计时（更早进商店）
+      // 提前收场：刷新已排完且场上已无存活（含上一波滚下来的残怪）
       if (state.spawnIndex >= state.spawnSchedule.length && aliveCount === 0 && state.waveTime > 1) {
-        this.clearEnemies(state);
+        this.endWaveCleanup(state);
         return 'ended';
       }
     }
     return null;
   };
 
-  S.clearEnemies = function (state) {
+  /** 波次收场：清掉已死的和 Boss，**活着的普通怪留在场上滚进下一波**。
+   *  用户 2026-09-27「每波结束后不清空怪物」。原来这里把场上残怪全删了，等于
+   *  每波重新铺一张干净的桌子 —— 玩家永远在追新刷的怪，从不欠账，也就感觉不到
+   *  怪有多难缠。现在是在上一波的残局上打下一波：怪一直在追，攒出来的压力
+   *  不会因为一个商店界面就归零。这是本轮唯一靠机制（不是靠数值）抬起来的压力。
+   *
+   *  Boss 例外：Boss 阵亡本身就是波次结束条件，超时时必须清掉它 —— 超时的
+   *  意义是防卡关，不是「这只 Boss 换波接着打」。
+   *
+   *  敌人投射物仍然清掉（它们是弹不是怪）：残留子弹若不清会冻在商店界面，
+   *  下一波 startWave 后从冻住的位置继续飞，屏上就是一排不动的弹。活着的怪
+   *  下一波该出手照样出手，丢掉的只是几发正在飞的弹。 */
+  S.endWaveCleanup = function (state) {
     for (var i = state.enemies.length - 1; i >= 0; i--) {
-      if (!state.enemies[i].dead && !state.enemies[i].isBoss) {
-        // 普通怪直接消失（波次结束）
-      }
-      if (state.enemies[i].dead) state.enemies.splice(i, 1);
+      if (state.enemies[i].dead || state.enemies[i].isBoss) state.enemies.splice(i, 1);
     }
-    // 波次结束：清空场上残余普通怪
-    for (var j = state.enemies.length - 1; j >= 0; j--) {
-      if (!state.enemies[j].isBoss) state.enemies.splice(j, 1);
-    }
-    // 敌人投射物一并清掉：这些怪刚被清场，它们的子弹不该继续存在。
-    // 不清的话会冻结在商店界面，并在下一波 startWave 后重新激活。
-    // 波次改为按时间结束后这种情况明显变多，必须处理。
     for (var k = state.projectiles.length - 1; k >= 0; k--) {
       if (!state.projectiles[k].fromPlayer) state.projectiles.splice(k, 1);
     }
@@ -280,8 +335,10 @@
     if (p.counterFlash > 0) p.counterFlash -= dt;
     p.tickAttackAnim(dt);
 
-    // 护盾缓慢回复。系数走 CONST.SHIELD_REGEN_SCALE：2 HP/秒 等于白送一层血，
-    // 玩家破盾毫无代价（2026-09-26「盾恢复的太快了，大砍一刀」→ 0.5/秒）。
+    // 护盾回充。系数走 CONST.SHIELD_REGEN_SCALE：2 HP/秒 等于白送一层血，
+    // 玩家破盾毫无代价（2026-09-26「盾恢复的太快了，大砍一刀」→ 0.5/秒；
+    // 2026-09-27「护盾不自动恢复，打完就没了」→ 0）。现在这个分支恒为 no-op，
+    // 留着而不是删掉 —— 见 CONST 里那行的注释。盾只能通过 heal() 的溢出回来。
     if (p.stats.shieldMax > 0 && p.stats.shield < p.stats.shieldMax) {
       p.stats.shield = Math.min(p.stats.shieldMax, p.stats.shield + 2 * dt * CONST.SHIELD_REGEN_SCALE);
     }
@@ -496,6 +553,7 @@
    * Boss 战奖励三选一：卡片强度高于平时升级池，并按概率塞入 Boss 专属武器。
    * 复用升级三选一的界面与 applyChoice，不引入新 UI。
    * 专属武器允许在槽位已满时给出 —— applyChoice 会挤掉最早加入的那把。
+   * 但全部满星时不给：那时候挤掉的是一把 Lv4、换进来的是 Lv1，纯亏。
    */
   S.bossRewardChoices = function (state) {
     var rng = state.rng;
@@ -531,11 +589,12 @@
       }
     }
 
-    // Boss 专属武器：按概率出现
+    // Boss 专属武器：按概率出现。掷点不放进条件里 —— 满星与否不能改变 rng 的
+    // 消耗次数，否则同一存档在「刚好满星」前后会漂到不同的刷怪序列上。
     if (rng() < Game.BOSS_EXCLUSIVE_CHANCE) {
       var exIds = [];
       for (var eid in Game.WEAPONS) if (Game.WEAPONS[eid].exclusive) exIds.push(eid);
-      if (exIds.length > 0) {
+      if (exIds.length > 0 && S.anyWeaponUpgradable(p)) {
         var exId = exIds[Math.floor(rng() * exIds.length)];
         entries.push({ key: 'weapon:' + exId, w: 1, entry: { kind: 'weapon', data: { weaponId: exId } } });
       }
