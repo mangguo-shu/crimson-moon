@@ -784,6 +784,11 @@ try {
   // 写死的 28 会在下一次调参时变成自欺。
   var exp26 = Game.WEAPONS.iron_sword.damage * Game.CONST.MELEE_DMG_SCALE * 2;
   var me26 = atWeapon(w26, tp26, 40, 'zombie', 1);
+  // 血条钉回表本体 20：这条测的是「onHit 翻倍后一刀致死」，不是第 1 波血量。
+  // 2026-09-27 加了 ENEMY_HP_BASE，第 1 波跳尸是 30 血，22.4 打不死，
+  // 断言会因调参而假失败（onKill 挂点也跟着没了触发点）。
+  me26.maxHp = Game.ENEMIES.zombie.hp;
+  me26.hp = me26.maxHp;
   var hp026 = me26.hp;
   st26.enemies.push(me26);
   w26.cooldownRemaining = 0;
@@ -5340,53 +5345,78 @@ try {
          '被压住的刷新事件停在原地、不跳过也不丢弃（刷了 ' + st13b.spawnIndex + '/' +
          st13b.spawnSchedule.length + '，腾出空位就接着刷，所以一波的总数没变）');
 
-  // ---- 3. 撤边：位置由 uid 派生、不偷吃 state.rng、全部退到世界外 ----
-  //     不清场意味着残怪带着上一波结束时的坐标进下一波，那一刻它们多半正贴着
-  //     玩家。不撤边的话「连续压力」会退化成「每波开局被贴脸点杀」。
+  // ---- 3. 残怪原地不动：留在原地才是「不清零」，下一波开局就在玩家视野里 ----
+  //     2026-09-27 第二次点名「怪物还是清理了」。上一版在这里调 retreatSurvivors，
+  //     把残怪移到世界外 24px —— 怪一只没少，但相机跟着玩家，全部落在视野外，
+  //     实测要 4.2 秒才有第一只走回来。玩家看到的「波次结束、怪全没了、空场几秒」
+  //     和清场没有任何区别，那句反馈指的就是这一刻。
+  //     所以撤边那套整个删了：retreatSurvivors / _hash01 / state.uidBase 全下线。
   var st13c = S13.createState('campaign', 'swordsman', 613);
   var st13ref = S13.createState('campaign', 'swordsman', 613);   // 同种子参照流
-  for (var i13 = 0; i13 < 6; i13++) {
-    st13c.enemies.push(new Game.Enemy('zombie', 500 + i13 * 20, 500, 1));
-    st13ref.enemies.push(new Game.Enemy('zombie', 500 + i13 * 20, 500, 1));
+  var p13 = st13c.player, i13, j13;
+  for (i13 = 0; i13 < 6; i13++) {
+    // 围着玩家摆一小团：上一波结束时残怪多半正贴着玩家，这才是真实的残局
+    var ex13 = p13.x + 40 + i13 * 14, ey13 = p13.y + 30 + (i13 % 2) * 22;
+    st13c.enemies.push(new Game.Enemy('zombie', ex13, ey13, 1));
+    st13ref.enemies.push(new Game.Enemy('zombie', ex13, ey13, 1));
   }
-  var ref13 = [], j13;
-  for (j13 = 0; j13 < 6; j13++) ref13.push(st13ref.rng());
-  S13.retreatSurvivors(st13c);
-  var snap13 = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
-  var got13 = [];
-  for (j13 = 0; j13 < 6; j13++) got13.push(st13c.rng());
+  var before13 = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
+  S13.startWave(st13c, 3);
+  S13.startWave(st13ref, 3);
+  var after13 = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
+  assert(JSON.stringify(before13) === JSON.stringify(after13),
+         'startWave 不移动任何残怪（6 只坐标逐只一致）—— 留在原地才是「不清零」');
+  assert(st13c.enemies.length === 6, 'startWave 一只不删（6 → ' + st13c.enemies.length + '）');
+  var ref13 = [], got13 = [];
+  for (j13 = 0; j13 < 6; j13++) { ref13.push(st13ref.rng()); got13.push(st13c.rng()); }
   assert(ref13.join(',') === got13.join(','),
-         '撤边不消费 state.rng —— 偷吃一次，buildSpawnSchedule 的排程就整局漂移');
-  S13.retreatSurvivors(st13c);
-  var snap13b = st13c.enemies.map(function (e) { return e.x.toFixed(2) + ',' + e.y.toFixed(2); });
-  assert(JSON.stringify(snap13) === JSON.stringify(snap13b),
-         '撤边位置由 uid 派生、可复现（连续撤两次逐只一致，不掷骰子）');
-  var m13 = 24;
-  assert(st13c.enemies.every(function (e) {
-    return e.x < -m13 + 1 || e.x > K13.WORLD_W + m13 - 1 ||
-           e.y < -m13 + 1 || e.y > K13.WORLD_H + m13 - 1;
-  }), '撤边后全部退到世界外，下一波开头有一段接近的缓冲期');
-  // startWave 接上这条路径（wave > 1 才撤，第 1 波场上本来就是空的）
-  var st13d = S13.createState('campaign', 'swordsman', 614);
-  st13d.enemies.push(new Game.Enemy('zombie', 500, 500, 1));   // 模拟上一波留下的残怪
-  S13.startWave(st13d, 3);
-  assert(st13d.enemies[0].x !== 500 || st13d.enemies[0].y !== 500,
-         'startWave 会调用撤边（残怪离开原位）');
+         '两条同种子流的 rng 在 startWave 后逐值一致 —— 换波没有额外的掷点路径');
+  var halfW13 = K13.LOGICAL_W / 2, halfH13 = K13.LOGICAL_H / 2, visible13 = 0, e13;
+  for (i13 = 0; i13 < st13c.enemies.length; i13++) {
+    e13 = st13c.enemies[i13];
+    if (Math.abs(e13.x - p13.x) <= halfW13 && Math.abs(e13.y - p13.y) <= halfH13) visible13++;
+  }
+  assert(visible13 === 6,
+         '下一波开局 ' + visible13 + '/6 只在玩家视野里 —— 撤到世界外的那版这里是 0/6，' +
+         '实测 4.2 秒才有第一只走回来，看起来就是清场');
+  assert(!S13.retreatSurvivors && !S13._hash01,
+         '撤边那套已彻底删除（retreatSurvivors / _hash01 都不存在）—— 留着不叫的调用点，' +
+         '哪天有人顺手接回来又得重演一次「怪物还是清理了」');
 
-  // ---- 4. 怪物逐波加强：ENEMIES 表本体不动，只动成长斜率 ----
+  // ---- 4. 怪物逐波加强：ENEMIES 表本体不动，常数基准 + 波次斜率两层都在构造函数 ----
+  //     2026-09-27 第二次点名「怪物的血量都上调，每波都调」。斜率只描述「每波多强」，
+  //     抬升整体（含第 1 波）得另加一个常数基准 ENEMY_HP_BASE —— 靠斜率表达不了「都上调」。
   assert(Game.ENEMIES.zombie.hp === 20 && Game.ENEMIES.zombie.damage === 8,
          'ENEMIES 表本体未被改动（跳尸 hp=20 / dmg=8）—— 成长全在构造函数里');
+  var base13 = K13.ENEMY_HP_BASE;
+  assert(base13 > 1, 'ENEMY_HP_BASE > 1（=' + base13 + '）—— 常数基准，第 1 波也吃');
   var curve13 = [1, 10, 20, 40].map(function (w) { return new Game.Enemy('zombie', 0, 0, w); });
-  assert(Math.abs(curve13[0].maxHp - 20) < 1e-9, '第 1 波血量 = 表本体 20（没有第 0 波的加成）');
-  var hpExp10 = 20 * (1 + K13.ENEMY_HP_K1 * 9 + K13.ENEMY_HP_K2 * 9 * 9);
+  assert(Math.abs(curve13[0].maxHp - 20 * base13) < 1e-9,
+         '第 1 波血量 = 表本体 × BASE（20×' + base13 + '=' + (20 * base13).toFixed(1) + '）');
+  assert(curve13[0].maxHp > Game.ENEMIES.zombie.hp,
+         '第 1 波已经高于表本体（' + curve13[0].maxHp.toFixed(0) + ' > ' +
+         Game.ENEMIES.zombie.hp + '）——「都上调」指的是每一波，包括第 1 波');
+  var hpExp10 = 20 * base13 * (1 + K13.ENEMY_HP_K1 * 9 + K13.ENEMY_HP_K2 * 9 * 9);
   assert(Math.abs(curve13[1].maxHp - hpExp10) < 1e-6,
-         '第 10 波血量 = 1 + K1(w-1) + K2(w-1)²（K1=' + K13.ENEMY_HP_K1 + ' / K2=' +
-         K13.ENEMY_HP_K2 + ' → ' + hpExp10.toFixed(1) + '，实得 ' + curve13[1].maxHp.toFixed(1) + '）');
-  var linearOnly40 = 20 * (1 + K13.ENEMY_HP_K1 * 39);
+         '第 10 波血量 = BASE × (1 + K1(w-1) + K2(w-1)²)（BASE=' + base13 + ' / K1=' +
+         K13.ENEMY_HP_K1 + ' / K2=' + K13.ENEMY_HP_K2 + ' → ' + hpExp10.toFixed(1) +
+         '，实得 ' + curve13[1].maxHp.toFixed(1) + '）');
+  var linearOnly40 = 20 * base13 * (1 + K13.ENEMY_HP_K1 * 39);
   assert(curve13[3].maxHp > linearOnly40 * 1.3,
          '第 40 波血量显著高于纯线性（实测 ' + curve13[3].maxHp.toFixed(0) + ' > 线性 ' +
          linearOnly40.toFixed(0) + ' 的 1.3 倍）—— 玩家输出按乘法涨（等级×1.5/级、卡、暴击、多把武器），' +
          '只有二次项才追得上');
+  // 「每波都调」：相邻波次严格递增，1~60 波之间不允许持平或倒挂。
+  // 断言里不引用被测系数本身，只靠「K1、K2 都 > 0 → 导数 K1+2K2(w-1) 恒正」这条独立推论。
+  var prevHp13 = -1, flatAt13 = null, w13, h13;
+  for (w13 = 1; w13 <= 60; w13++) {
+    h13 = new Game.Enemy('zombie', 0, 0, w13).maxHp;
+    if (h13 <= prevHp13 + 1e-9) { flatAt13 = w13; break; }
+    prevHp13 = h13;
+  }
+  assert(flatAt13 === null,
+         '血量 1~60 波逐波严格递增、无持平无倒挂（实得 w1=' + curve13[0].maxHp.toFixed(0) +
+         ' / w60=' + prevHp13.toFixed(0) + '）');
   var dmgCurve = curve13.map(function (e) { return e.damage; });
   assert(Math.abs(dmgCurve[1] - 8 * (1 + K13.ENEMY_DMG_K1 * 9)) < 1e-9,
          '第 10 波伤害 = 1 + K1(w-1)（K1=' + K13.ENEMY_DMG_K1 + ' → ' +

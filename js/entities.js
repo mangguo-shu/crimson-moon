@@ -244,14 +244,17 @@
     // 读档还原也会经过这里，等于「存档里出现过的怪早就见过」，行为一致。
     if (Game.Codex) Game.Codex.mark(def.boss ? 'boss' : 'monster', type);
 
-    // 波次成长系数。斜率走 CONST.ENEMY_HP_K1/K2 / ENEMY_DMG_K1，
+    // 波次成长系数。斜率走 CONST.ENEMY_HP_BASE/K1/K2 / ENEMY_DMG_K1，
     // ENEMIES 表本体（def.hp / def.damage）一字未改。
+    // BASE 是常数倍率（第 1 波也吃），K1/K2 是波次增长。分开的理由：斜率只描述
+    // 「每波多强」，描述不了「整体就该更强」—— 用户 2026-09-27 第二次点名的是
+    // 「怪物的血量都上调」，「都」指的是每一波包括第 1 波。
     // HP 带二次项：玩家输出按乘法涨（武器等级 ×1.5/级、属性卡、暴击、多把武器），
     // 纯线性追不上 —— 第 40 波之前怪在玩家身边就已经全倒完了。详见 CONST 注释。
     var w = Math.max(1, wave);
     var K = Game.CONST;
     var lin = w - 1;
-    var hpScale = 1 + K.ENEMY_HP_K1 * lin + K.ENEMY_HP_K2 * lin * lin;
+    var hpScale = K.ENEMY_HP_BASE * (1 + K.ENEMY_HP_K1 * lin + K.ENEMY_HP_K2 * lin * lin);
     var dmgScale = 1 + K.ENEMY_DMG_K1 * lin;
     var spdScale = Math.min(1.6, 1 + 0.02 * lin);
 

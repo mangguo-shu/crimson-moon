@@ -47,11 +47,6 @@
     state.player.weapons.push(Game.createWeapon(w, 1, 0));
     // 回指：拾取物只拿到 player，但吸铁石要遍历整个 state.pickups
     state.player.state = state;
-    // uid 基准：撤边位置要从「本局内第几只怪」派生，而不是从全局自增的
-    // Enemy._uid 直接派生 —— 那个计数器在同一会话的多局之间会累积，不扣
-    // 基准的话，同一种子在不同会话位置会退到不同的边。放最后赋值：前面任何
-    // 一步若意外造过敌人，基准都已经把它们包进去了。
-    state.uidBase = Game.Enemy._uid;
     return state;
   };
 
@@ -181,48 +176,20 @@
       if (Game.Audio) Game.Audio.boss();
     }
 
-    // 残怪撤到地图边缘，下一波再从边缘压回来（见 endWaveCleanup 的注释）。
-    if (wave > 1) S.retreatSurvivors(state);
+    // 残怪**留在原地**，不去任何地方。上一波结束时它们多半正贴着玩家（它们就是
+    // 追到身上的），这一波从同一位置接着打 —— 这才是「不清空」的字面意思。
+    //
+    // 之前这里调 retreatSurvivors 把残怪撤到地图外 24px：怪一只没少，但相机跟着
+    // 玩家，撤走的怪全部落在视野外，要 4.2 秒才有一只走回来（实测）。玩家看到的
+    // 是「波次结束、怪全没了、空场几秒、再慢慢从边上进来」—— 和清场没有任何
+    // 区别。2026-09-27「怪物还是清理了」说的就是这一刻。
+    //
+    // 贴着玩家的代价是开局就是围殴，用无敌帧兜住：Player.takeDamage 里
+    // invincibleTimer=0.35 让承伤速率封顶在「约 0.35 秒一次」，跟围上来几只无关。
+    // 那是一条持续的流血，不是一刀死。
 
     // 角色被动：波次开始（开局护盾、重置叠层等）
     if (state.player) Game.invokePassive(state.player, 'onWaveStart', state, wave);
-  };
-
-  /** 确定性 32-bit 哈希 → [0,1)。同一个输入永远给同一个输出。
-   *  刻意不碰 state.rng 也不用 Math.random()：buildSpawnSchedule 吃 state.rng
-   *  排刷怪表，只要这条路径上多消费一次随机数，同一个种子的刷怪排程就会
-   *  整局漂移（表现为「为什么我两个存档第 7 波刷的不一样」）。uid 派生则
-   *  让残怪退到哪儿可复现 —— 同一只怪每次换波都退同一个边、同一条线上。 */
-  S._hash01 = function (n) {
-    var h = Math.imul(n | 0, 2654435761);
-    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-    h = h ^ (h >>> 16);
-    return (h >>> 0) / 4294967296;
-  };
-
-  /** 把上一波的残怪撤到地图外边缘。怪一只不少，但下一波开头有一段接近的
-   *  缓冲期，跟改前「怪从边缘刷进来」的节奏一致。
-   *
-   *  这一步是必须的，不是可选的体感优化：不清场意味着残怪带着上一波结束
-   *  时的那一刻坐标进入下一波，而那一时刻它们多半正贴着玩家（它们就是追到
-   *  身上的）。没有这一步，「连续压力」会退化成「每波开局就被贴脸点杀」——
-   *  实测成型构建 2 波就翻车，纯粹是因为开局没有任何走位时间。
-   *  撤到世界边缘后敌人照常会走回来（update 不做边界钳制），等于把节奏
-   *  从「瞬时被围」拉回「从屏外压上来」。 */
-  S.retreatSurvivors = function (state) {
-    var m = 24, n = state.enemies.length, base = state.uidBase || 0;
-    for (var i = 0; i < n; i++) {
-      var e = state.enemies[i];
-      if (e.dead || e.isBoss) continue;
-      var id = e.uid - base;   // 本局内序号，不受会话累积影响
-      var side = Math.floor(S._hash01(id) * 4);
-      // 沿边线的分布位置：换一个不相干的乘子，别让 side 和 along 相关
-      var along = S._hash01(Math.imul(id | 0, 0x9e3779b9));
-      if (side === 0) { e.x = along * CONST.WORLD_W; e.y = -m; }
-      else if (side === 1) { e.x = along * CONST.WORLD_W; e.y = CONST.WORLD_H + m; }
-      else if (side === 2) { e.x = -m; e.y = along * CONST.WORLD_H; }
-      else { e.x = CONST.WORLD_W + m; e.y = along * CONST.WORLD_H; }
-    }
   };
 
   /** 每帧更新波次；返回 'ended' 表示本波结束 */

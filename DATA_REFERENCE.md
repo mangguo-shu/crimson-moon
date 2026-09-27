@@ -353,8 +353,9 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | `MELEE_DMG_SCALE` | 0.8 | 近战伤害 ×0.8（新增：近战从没被压过一档，环绕后它能打到身后） |
 | `MELEE_RANGE_SCALE` | 1.25 | 近战射程 ×1.25 |
 | `MAX_ALIVE_ENEMIES` | 28 | 同屏活怪上限（波次不清场之后必须有；改前峰值 38） |
-| `ENEMY_HP_K1` | 0.15 | 敌人血量线性项，见下 |
-| `ENEMY_HP_K2` | 0.007 | 敌人血量二次项系数 |
+| `ENEMY_HP_BASE` | 1.5 | 敌人血量**常数基准**（新增，2026-09-27 第二次点名「怪物的血量都上调」）。第 1 波也吃，斜率表达不了整体抬升 |
+| `ENEMY_HP_K1` | 0.18 | 敌人血量线性项，见下（原 0.15） |
+| `ENEMY_HP_K2` | 0.010 | 敌人血量二次项系数（原 0.007） |
 | `ENEMY_DMG_K1` | 0.16 | 敌人伤害线性项 |
 | `SHIELD_REGEN_SCALE` | 0 | 护盾**不自动回充**。代码路径保留（`heal()` 的过量治疗仍会转护盾），系数置 0 而不是删分支 |
 | `PARTICLE_LOW / MID / HIGH` | 200 / 500 / 800 | 分档粒子上限 |
@@ -393,8 +394,8 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | Boss 波判定 | `wave % 10 === 0` | systems.js:62 |
 | 巫师权重 | `0.07 + min(0.13, wave × 0.01)`；蝠妖固定 0.3；余下是跳尸 | systems.js:129 |
 | 坦克权重 | `wave ≥ 21` 时 `min(0.14, 0.08 + (wave-21) × 0.002)` | systems.js:124 |
-| 敌人成长 | HP `×(1 + K1(w-1) + K2(w-1)²)`，伤害 `×(1 + K1'(w-1))`，移速 `×min(1.6, 1 + 0.02(w-1))`（K1=0.15 / K2=0.007 / K1'=0.16） | entities.js 构造函数 |
-| 敌人血量参考 | 跳尸 w1 / w10 / w20 / w40 = 20 / 58 / 128 / 350（改前 20/52/88/160）。**二次项是必须的**：玩家输出按乘法涨（等级×1.5/级、卡、暴击、多把武器），纯线性追不上 | entities.js 构造函数 |
+| 敌人成长 | HP `×BASE × (1 + K1(w-1) + K2(w-1)²)`，伤害 `×(1 + K1'(w-1))`，移速 `×min(1.6, 1 + 0.02(w-1))`（BASE=1.5 / K1=0.18 / K2=0.010 / K1'=0.16）。`BASE` 是**常数**，第 1 波也吃 | entities.js 构造函数 |
+| 敌人血量参考 | 跳尸 w1 / w10 / w20 / w40 = 30 / 103 / 241 / 697（上一版 20/58/128/350）。**二次项是必须的**：玩家输出按乘法涨（等级×1.5/级、卡、暴击、多把武器），纯线性追不上。`BASE` 与斜率分两层：斜率只描述「每波多强」，「整体就该更强」靠常数基准 | entities.js 构造函数 |
 | 武器伤害 | `def.damage × (1 + 0.5 × (level - 1)) × 类型系数 × stats.damage`（类型系数：远程 `RANGED_DMG_SCALE`、其余 `MELEE_DMG_SCALE`） | weapons.js:77 `damage()` |
 | 商店定价 | `基线 + wave × 2`，下限 5；基线 common 15 / rare 35 / epic 55 / legend 85 | systems.js `priceFor` |
 | 反伤 | 被命中时反弹**该次伤害**的 `counter`，走 `Player.takeDamage`（吃护甲/护盾/无敌帧） | entities.js |
@@ -483,10 +484,9 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
   **两个系数都得写进分解式** —— 漏一个就会写出「14 × 1 × 1 = 14」而右边显示 11.2 |
 | weapons.js `damage()` | 伤害总系数：`type === 'ranged'` 走 `RANGED_DMG_SCALE`，否则 `MELEE_DMG_SCALE`。
   **新武器不填 `type` 就吃近战系数**（不是免削） |
-| systems.js:54 | `state.uidBase` | 造 state 时记下 `Enemy._uid` 的会话累积值，撤边位置靠 `uid - uidBase` 派生。
-  `Enemy._uid` 是会话全局自增，不扣基准的话同一存档在不同会话会退到不同的边 |
-| systems.js:196/212 | `_hash01` / `retreatSurvivors` | 波末把残怪撤到地图外边缘。**刻意不碰 `state.rng`**：
-  `buildSpawnSchedule` 吃 `state.rng` 排刷怪表，多消费一次随机数整局排程就会漂 |
+| ~~`state.uidBase`~~ / ~~`_hash01`~~ / ~~`retreatSurvivors`~~ | **已删除**（2026-09-27）。撤边把残怪移到世界外 24px：怪一只没少，但相机跟着玩家，
+  全部落在视野外，实测 4.2 秒才有第一只走回来 —— 玩家看到的和清场没区别，那就是「怪物还是清理了」。
+  `startWave` 里残怪**留在原地**，靠 `Player.takeDamage` 的 `invincibleTimer=0.35` 兜住开局围殴 |
 | systems.js:302 | `endWaveCleanup` | 波末清理：只留「活着的非 Boss 怪」，清死的、清 Boss、清敌人弹、保留玩家弹。
   名字和语义相反（不是 clearEnemies），调用点 4 处 |
 | systems.js:234-244 | 刷怪循环里的 `MAX_ALIVE_ENEMIES` 上限 | 到上限就 `break` 停手、**不跳过也不丢弃**，
@@ -549,7 +549,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 **加属性卡**：`UPGRADES` 加一条即可。注意 `bossRewardChoices` 只收 `epic/legend`。
 
-**改完跑 `npm test`** —— 基线 1021 + 10 全绿。哪张表漏了登记点会立刻红。
+**改完跑 `npm test`** —— 基线 1025 + 10 全绿。哪张表漏了登记点会立刻红。
 
 ---
 
