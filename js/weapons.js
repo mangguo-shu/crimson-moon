@@ -22,6 +22,8 @@
   var PROJ_SHAPE = {
     pistol: 'bullet',
     jade_crossbow: 'arrow',
+    wood_bow: 'arrow',          // 弓射出的是箭，不是子弹
+    heavy_crossbow: 'arrow',
   };
 
   // 近战出手方式按武器 id 派生，和 PROJ_SHAPE、renderer 的 ORBIT_ICON 一个路数 ——

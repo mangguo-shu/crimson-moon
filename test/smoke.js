@@ -1409,8 +1409,8 @@ try {
   var st42 = Game.Systems.createState('campaign', 'monk', 42);
   Game.Systems.startWave(st42, 1);
   var mp38 = st42.player;
-  assert(mp38.char.id === 'monk' && mp38.weapons[0].defId === 'iron_sword',
-         '武僧开局装备铁剑（起始武器按配置生效）');
+  assert(mp38.char.id === 'monk' && mp38.weapons[0].defId === 'temple_staff',
+         '武僧开局装备玄铁锡杖（起始武器按配置生效，不再是铁剑）');
   st42.enemies.length = 0;
   var z38 = atWeapon(mp38.weapons[0], mp38, 40, 'zombie', 1);
   st42.enemies.push(z38);
@@ -1418,7 +1418,7 @@ try {
   mp38.weapons[0].update(0.016, mp38, st42);
   assert(mp38.damageDealt > 0, '武僧近战正常出手');
   var ar38 = Game.Systems.createState('campaign', 'archer', 43);
-  assert(ar38.player.weapons[0].defId === 'pistol', '弓手开局装备手枪（远程职业）');
+  assert(ar38.player.weapons[0].defId === 'wood_bow', '弓手开局装备青木弓（远程职业）');
 
   // ⑧ 角色选择界面：11 张卡按职业分 4 组，各带被动名与描述，无占位文本
   Game.UI.renderCharSelect();
@@ -1972,6 +1972,141 @@ try {
   }).length;
   assert(epicIt61 === 8, 'epic/legend 道具 8 件（' + epicIt61 + '）');
   assert(epicUp61 + epicIt61 >= 3, 'Boss 奖励池凑得出三选一');
+
+  // —— 2026-09-27 Phase 2：5 把新武器 + 角色起始武器按身份重配 ——
+  // 数值对齐现有标尺：1 星近战对标龙胆枪 DPS 23.5，1 星远程对标手枪 10.9，
+  // 新武器一律不越级。这条守的是「加武器没顺手把数值抬起来」。
+  var specPh2 = [
+    // id, type, star, exclusive, cooldown, damage, range, pierce, projSpeed, knockback
+    ['wood_bow',       'ranged', 1, false, 0.62, 11, 0,  0, 580, 20],
+    ['heavy_crossbow', 'ranged', 1, false, 0.95, 22, 0,  4, 520, 10],
+    ['warhammer',      'melee',  1, false, 1.10, 26, 50, 1, 0,   170],
+    ['temple_staff',   'melee',  1, false, 0.82, 16, 86, 1, 0,   90],
+    ['blood_scythe',   'melee',  3, true,  0.58, 28, 100, 1, 0,  120]
+  ];
+  var badPh2 = [];
+  for (var qPh2 = 0; qPh2 < specPh2.length; qPh2++) {
+    var rowPh2 = specPh2[qPh2];
+    var wPh2 = Game.WEAPONS[rowPh2[0]];
+    if (!wPh2) { badPh2.push(rowPh2[0] + '(缺)'); continue; }
+    if (wPh2.type !== rowPh2[1]) badPh2.push(rowPh2[0] + '.type');
+    if (wPh2.star !== rowPh2[2]) badPh2.push(rowPh2[0] + '.star');
+    if (!!wPh2.exclusive !== rowPh2[3]) badPh2.push(rowPh2[0] + '.exclusive');
+    if (wPh2.cooldown !== rowPh2[4]) badPh2.push(rowPh2[0] + '.cd=' + wPh2.cooldown);
+    if (wPh2.damage !== rowPh2[5]) badPh2.push(rowPh2[0] + '.dmg=' + wPh2.damage);
+    if (wPh2.range !== rowPh2[6]) badPh2.push(rowPh2[0] + '.range=' + wPh2.range);
+    if (wPh2.pierce !== rowPh2[7]) badPh2.push(rowPh2[0] + '.pierce=' + wPh2.pierce);
+    if (wPh2.projectileSpeed !== rowPh2[8]) badPh2.push(rowPh2[0] + '.spd=' + wPh2.projectileSpeed);
+    if (wPh2.knockback !== rowPh2[9]) badPh2.push(rowPh2[0] + '.kb=' + wPh2.knockback);
+    if (typeof wPh2.color !== 'string' || wPh2.color.charAt(0) !== '#') badPh2.push(rowPh2[0] + '.color');
+    if (!wPh2.desc) badPh2.push(rowPh2[0] + '.desc');
+  }
+  assert(badPh2.length === 0,
+         'Phase 2 新增 5 把武器的字段与数值一致（坏: ' + badPh2.join(',') + '）');
+  assert(Object.keys(Game.WEAPONS).length === 10,
+         '武器总数 10（' + Object.keys(Game.WEAPONS).length + '）');
+
+  // 1 星新武器不越级：不高于现有最强 1 星（同类型）的一档。上限留 30% ——
+  // 贯石弩比手枪 DPS 高，是用穿透 4 换的，不算越级。
+  var spearDps = Game.WEAPONS.spear.damage / Game.WEAPONS.spear.cooldown;
+  var RDSPh2 = Game.CONST.RANGED_DMG_SCALE;
+  var pistolDpsPh2 = (Game.WEAPONS.pistol.damage * RDSPh2) /
+                     Game.WEAPONS.pistol.cooldown;
+  assert(Math.abs(spearDps - 23.53) < 0.01 && Math.abs(pistolDpsPh2 - 10.91) < 0.01,
+         '前置：对标标尺是龙胆枪 23.5 / 手枪 10.9（' + spearDps.toFixed(2) +
+         ' / ' + pistolDpsPh2.toFixed(2) + '）');
+  ['warhammer', 'temple_staff'].forEach(function (id) {
+    var d = Game.WEAPONS[id].damage / Game.WEAPONS[id].cooldown;
+    assert(d <= spearDps * 1.3, id + ' DPS ' + d.toFixed(1) + ' 没越过龙胆枪 ' +
+           spearDps.toFixed(1) + ' 的一档（上限 ' + (spearDps * 1.3).toFixed(1) + '）');
+  });
+  ['wood_bow', 'heavy_crossbow'].forEach(function (id) {
+    var d = (Game.WEAPONS[id].damage * RDSPh2) / Game.WEAPONS[id].cooldown;
+    assert(d <= pistolDpsPh2 * 1.3, id + ' DPS ' + d.toFixed(1) + ' 没越出手枪 ' +
+           pistolDpsPh2.toFixed(1) + ' 的一档（上限 ' + (pistolDpsPh2 * 1.3).toFixed(1) + '）');
+  });
+  // 新加的横扫武器 pierce 一律填 1：_meleeAttack 不读 pierce（只有 _thrustAttack
+  // 和远程弹体读它），填别的值就是又造一条「表里躺着但不生效」。
+  ['warhammer', 'temple_staff', 'blood_scythe'].forEach(function (id) {
+    assert(Game.WEAPONS[id].pierce === 1,
+           id + ' 是横扫，pierce 填 1（不填 1 就是死数据）');
+  });
+  assert(Game.WEAPONS.blood_scythe.exclusive, '血月镰是专属（3 星 Boss 战利品）');
+
+  // 角色起始武器按身份重配 —— 2026-09-27 用户点名「目前全是剑和枪不符合人物身份」：
+  // 之前 11 个角色只有铁剑 / 手枪两种开局武器。
+  var wantStartPh2 = {
+    swordsman: 'iron_sword', assassin: 'iron_sword', guard: 'iron_sword',
+    archer: 'wood_bow', ranger: 'wood_bow', crossbowman: 'heavy_crossbow',
+    monk: 'temple_staff', nun: 'temple_staff', ascetic: 'temple_staff',
+    brawler: 'warhammer', brute: 'warhammer'
+  };
+  assert(Object.keys(wantStartPh2).length === Game.CHARACTERS.length,
+         '身份起始武器覆盖全部 ' + Game.CHARACTERS.length + ' 个角色');
+  Game.CHARACTERS.forEach(function (c) {
+    assert(wantStartPh2[c.id] === c.startWeapon,
+           c.name + ' 开局 ' + c.startWeapon + '（期望 ' + wantStartPh2[c.id] + '）');
+  });
+  // 手枪不再当开局武器：它是唯一一把「谁的武器都不是」的通用件
+  var pistolStarter = Game.CHARACTERS.filter(function (c) { return c.startWeapon === 'pistol'; });
+  assert(pistolStarter.length === 0, '没有任何角色开局拿手枪');
+  // 起始武器必须存在、非专属（专属只走 Boss 奖励）、类型和姿态剪影对得上
+  var startTypesPh2 = {};
+  Game.CHARACTERS.forEach(function (c) {
+    var w = Game.WEAPONS[c.startWeapon];
+    assert(!!w, c.name + ' 的起始武器 ' + c.startWeapon + ' 存在');
+    assert(!w.exclusive, c.name + ' 的起始武器不是专属（专属只走 Boss 奖励）');
+    assert(w.type === (c.body === 'archer' ? 'ranged' : 'melee'),
+           c.name + ' 的武器类型（' + w.type + '）和姿态（' + c.body + '）对得上');
+    startTypesPh2[w.type] = (startTypesPh2[w.type] || 0) + 1;
+  });
+  assert(startTypesPh2.melee === 8 && startTypesPh2.ranged === 3,
+         '开局武器 8 近战 / 3 远程（' + JSON.stringify(startTypesPh2) + '）');
+
+  // 非专属池 3 → 7：商店单把武器权重 0.5/3 → 0.5/7，铁剑 / 手枪 / 龙胆枪的出现率
+  // 掉到原来的 3/7 —— 加武器必然的隐性代价，加之前得先确认这个能接受。
+  var commonPh2 = Object.keys(Game.WEAPONS).filter(function (k) {
+    return !Game.WEAPONS[k].exclusive;
+  });
+  assert(commonPh2.length === 7, '非专属武器 7 把（' + commonPh2.length + '）');
+  assert(commonPh2.indexOf('blood_scythe') < 0, '血月镰是专属，不进普通池与商店');
+
+  // PROJ_SHAPE / MELEE_STYLE 都是模块私有表，只能测效果：射出什么弹、发不发 FX.slash。
+  var slashSeenPh2 = false;
+  var origSlashPh2 = Game.FX.slash;
+  Game.FX.slash = function () { slashSeenPh2 = true; };
+  function firePh2(wid, seed) {
+    var t = Game.Systems.createState('campaign', 'swordsman', seed);
+    t.enemies.length = 0; t.projectiles.length = 0;
+    t.player.weapons.length = 0;
+    t.player.weapons.push(Game.createWeapon(wid, 1, 0));
+    Game.Systems.normalizeSlots(t.player);
+    var w = t.player.weapons[0];
+    var pos = w.posAt(t.player);
+    var e = new Game.Enemy('zombie', t.player.x + Math.cos(pos.a) * 40,
+                           t.player.y + Math.sin(pos.a) * 40, 1);
+    e.hp = 1e9;
+    t.enemies.push(e);
+    Game.state = t;
+    w.cooldownRemaining = 0;
+    w.update(0.016, t.player, t);
+    Game.state = null;
+    return t.projectiles[0] || null;
+  }
+  var bowP = firePh2('wood_bow', 7770301);
+  var crossP = firePh2('heavy_crossbow', 7770302);
+  assert(bowP && bowP.type === 'arrow', '青木弓射出的是箭（type=' + (bowP && bowP.type) + '）');
+  assert(crossP && crossP.type === 'arrow', '贯石弩射出的是箭（type=' + (crossP && crossP.type) + '）');
+  assert(bowP.color === Game.WEAPONS.wood_bow.color &&
+         crossP.color === Game.WEAPONS.heavy_crossbow.color,
+         '两把新远程武器的弹体颜色各取各的 def.color');
+  ['warhammer', 'temple_staff', 'blood_scythe'].forEach(function (id, i) {
+    slashSeenPh2 = false;
+    firePh2(id, 7770310 + i);
+    assert(slashSeenPh2, id + ' 走横扫（发了 FX.slash），不是走廊突刺');
+  });
+  Game.FX.slash = origSlashPh2;
+
 
   // —— 拾取速度进了属性表，箱子拾取物能序列化回环 ——
   var pl62 = new Game.Player('swordsman');
@@ -3308,14 +3443,19 @@ try {
   // 龙胆枪就是这么顶着铁剑的造型出场一整个阶段的。
   var wantIcon21d = {
     iron_sword: '_drawSword', spear: '_drawSpear', moon_sword: '_drawGreatsword',
-    pistol: '_drawPistol', jade_crossbow: '_drawCrossbow'
+    pistol: '_drawPistol', jade_crossbow: '_drawCrossbow',
+    wood_bow: '_drawBow', warhammer: '_drawHammer', temple_staff: '_drawStaff',
+    blood_scythe: '_drawScythe',
+    // 贯石弩直接复用弩的造型（只靠颜色分）—— 它本来就是弩，换个造型就是假的。
+    heavy_crossbow: '_drawCrossbow'
   };
   var missIcon21d = Object.keys(Game.WEAPONS).filter(function (k) { return !wantIcon21d[k]; });
   assert(missIcon21d.length === 0,
          '每把武器都登记了图标（漏: ' + missIcon21d.join(',') + '）');
 
   var hits21d = {}, origIcon21d = {};
-  var iconFns21d = ['_drawSword', '_drawGreatsword', '_drawSpear', '_drawPistol', '_drawCrossbow'];
+  var iconFns21d = ['_drawSword', '_drawGreatsword', '_drawSpear', '_drawPistol', '_drawCrossbow',
+                    '_drawBow', '_drawHammer', '_drawStaff', '_drawScythe'];
   iconFns21d.forEach(function (fn) {
     hits21d[fn] = 0;
     origIcon21d[fn] = Game.Renderer[fn];
@@ -4906,10 +5046,10 @@ try {
   assert(heroIds5.length === 11, '英雄栏 11 位（' + heroIds5.length + '）');
   assert(monIds5.length === 6 && bosIds5.length === 4,
          '怪物栏 6 / BOSS 栏 4（' + monIds5.length + '/' + bosIds5.length + '）');
-  assert(wpnIds5.length === 5, '装备栏 5 把（' + wpnIds5.length + '）');
+  assert(wpnIds5.length === 10, '装备栏 10 把（' + wpnIds5.length + '）');
   assert(cardIds5.length === 29,
          '卡组图鉴 29 张：11 属性 + 1 通用强化 + 17 道具（' + cardIds5.length + '）');
-  assert(CX.total().total === 55, '全部条目 55（' + CX.total().total + '）');
+  assert(CX.total().total === 60, '全部条目 60（' + CX.total().total + '）');
 
   var missHero = Game.CHARACTERS.filter(function (c) { return heroIds5.indexOf(c.id) < 0; });
   var missWpn = Object.keys(Game.WEAPONS).filter(function (k) { return wpnIds5.indexOf(k) < 0; });
@@ -5025,7 +5165,7 @@ try {
   assert(cxHtml.indexOf('<button class="cx-tab on"') > 0, '当前页签高亮');
   assert(cxHtml.indexOf('BOSS图鉴') > 0, '内容区标题用的是完整名字');
   assert(cxHtml.indexOf('收录 0 / 4') > 0, '显示本页收录进度');
-  assert(cxHtml.indexOf('全部收录 1 / 55') > 0,
+  assert(cxHtml.indexOf('全部收录 1 / 60') > 0,
          '底部整体进度：清空后那张通用强化卡仍算已收录');
 
   // 未收录：名字盖成 ??，不泄露是什么
@@ -5054,7 +5194,7 @@ try {
   assert(fullHtml.indexOf('赤月年兽') > 0 && fullHtml.indexOf('★ 已击败') > 0,
          '已收录显示真名，打过的那只亮星');
   assert(fullHtml.indexOf('收录 4 / 4') > 0, '本页进度收满');
-  assert(fullHtml.indexOf('全部收录 16 / 55') > 0,
+  assert(fullHtml.indexOf('全部收录 16 / 60') > 0,
          '整体进度 = 11 英雄 + 4 BOSS + 1 张通用强化卡');
   assert(fullHtml.indexOf('★ 已击败') < fullHtml.indexOf('赤月年兽') + 200, '打星只加在打过的那只身上');
 

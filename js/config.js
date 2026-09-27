@@ -128,7 +128,7 @@
       critChance: 0.16,
       critMult: 2.0,
       armor: 0,
-      startWeapon: 'pistol',
+      startWeapon: 'wood_bow',
       body: 'archer',
       // 劲装 + 束发带 + 斗笠翎羽；配色偏林野青
       colors: { skin: '#f0d0a8', cloth: '#4f7a52', cloth2: '#e2ecd2', hair: '#2a2318', accent: '#c8352f' },
@@ -150,7 +150,7 @@
       critChance: 0.04,
       critMult: 1.5,
       armor: 12,
-      startWeapon: 'iron_sword',
+      startWeapon: 'temple_staff',
       body: 'monk',
       // 素色僧袍 + 光头戒疤；accent 是鎏金，供念珠 / 戒疤 / 护腕共用
       colors: { skin: '#e8c49a', cloth: '#565e6a', cloth2: '#e8dfc0', hair: '#3a2a20', accent: '#ffcf5e' },
@@ -172,7 +172,7 @@
       critChance: 0.06,
       critMult: 1.5,
       armor: 4,
-      startWeapon: 'iron_sword',
+      startWeapon: 'warhammer',
       body: 'brawler',
       // 重甲 + 束发额带；配色偏赤岩红
       colors: { skin: '#e2b88a', cloth: '#8a3a2e', cloth2: '#d8c8b0', hair: '#2a1a14', accent: '#ffcf5e' },
@@ -239,7 +239,7 @@
       critChance: 0.12,
       critMult: 1.9,
       armor: 0,
-      startWeapon: 'pistol',
+      startWeapon: 'heavy_crossbow',
       body: 'archer',
       // 岩褐皮甲 + 朱红箭袋
       colors: { skin: '#eecba2', cloth: '#7a5a3a', cloth2: '#e8dfc0', hair: '#2a1f18', accent: '#c8352f' },
@@ -261,7 +261,7 @@
       critChance: 0.07,
       critMult: 1.6,
       armor: 0,
-      startWeapon: 'pistol',
+      startWeapon: 'wood_bow',
       body: 'archer',
       // 冰青斗篷，和青木弓手拉开色相
       colors: { skin: '#f0d0a8', cloth: '#4f7d8c', cloth2: '#e2eef2', hair: '#22303a', accent: '#4fbfa0' },
@@ -284,7 +284,7 @@
       critChance: 0.04,
       critMult: 1.5,
       armor: 6,
-      startWeapon: 'iron_sword',
+      startWeapon: 'temple_staff',
       body: 'monk',
       // 缂褐僧衣 + 朱红念珠
       colors: { skin: '#f0cfa8', cloth: '#8a7a5a', cloth2: '#e8dfc0', hair: '#3a2a20', accent: '#c8352f' },
@@ -307,7 +307,7 @@
       critChance: 0.04,
       critMult: 1.5,
       armor: 14,
-      startWeapon: 'iron_sword',
+      startWeapon: 'temple_staff',
       body: 'monk',
       // 枯褐粗布 + 石青饰带
       colors: { skin: '#e2b88a', cloth: '#6a5a48', cloth2: '#d8d0c0', hair: '#3a2a20', accent: '#8fd0e8' },
@@ -329,7 +329,7 @@
       critChance: 0.05,
       critMult: 1.6,
       armor: 8,
-      startWeapon: 'iron_sword',
+      startWeapon: 'warhammer',
       body: 'brawler',
       // 赤岩深红重甲 + 焰色饰边
       colors: { skin: '#dfa878', cloth: '#7a2f26', cloth2: '#c8b8a0', hair: '#201410', accent: '#ff7a5c' },
@@ -537,6 +537,39 @@
       pierce: 4, projectileSpeed: 0, knockback: 90,
       color: '#d9cba8', desc: '长柄突刺，沿一条线贯穿 4 只，射程翻倍。',
     },
+    // —— Phase 2 新增（2026-09-27）：给角色配符合身份的初始武器 ——
+    // 之前 11 个角色只有铁剑 / 手枪两种起始武器，弓手拿手枪、武僧拿铁剑。
+    // 这四把都是非专属，所以同时进普通升级池与商店（commonWeaponIds 只排 exclusive）。
+    // ⚠ 副作用：非专属武器数 3 → 7，商店单把武器权重 0.5/3 → 0.5/7，
+    // 铁剑 / 手枪 / 龙胆枪在商店的出现率掉到原来的 3/7。升级池同样被摊薄。
+    // 伤害/CD 对齐现有标尺：铁剑 DPS 20.0 是 1 星近战标尺，手枪 10.9 是远程标尺，
+    // 新武器都不越级（越级的留给 exclusive 的 3 星）。
+    // 横扫类武器的 pierce 一律填 1 —— _meleeAttack 不读 pierce（只有 _thrustAttack
+    // 和远程弹体读它），填别的值就是又造一条「表里躺着但不生效」。
+    wood_bow: {
+      id: 'wood_bow', name: '青木弓', type: 'ranged', star: 1,
+      cooldown: 0.62, damage: 11, range: 0, arc: 0,
+      pierce: 0, projectileSpeed: 580, knockback: 20,
+      color: '#9fbf6f', desc: '青木弯弓，单发精准，专为要害而生。',
+    },
+    heavy_crossbow: {
+      id: 'heavy_crossbow', name: '贯石弩', type: 'ranged', star: 1,
+      cooldown: 0.95, damage: 22, range: 0, arc: 0,
+      pierce: 4, projectileSpeed: 520, knockback: 10,
+      color: '#c8a86a', desc: '石机硬弩，一箭贯四，专治石甲。',
+    },
+    warhammer: {
+      id: 'warhammer', name: '碎岩战斧', type: 'melee', star: 1,
+      cooldown: 1.10, damage: 26, range: 50, arc: Math.PI * 0.7,
+      pierce: 1, projectileSpeed: 0, knockback: 170,
+      color: '#c08748', desc: '重斧短程横扫，一斧把人推开两丈。',
+    },
+    temple_staff: {
+      id: 'temple_staff', name: '玄铁锡杖', type: 'melee', star: 1,
+      cooldown: 0.82, damage: 16, range: 86, arc: Math.PI * 0.8,
+      pierce: 1, projectileSpeed: 0, knockback: 90,
+      color: '#9aa5ad', desc: '古刹玄铁杖，长柄横扫，修行者的家伙。',
+    },
     // —— Boss 专属武器 —— exclusive: true
     // 只从 Boss 战奖励产出（见 Systems.bossRewardChoices），
     // 普通升级池与商店都必须跳过这类武器。
@@ -551,6 +584,15 @@
       cooldown: 0.34, damage: 9, range: 0, arc: 0,
       pierce: 2, projectileSpeed: 780, knockback: 10,
       color: '#4fbfa0', desc: '青玉驱动连发弩箭，穿透目标。',
+    },
+    // 血月镰：Boss 奖励里的第二把 3 星近战。DPS 48.3 低于赤月斩 60.0，
+    // 靠更长射程（100 vs 86）和更高击退补 —— 赤月斩仍是最好用的横扫，
+    // 血月镰是「够得着、推得远」的另一条路。
+    blood_scythe: {
+      id: 'blood_scythe', name: '血月镰', type: 'melee', star: 3, exclusive: true,
+      cooldown: 0.58, damage: 28, range: 100, arc: Math.PI * 0.9,
+      pierce: 1, projectileSpeed: 0, knockback: 120,
+      color: '#d0453a', desc: '赤月浸过的巨镰，横扫之处血成线。',
     },
   };
 

@@ -858,9 +858,14 @@
    * 收回段 = 1 − windup − strike − hold，ease-in-out，刻意最长 —— 收枪比出枪慢。
    * 这些占比之和必须 ≤ 1，否则收回段消失、图标会停在满程。 */
   var STRIKE_PROFILE = {
-    spear:      { windup: 0.10, strike: 0.30, hold: 0.16, bow: 0.00 },
-    iron_sword: { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.10 },
-    moon_sword: { windup: 0.14, strike: 0.28, hold: 0.06, bow: 0.13 },
+    spear:        { windup: 0.10, strike: 0.30, hold: 0.16, bow: 0.00 },
+    iron_sword:   { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.10 },
+    moon_sword:   { windup: 0.14, strike: 0.28, hold: 0.06, bow: 0.13 },
+    temple_staff: { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.11 },
+    blood_scythe: { windup: 0.14, strike: 0.28, hold: 0.06, bow: 0.14 },
+    // 战斧是最重的那把：起手最长（windup 0.20）、路径最弯（bow 0.18）——
+    // 短程 + 高击退 + 慢 CD 的组合，视觉上就该是「抡」而不是「挥」。
+    warhammer:    { windup: 0.20, strike: 0.30, hold: 0.06, bow: 0.18 },
   };
   var STRIKE_DEFAULT = { windup: 0.16, strike: 0.30, hold: 0.06, bow: 0.00 };
   // 蓄力期的后撤幅度（负行程，满程是 1）
@@ -895,11 +900,17 @@
    * 都不会画成空的。加新武器时这里必须登记一行，否则它会顶着别人的造型出场
    * （2026-09-26 龙胆枪就是这样画成了剑）。 */
   var ORBIT_ICON = {
-    iron_sword:    '_drawSword',
-    moon_sword:    '_drawGreatsword',
-    spear:         '_drawSpear',
-    pistol:        '_drawPistol',
-    jade_crossbow: '_drawCrossbow',
+    iron_sword:     '_drawSword',
+    moon_sword:     '_drawGreatsword',
+    spear:          '_drawSpear',
+    pistol:         '_drawPistol',
+    jade_crossbow:  '_drawCrossbow',
+    wood_bow:       '_drawBow',
+    // 贯石弩直接复用弩的造型，只靠颜色分 —— 它本来就是弩，换个造型就是假的。
+    heavy_crossbow: '_drawCrossbow',
+    warhammer:      '_drawHammer',
+    temple_staff:   '_drawStaff',
+    blood_scythe:   '_drawScythe',
   };
 
   // 画一把卫星武器。x/y 已经是「这一帧它该站的位置」（玩家局部坐标）：
@@ -1207,6 +1218,150 @@
       ctx.beginPath(); ctx.moveTo(0, -fire * 26); ctx.lineTo(0, -fire * 46); ctx.stroke();
       ctx.restore();
     }
+    ctx.restore();
+  };
+
+  // 青木弓：竖握弓把 + 两片弓臂 + 拉满的弓弦 + 待发的箭。
+  // 和弩的区别在于弓弦是拉回待发的状态（弩的弦是横向绷直的），
+  // 而且箭是搭在弦上、不是从弩台上飞出去。
+  R._drawBow = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 弓把
+    ctx.beginPath(); ctx.rect(-1.5, -3.5, 3, 7);
+    fs(ctx, PAL.woodDark, O, 1.2);
+    // 弓臂（外弯）
+    ctx.strokeStyle = PAL.wood; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -3.5); ctx.quadraticCurveTo(4.2, -9, 0.8, -12.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 3.5); ctx.quadraticCurveTo(4.2, 9, 0.8, 12.5); ctx.stroke();
+    // 弓弦：拉回到箭尾 (2.6, 0)
+    ctx.strokeStyle = '#e0d8c6'; ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(0.8, -12.5); ctx.lineTo(2.6, 0); ctx.lineTo(0.8, 12.5);
+    ctx.stroke();
+    // 箭杆（搭在弦上，前指 -y）
+    ctx.beginPath(); ctx.rect(-0.7, -18, 1.4, 17);
+    fs(ctx, PAL.woodDark, O, 1);
+    // 箭头
+    ctx.beginPath();
+    ctx.moveTo(-2.3, -18); ctx.lineTo(0, -22); ctx.lineTo(2.3, -18);
+    ctx.closePath();
+    fs(ctx, color, O, 1.1);
+    // 箭羽
+    ctx.beginPath();
+    ctx.moveTo(-1.4, -2); ctx.lineTo(-0.7, -4.6); ctx.lineTo(0, -2);
+    ctx.closePath();
+    fs(ctx, color, O, 1);
+    // 箭头反光
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(0, -20.6); ctx.lineTo(0, -18.6); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 碎岩战斧：粗长柄 + 宽斧头 + 后侧背刺。
+  // 体量感来自斧头的宽度（±9 单位）而不是长度，和铁剑细长的剑身对照。
+  R._drawHammer = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 长柄
+    ctx.beginPath(); ctx.rect(-1.3, -13, 2.6, 20);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 缠绳握把
+    ctx.beginPath(); ctx.rect(-2, 2, 4, 7);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 柄尾镦
+    ctx.beginPath();
+    ctx.moveTo(-1.6, 7); ctx.lineTo(0, 10); ctx.lineTo(1.6, 7);
+    ctx.closePath();
+    fs(ctx, PAL.woodDark, O, 1);
+    // 铁箍（斧头与柄的接口）
+    ctx.beginPath(); ctx.rect(-2.6, -14.6, 5.2, 3);
+    fs(ctx, '#9aa0a6', O, 1);
+    // 斧头主刃（前指偏左，宽厚的半月）
+    ctx.beginPath();
+    ctx.moveTo(-2.4, -12); ctx.lineTo(-9, -19.4); ctx.lineTo(-4.6, -21.6);
+    ctx.lineTo(-2.4, -21.6);
+    ctx.closePath();
+    fs(ctx, color, O, 1.3);
+    // 背刺（斧背上的小尖）
+    ctx.beginPath();
+    ctx.moveTo(2.4, -12); ctx.lineTo(5.6, -18.4); ctx.lineTo(2.4, -20.6);
+    ctx.closePath();
+    fs(ctx, color, O, 1.1);
+    // 刃口反光
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(-7.6, -19.2); ctx.lineTo(-3.2, -21); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 玄铁锡杖：长柄 + 杖头铁箍 + 顶端环首。武僧 / 尼师 / 苦行僧共用。
+  // 靠「长」和「顶端有件东西」和龙胆枪区分 —— 枪头是两片合拢的薄片，
+  // 锡杖头是箍 + 环首，形状语言完全不同。
+  R._drawStaff = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 长柄
+    ctx.beginPath(); ctx.rect(-1.2, -16, 2.4, 24);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 缠绳握把
+    ctx.beginPath(); ctx.rect(-1.9, 3, 3.8, 6);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 杖尾镦
+    ctx.beginPath();
+    ctx.moveTo(-1.8, 8); ctx.lineTo(0, 10.6); ctx.lineTo(1.8, 8);
+    ctx.closePath();
+    fs(ctx, PAL.woodDark, O, 1);
+    // 杖头铁箍
+    ctx.beginPath(); ctx.rect(-2.4, -18, 4.8, 3.6);
+    fs(ctx, '#9aa0a6', O, 1);
+    // 环首（錏杖头的圆环）
+    ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(0, -21, 2.6, 0, TAU); ctx.stroke();
+    // 环首顶端的宝珠
+    ctx.beginPath();
+    ctx.moveTo(0, -25.4); ctx.lineTo(1.7, -22.6); ctx.lineTo(0, -19.8);
+    ctx.lineTo(-1.7, -22.6);
+    ctx.closePath();
+    fs(ctx, PAL.gold, O, 1);
+    // 柄身反光
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(0, 2); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 血月镰：长柄 + 前弯的镰刃。3 星专属，靠刃形（月牙）而不是体量卖身份。
+  // 故意不加 lighter 发光 —— 用户 2026-09-27「移除白色特效」之后，
+  // 新武器一律用普通描边 + 高光，不靠叠加制造光晕。
+  R._drawScythe = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 长柄
+    ctx.beginPath(); ctx.rect(-1.3, -14, 2.6, 22);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 缠绳握把
+    ctx.beginPath(); ctx.rect(-2, 3, 4, 7);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 柄尾镦
+    ctx.beginPath();
+    ctx.moveTo(-1.8, 8); ctx.lineTo(0, 10.6); ctx.lineTo(1.8, 8);
+    ctx.closePath();
+    fs(ctx, PAL.woodDark, O, 1);
+    // 铁箍
+    ctx.beginPath(); ctx.rect(-2.2, -16, 4.4, 3);
+    fs(ctx, '#9aa0a6', O, 1);
+    // 镰刃（从箍口伸出，前弯成月牙）
+    ctx.beginPath();
+    ctx.moveTo(-1.8, -15); ctx.lineTo(-11, -23); ctx.lineTo(-8.6, -16.4);
+    ctx.lineTo(-1.8, -12.4);
+    ctx.closePath();
+    fs(ctx, color, O, 1.3);
+    // 刃口高光
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(-9.6, -21.4); ctx.lineTo(-3.4, -14.2); ctx.stroke();
     ctx.restore();
   };
   /* ---------------- 敌人绘制（按类型程序化建模） ---------------- */

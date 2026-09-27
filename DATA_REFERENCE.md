@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [1](#1-角色) | 角色 + 字段说明 | 11 | config.js:88 |
 | [2](#2-角色被动) | 被动技能 + 5 个挂点 | 11 | config.js:363 |
-| [3](#3-武器) | 武器 | 5 | config.js:516 |
+| [3](#3-武器) | 武器 | 10 | config.js:516 |
 | [4](#4-敌人) | 小怪 + Boss | 10 | config.js:551 |
 | [5](#5-稀有度) | 稀有度 | 4 | config.js:78 |
 | [6](#6-道具) | 被动道具 | 17 | config.js:669 |
@@ -46,19 +46,25 @@ healBuild: true       // 可选。续航流：回血卡在商店/升级池不降
 | id | 名称 | 定位 | 被动 | HP | 移速 | 伤害 | 攻速 | 暴击 | 暴伤 | 护甲 | 起始武器 | 姿态 | 续航流 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | swordsman | 流浪剑客 | 敏捷近战 | 连击 | 100 | 220 | 1.00 | 1.00 | 5% | 1.50 | 0 | iron_sword | swordsman | |
-| archer | 青木弓手 | 暴击远程 | 穿杨 | 90 | 232 | 0.95 | 1.10 | 16% | 2.00 | 0 | pistol | archer | |
-| monk | 玄铁武僧 | 坚韧近战 | 金刚 | 140 | 185 | 0.90 | 0.90 | 4% | 1.50 | 12 | iron_sword | monk | |
-| brawler | 赤岩力士 | 爆发近战 | 铁骨 | 125 | 205 | 1.15 | 0.85 | 6% | 1.50 | 4 | iron_sword | brawler | |
+| archer | 青木弓手 | 暴击远程 | 穿杨 | 90 | 232 | 0.95 | 1.10 | 16% | 2.00 | 0 | wood_bow | archer | |
+| monk | 玄铁武僧 | 坚韧近战 | 金刚 | 140 | 185 | 0.90 | 0.90 | 4% | 1.50 | 12 | temple_staff | monk | |
+| brawler | 赤岩力士 | 爆发近战 | 铁骨 | 125 | 205 | 1.15 | 0.85 | 6% | 1.50 | 4 | warhammer | brawler | |
 | assassin | 疾风刺客 | 吸血近战 | 掠影 | 95 | 245 | 0.92 | 1.15 | 9% | 1.60 | 0 | iron_sword | swordsman | ✓ |
 | guard | 铁卫武人 | 格挡近战 | 格挡 | 135 | 195 | 1.00 | 0.95 | 5% | 1.50 | 10 | iron_sword | swordsman | |
-| crossbowman | 裂石弩手 | 叠暴远程 | 疾风 | 92 | 225 | 1.00 | 1.05 | 12% | 1.90 | 0 | pistol | archer | |
-| ranger | 寒江射手 | 稳定远程 | 贯甲 | 88 | 238 | 1.05 | 1.00 | 7% | 1.60 | 0 | pistol | archer | |
-| nun | 慈心尼师 | 续航近战 | 回春 | 130 | 200 | 0.85 | 0.95 | 4% | 1.50 | 6 | iron_sword | monk | ✓ |
-| ascetic | 苦行僧 | 苦修近战 | 禅心 | 145 | 180 | 0.95 | 0.85 | 4% | 1.50 | 14 | iron_sword | monk | ✓ |
-| brute | 狂岩巨擘 | 狂战近战 | 狂战 | 160 | 170 | 1.25 | 0.75 | 5% | 1.60 | 8 | iron_sword | brawler | |
+| crossbowman | 裂石弩手 | 叠暴远程 | 疾风 | 92 | 225 | 1.00 | 1.05 | 12% | 1.90 | 0 | heavy_crossbow | archer | |
+| ranger | 寒江射手 | 稳定远程 | 贯甲 | 88 | 238 | 1.05 | 1.00 | 7% | 1.60 | 0 | wood_bow | archer | |
+| nun | 慈心尼师 | 续航近战 | 回春 | 130 | 200 | 0.85 | 0.95 | 4% | 1.50 | 6 | temple_staff | monk | ✓ |
+| ascetic | 苦行僧 | 苦修近战 | 禅心 | 145 | 180 | 0.95 | 0.85 | 4% | 1.50 | 14 | temple_staff | monk | ✓ |
+| brute | 狂岩巨擘 | 狂战近战 | 狂战 | 160 | 170 | 1.25 | 0.75 | 5% | 1.60 | 8 | warhammer | brawler | |
 
 - `damage` 是**武器伤害倍率**，不是基础伤害。最终伤害见 [11](#11-公式表)。
 - 11 个角色只占 4 套剪影，靠 `colors` 配色区分。刺客/护卫共用剑客姿态，弩手/射手共用弓手姿态。
+- **起始武器按身份配**（2026-09-27，用户「目前全是剑和枪不符合人物身份」）：
+  之前 11 个角色只有 `iron_sword` / `pistol` 两种开局武器，弓手拿手枪、武僧拿铁剑。
+  现在同组角色共用一把身份武器 —— 修行者（武僧/尼师/苦行僧）共用锡杖、
+  力量型（力士/巨擘）共用战斧、远程各拿各的弓弩；剑客/刺客/铁卫共用铁剑。
+  **手枪不再有任何角色开局**（它是唯一一把「谁的武器都不是」的通用件，仍从池里出）。
+  改 `startWeapon` 只影响**新开局**：存档里存的是 `defId` 字符串，读档照旧解析。
 
 ---
 
@@ -116,12 +122,28 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
 | iron_sword | 铁剑 | melee | 1 | 0.70 | 14 | 66 | 1 | — | 60 | |
 | spear | 龙胆枪 | melee | 1 | 0.85 | 20 | 130 | 4 | — | 90 | |
 | pistol | 手枪 | ranged | 1 | 0.55 | 10 | — | 0 | 620 | 20 | |
+| wood_bow | 青木弓 | ranged | 1 | 0.62 | 11 | — | 0 | 580 | 20 | |
+| heavy_crossbow | 贯石弩 | ranged | 1 | 0.95 | 22 | — | 4 | 520 | 10 | |
+| warhammer | 碎岩战斧 | melee | 1 | 1.10 | 26 | 50 | 1 | — | 170 | |
+| temple_staff | 玄铁锡杖 | melee | 1 | 0.82 | 16 | 86 | 1 | — | 90 | |
 | moon_sword | 赤月斩 | melee | 3 | 0.50 | 30 | 86 | 3 | — | 140 | ✓ |
 | jade_crossbow | 青玉连弩 | ranged | 3 | 0.34 | 9 | — | 2 | 780 | 10 | ✓ |
+| blood_scythe | 血月镰 | melee | 3 | 0.58 | 28 | 100 | 1 | — | 120 | ✓ |
 
 - `Game.BOSS_EXCLUSIVE_CHANCE = 0.45`：Boss 奖励里出现专属武器的概率。
 - 武器等级倍率 `def.damage × (1 + 0.5 × (level - 1))`，上限 `MAX_WEAPON_LEVEL = 4`。
-- 弹体造型**不在表里**，按武器 id 派生：`weapons.js PROJ_SHAPE`（pistol → bullet，jade_crossbow → arrow）。
+  **`star` 只用于图鉴标签显示**（`Codex` 的 `★★★`），开局武器一律 `createWeapon(id, 1, 0)`
+  从 1 级起 —— 3 星专属的强度来自 `damage` 本体，不是星级。
+- **DPS 标尺**（`damage / cooldown`，远程已含 ×`RANGED_DMG_SCALE`）：
+  1 星近战对标龙胆枪 23.5、1 星远程对标手枪 10.9。新 1 星武器不超过对标值的 1.3 倍
+  （`test/smoke.js` 有断言守着），越级的强度留给 3 星专属。
+- **横扫武器的 `pierce` 不作数**：`_meleeAttack` 循环整圈敌人、没有贯穿上限，
+  只有 `_thrustAttack` 和远程弹体读 `pierce`。所以横扫武器一律填 `1`（铁剑的口径），
+  填别的值就是又造一条「表里躺着但不生效」。
+  ⚠ **遗留**：`moon_sword.pierce = 3` 是这条规则确立前留下的值，**不生效**，别按它算。
+- 弹体造型**不在表里**，按武器 id 派生：`weapons.js PROJ_SHAPE`。
+  `pistol → bullet`，`jade_crossbow` / `wood_bow` / `heavy_crossbow` → `arrow`。
+  没登记的远程武器回落 `bullet`。
 - 近战**出手方式也不在表里**，按武器 id 派生：`weapons.js MELEE_STYLE`。
   `spear → _thrustAttack`（突刺走廊），没登记 = `_meleeAttack` 横扫扇形。
   走廊半宽 = 有效射程 × `THRUST_HALF`（0.12），是模块本地常量，同样不进表。
@@ -129,8 +151,12 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
   签名统一 `(owner, state, aim, claimed)`。
 - 环绕卫星的**图标造型也不在表里**，按武器 id 派生：`renderer.js ORBIT_ICON`。每把武器一套：
   `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
-  `pistol → _drawPistol`、`jade_crossbow → _drawCrossbow`。
-  漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）—— 龙胆枪就这样顶着剑的造型出场过。
+  `pistol → _drawPistol`、`wood_bow → _drawBow`、`warhammer → _drawHammer`、
+  `temple_staff → _drawStaff`、`blood_scythe → _drawScythe`。
+  **`jade_crossbow` 和 `heavy_crossbow` 共用 `_drawCrossbow`**，只靠 `color` 分 —— 它本来就是弩，
+  换个造型就是假的。漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）——
+  龙胆枪就这样顶着剑的造型出场过一整个阶段。
+  新图标一律用普通描边 + 高光，**不加 `lighter` 发光**（2026-09-27 之后定下的方向）。
 - 出手**动作**按武器 id 派生：`renderer.js STRIKE_PROFILE` 给每把武器一套相位占比
   （`windup` 起手后撤 / `strike` 前推 / `hold` 扎住 / `bow` 路径侧向鼓弧），
   缺省回落 `STRIKE_DEFAULT`。波形是「先微幅往后撤 → 前推（ease-out，末端速度归零
@@ -295,7 +321,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 | 出货口 | 位置 | 构成 |
 |---|---|---|
-| 升级三选一 | `systems.js:466 rollLevelUpChoices` | 7 张属性卡 + 道具 12 件 +（槽位未满）2 把普通武器 /（满）武器强化 |
+| 升级三选一 | `systems.js:466 rollLevelUpChoices` | 全部属性卡（现 11）+ 全部道具（现 17）+（槽位未满）全部非专属武器（现 7）/（满）武器强化 |
 | Boss 战利品 | `systems.js:500 bossRewardChoices` | **只收 epic/legend** + 武器强化 + 普通武器 + 按 45% 概率塞 1 把专属武器 |
 | 商店（固定 4 格） | `systems.js:636 rollShopItem` | 道具 50% / 武器 50%，道具按件均分、武器按把均分 |
 
@@ -407,7 +433,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | `codex_v1` | 图鉴收录（lifetime 进度，`deleteSave` **不动它**） | storage.js:42 |
 
 - 游戏模式：`campaign`（20 波）/ `endless`（无尽），`Game.pendingMode` 在角色选择后写入。
-- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **55 条**（11 角色 + 6 怪 + 4 Boss + 5 武器 + 29 张卡）。总数是 `Codex.total()` 运行时从 config 表累加的，**没有写死在 codex.js 里**；写死的是 `test/smoke.js` 的断言。记「见过」不记「拥有」。
+- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **60 条**（11 角色 + 6 怪 + 4 Boss + 10 武器 + 29 张卡）。总数是 `Codex.total()` 运行时从 config 表累加的，**没有写死在 codex.js 里**；写死的是 `test/smoke.js` 的断言（装备栏条目数 + 总数 + 两处 UI 进度文案 `全部收录 x / 60`）。记「见过」不记「拥有」。
 - 纪录榜 `js/records.js`：`TOP_N = 10`。
 - **随机数一律走 `state.rng`**（`Game.mulberry32`，config.js:708）。刷新计划用 `hashSeed(seed + ':' + wave)` 绑定的独立 RNG，保证读档一致。用裸 `Math.random()` 会让存档不可复现。`pickBossType` 是纯查表，不消耗随机流。
 
@@ -425,10 +451,15 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | systems.js:62/68 | `isBossWave` / `pickBossType` | Boss 波与轮换 |
 | entities.js:432 | `BOSS_ATK_METHOD` | Boss 套路 → 方法名映射，**新套路必须登记**（缺省回落 `fan`） |
 | entities.js:460 起 | `_bossAtkFan/Charge/Ring/Spiral` | 各套路实现 |
-| weapons.js `PROJ_SHAPE` | 弹体造型按武器 id 派生 |
+| weapons.js `PROJ_SHAPE` | 弹体造型按武器 id 派生，**漏登记回落 `bullet`**（弓/弩必须登记成 `arrow`） |
 | weapons.js `MELEE_STYLE` | 近战出手方式按武器 id 派生，**漏登记 = 走横扫**（想要突刺/回旋必须登记） |
 | weapons.js `THRUST_HALF` | 突刺走廊半宽比例（模块本地常量，不在表里） |
-| renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**） |
+| renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**）。
+  同类武器可以共用一个绘制函数（`jade_crossbow` 与 `heavy_crossbow` 都走 `_drawCrossbow`），只靠 `color` 分 |
+| renderer.js `_drawXxx` | 上面那些绘制函数的本体。新写一个要注意：图标由多个 `fill()` 组成，
+  必须**朝前伸**（局部 -y 端比 +y 端长），否则玩家看到的是柄朝前 |
+| `CHARACTERS.startWeapon` | 跨表引用 `WEAPONS` 的 id：必须存在、**必须非 `exclusive`**（专属只走 Boss 奖励）。
+  读档存的是 `defId` 字符串，所以改 `startWeapon` 只影响新开局，旧存档不受影响 |
 | renderer.js `STRIKE_PROFILE` | 出手**动作**按武器 id 派生（windup/strike/hold/bow 四个相位占比），
   **漏登记回落 `STRIKE_DEFAULT`**（通用挥砍，不鼓弧） |
 | weapons.js `swingRange` | 近战出手瞬间记下的有效射程（`this.range()`），卫星图标弹到的落点距离；
@@ -470,9 +501,14 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 5. **push 进 `Game.BOSSES`** —— 只写进 ENEMIES 不会被刷出来，`pickBossType` 只查 BOSSES 表
 
 **加武器**
-1. `WEAPONS` 加一条（记得带 `color` —— 刀光/枪线特效 `renderer.js` 和弹体颜色都读它，缺了画成 `undefined`）
-2. 远程弹补 `weapons.js PROJ_SHAPE`
-3. **`renderer.js ORBIT_ICON` 登记图标**（漏了不报错，会静默顶着剑或弩的造型出场）
+1. `WEAPONS` 加一条（记得带 `color` —— 刀光/枪线特效 `renderer.js` 和弹体颜色都读它，缺了画成 `undefined`）。
+   **数值别越级**：1 星武器 DPS 不超过同类型现有最强的 1.3 倍（`test/smoke.js` 守着这条），
+   越级的强度留给 3 星专属。
+   **横扫武器的 `pierce` 一律填 1**（`_meleeAttack` 不读它，填别的就是死数据，见第 3 章）。
+2. 远程弹补 `weapons.js PROJ_SHAPE`（弓和弩是 `arrow`，不是 `bullet`）
+3. **`renderer.js ORBIT_ICON` 登记图标 + 写 `_drawXxx`**（漏了不报错，会静默顶着剑或弩的造型出场）。
+   绘制函数必须**朝前伸**（局部 -y 端比 +y 端长），有断言守着；
+   同类武器可以共用一个绘制函数只靠颜色分。不加 `lighter` 发光。
 4. **不是横扫就补 `weapons.js MELEE_STYLE`**，写一个 `_xxxAttack`（签名
    `(owner, state, aim, claimed)`）。**不用为它写 `FX.xxx` 特效** —— 突刺那条枪线
    已经下线了（第 3 章），动作由环绕卫星自己演，枪尖那一点光挂在 `_drawSpear` 的
@@ -482,17 +518,19 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
    枪要「直着扎出去、扎住、慢慢收回」就把 `bow` 留 0；刀要「划一道弧」就给 0.10~0.13。
    图标前推**不用登记任何东西** —— 它自动从轨道弹到 `swingRange`（近战分支里写下的
    有效射程，见第 3 章那条），横扫和突刺一视同仁
-6. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）
+6. 专属加 `exclusive: true`（三个出货口会自动跳过，只走 Boss 奖励）。
+   **专属武器不能当 `CHARACTERS.startWeapon`** —— 它是 Boss 战利品，不是开局装备
 
 `commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
 商店武器权重是 `0.5 / 武器数` —— **多一把非专属武器会摊薄所有武器在商店的出现率**，
-加武器等于在调这个隐性的期望值。
+加武器等于在调这个隐性的期望值。现非专属 7 把 → 每把 7.1%，2026-09-26 之前是 3 把 → 16.7%。
+专属武器不摊薄（走 Boss 奖励的 45% 位），所以**想加武器又不想稀释普通池，就标 `exclusive`**。
 
 **加道具**：`ITEMS` 加一条即可，三个出货口自动收录。**`desc` 与 `stat` 同步改**。
 
 **加属性卡**：`UPGRADES` 加一条即可。注意 `bossRewardChoices` 只收 `epic/legend`。
 
-**改完跑 `npm test`** —— 基线 918 + 10 全绿。哪张表漏了登记点会立刻红。
+**改完跑 `npm test`** —— 基线 997 + 10 全绿。哪张表漏了登记点会立刻红。
 
 ---
 
