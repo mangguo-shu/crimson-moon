@@ -911,6 +911,8 @@
     warhammer:      '_drawHammer',
     temple_staff:   '_drawStaff',
     blood_scythe:   '_drawScythe',
+    fire_orb:       '_drawOrb',
+    blood_hammer:   '_drawMaul',
   };
 
   // 画一把卫星武器。x/y 已经是「这一帧它该站的位置」（玩家局部坐标）：
@@ -1362,6 +1364,67 @@
     // 刃口高光
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.9;
     ctx.beginPath(); ctx.moveTo(-9.6, -21.4); ctx.lineTo(-3.4, -14.2); ctx.stroke();
+    ctx.restore();
+  };
+
+  // 焚天火珠（Phase 3）：木夹 + 吊环 + 前伸的玉珠。图标必须朝前伸（局部 -y 端比
+  // +y 端长），所以珠在前、夹柄在后 —— 反过来读起来就是「柄朝前」。
+  // 不加 lighter 发光：珠子靠明暗两半读出立体感，叠加发光会把武器色洗成白斑。
+  R._drawOrb = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 夹柄（在后，短）
+    ctx.beginPath(); ctx.rect(-1.2, 1.5, 2.4, 8);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 投掷叉：两爪张开、爪尖越到珠前。图标靠这一截朝前伸（局部 -y 端比 +y 端长），
+    // 也是玩家一眼认出「这是拿去掷的东西」而不是「背了个球」的关键。
+    ctx.strokeStyle = '#9aa0a6'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-2.6, 1.6); ctx.lineTo(-2.9, -4.6); ctx.lineTo(-1.8, -10.2);
+    ctx.moveTo(2.6, 1.6); ctx.lineTo(2.9, -4.6); ctx.lineTo(1.8, -10.2);
+    ctx.stroke();
+    // 玉珠本体（坐在两爪之间）
+    ctx.beginPath(); ctx.arc(0, -4.4, 5.6, 0, TAU);
+    fs(ctx, color, O, 1.3);
+    // 暗面（偏右下，读出差一层）
+    ctx.beginPath(); ctx.arc(1.2, -3.2, 4.1, Math.PI * 0.1, Math.PI * 0.95);
+    ctx.fillStyle = 'rgba(30,20,12,0.42)'; ctx.fill();
+    // 高光（左上一点）
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.ellipse(-2.1, -6.2, 1.5, 1.0, -0.6, 0, TAU); ctx.fill();
+    ctx.restore();
+  };
+
+  // 血月重锤（Phase 3）：双手长柄 + 方块锤头。锤头是方的不是弯的 —— 碎岩战斧是
+  // 「劈」（半月刃 + 背刺），重锤是「砸」（整块铁），形状语言不同，不靠颜色分。
+  R._drawMaul = function (ctx, hx, hy, color) {
+    var O = this.outline;
+    ctx.save();
+    ctx.translate(hx, hy);
+    // 长柄（双手柄，比战斧更长更粗）
+    ctx.beginPath(); ctx.rect(-1.5, -12, 3, 22);
+    fs(ctx, PAL.wood, O, 1.2);
+    // 缠绳握把
+    ctx.beginPath(); ctx.rect(-2.3, 5, 4.6, 8);
+    fs(ctx, '#4a3220', O, 1.2);
+    // 柄尾镦
+    ctx.beginPath();
+    ctx.moveTo(-1.9, 12.4); ctx.lineTo(0, 15.4); ctx.lineTo(1.9, 12.4);
+    ctx.closePath();
+    fs(ctx, PAL.woodDark, O, 1);
+    // 铁箍
+    ctx.beginPath(); ctx.rect(-3, -13.8, 6, 3.4);
+    fs(ctx, '#9aa0a6', O, 1);
+    // 锤头（方块，明显厚于战斧的半月）
+    ctx.beginPath(); ctx.rect(-6.6, -21.6, 13.2, 8);
+    fs(ctx, color, O, 1.3);
+    // 锤头暗面
+    ctx.beginPath(); ctx.rect(-6.6, -16.4, 13.2, 2.8);
+    ctx.fillStyle = 'rgba(30,20,12,0.35)'; ctx.fill();
+    // 锤头前棱高光
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.moveTo(-5.8, -21); ctx.lineTo(5.8, -21); ctx.stroke();
     ctx.restore();
   };
   /* ---------------- 敌人绘制（按类型程序化建模） ---------------- */
@@ -2143,9 +2206,36 @@
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    if (p.type === 'arrow') this._drawArrowBody(ctx, p);
+    if (p.type === 'orb') this._drawOrbBody(ctx, p);
+    else if (p.type === 'arrow') this._drawArrowBody(ctx, p);
     else this._drawBulletBody(ctx, p);
     ctx.restore();
+  };
+
+  /** 焚天火珠的飞行弹体。和子弹 / 箭矢一样走**固定色**、不吃武器色 ——
+   *  武器色当弹体画会被读成一串发光圆点（「子弹有黄色的光晕，移除它」）。
+   *  这里用暗核 + 一圈偏红的烧灼边：没有 lighter、没有金色，靠形和边读成「会炸的珠子」，
+   *  而不是又一个铅灰弹丸。 */
+  R._drawOrbBody = function (ctx, p) {
+    var r = p.radius;
+    // 暗核：珠子本体偏暗，不抢画面
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#3d2418';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    // 烧灼边：武器色一圈，厚度随 r 走，不用发光
+    ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(1.1, r * 0.42);
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, TAU); ctx.stroke();
+    // 行进方向的亮尖：让珠子的朝向读得出来（rotate 之后是 +x）
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(r * 1.55, 0); ctx.lineTo(r * 0.35, r * 0.5); ctx.lineTo(r * 0.35, -r * 0.5);
+    ctx.closePath(); ctx.fill();
+    // 拖尾烟痕：和子弹一样走浅灰，不染武器色
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#c3c9cf';
+    ctx.beginPath();
+    ctx.ellipse(-r * 2.4, 0, r * 1.3, r * 0.42, 0, 0, TAU);
+    ctx.fill();
   };
 
   /** 子弹弹体。造型按武器 id 派生（见 weapons.js 的 PROJ_SHAPE），不写在 WEAPONS 表里。
@@ -2432,6 +2522,23 @@
         ctx.fillStyle = f.color || PAL.gold;
         ctx.globalAlpha = t * 0.85;
         ctx.beginPath(); ctx.arc(f.x, f.y, 4.2 * t + 0.8, 0, TAU); ctx.fill();
+      } else if (f.type === 'boom') {
+        // 溅射爆轰（Phase 3 焚天火珠）：膨胀火球 + 一圈冲击波。
+        // 必须先切回 source-over —— 本函数开头统一设了 lighter，不切的话叠加会把橙红
+        // 洗成白斑，和「移除白色光晕」是同一个坑（talisman 分支是现成的改回写法）。
+        // 全程不用 lighter、不用鎏金：靠武器色两档明度 + 形状读出「一团火」，不靠发光。
+        ctx.globalCompositeOperation = 'source-over';
+        var r = f.range * (1 - t);
+        ctx.globalAlpha = t * 0.5;
+        ctx.fillStyle = f.color;
+        ctx.beginPath(); ctx.arc(f.x, f.y, r * 0.85, 0, TAU); ctx.fill();
+        ctx.globalAlpha = t * 0.62;
+        ctx.fillStyle = '#7a2413';
+        ctx.beginPath(); ctx.arc(f.x, f.y, r * 0.45, 0, TAU); ctx.fill();
+        ctx.globalAlpha = t * 0.85;
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 3 * t + 0.6;
+        ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, TAU); ctx.stroke();
       } else if (f.type === 'dmgtext') {
         // 伤害飘字：不叠加发光，且必须描边才读得清（压在高对比的粒子和暗场上）。
         // 后 25% 生命淡出，前半段全亮，别在数字刚出现时就看不清。
@@ -2556,6 +2663,14 @@
     muzzle: function (x, y, angle, color) {
       var p = util.onCircle(x, y, 16, angle);
       R.addEffect({ type: 'muzzle', x: p.x, y: p.y, color: color, life: 0.08, maxLife: 0.08 });
+    },
+    // 溅射爆轰（Phase 3 焚天火珠）。range 必须是武器的 splashRadius —— 画面里的圈要
+    // 等于判定圈，否则玩家看到的爆炸范围和实际打到谁对不上。粒子走 dust 的土灰口径
+    // 而不是 spark 的鎏金：金色火花是玩家特效专用，溅射属于武器本体，用火花会读成
+    // 「我放了个技能」。
+    boom: function (x, y, range, color) {
+      R.addEffect({ type: 'boom', x: x, y: y, range: range, color: color, life: 0.3, maxLife: 0.3 });
+      this._dot(x, y, 10, color || '#e0512f', 150, 2.6, false);
     },
     // 升级：金色灵光环 + 上升光点
     levelUp: function (x, y) {

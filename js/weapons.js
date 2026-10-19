@@ -24,6 +24,7 @@
     jade_crossbow: 'arrow',
     wood_bow: 'arrow',          // 弓射出的是箭，不是子弹
     heavy_crossbow: 'arrow',
+    fire_orb: 'orb',           // 焚天火珠不是子弹也不是箭，是一枚抛出去会炸的玉珠
   };
 
   // 近战出手方式按武器 id 派生，和 PROJ_SHAPE、renderer 的 ORBIT_ICON 一个路数 ——
@@ -291,9 +292,14 @@
       y: this.y + Math.sin(a) * (owner.radius + 6),
       vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       radius: 5, damage: dmg, crit: crit, fromPlayer: true,
-      pierce: this.def.pierce || 0, life: 2.5,
+      pierce: this.def.pierce || 0,
+      // life 默认 2.5 是旧行为；焚天火珠填 projectileLife 1.2，让玉珠在中程就炸
+      // （落点 = 抛掷落点），而不是飞穿整张图。没填的武器一字不变。
+      life: this.def.projectileLife || 2.5,
       color: this.def.color, type: PROJ_SHAPE[this.defId] || 'bullet',
       knockback: this.def.knockback || 0,
+      // splash 0 = 不炸，旧武器全走这条，Systems 侧的 S.explode 直接不触发。
+      splash: this.def.splashRadius || 0,
       owner: owner,
     });
     state.projectiles.push(p);

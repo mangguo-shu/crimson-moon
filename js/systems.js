@@ -331,13 +331,55 @@
     }
   };
 
+  // 溅射（Phase 3 焚天火珠）：弹体消亡时在落点炸开一圈。
+  // killedBy 那只已在普通命中路径吃过全额，这里必须跳过它 —— 否则溅射等于给主目标
+  // 再补一刀半。其余圈内敌人吃 damage × SPLASH_FALLOFF，击退同样乘系数、按方向推开。
+  // 吸血 / 命中回血 / 击杀回血 / 伤害统计全部照普通命中口径补齐，否则焚天火珠配吸血
+  // 道具会打出「打了一群只回一口血」的落差。p.exploded 防重入：updateProjectiles 有
+  // 两个消亡点都会调它。
+  S.explode = function (state, p) {
+    if (!p.splash || p.exploded) return;
+    p.exploded = true;
+    var R = p.splash;
+    var K = Game.CONST.SPLASH_FALLOFF;
+    var dmg = p.damage * K;
+    var kb = (p.knockback || 0) * K;
+    var owner = p.owner;
+    if (Game.FX) Game.FX.boom(p.x, p.y, R, p.color);
+    var es = state.enemies;
+    for (var i = 0; i < es.length; i++) {
+      var e = es[i];
+      if (e.dead) continue;
+      if (e.uid === p.killedBy) continue;               // 全额已结算
+      if (util.dist(p.x, p.y, e.x, e.y) > R + e.radius) continue;
+      var dx = e.x - p.x, dy = e.y - p.y;
+      var dd = Math.sqrt(dx * dx + dy * dy) || 1;
+      var dead = e.takeDamage(dmg, false, dx / dd * kb, dy / dd * kb, owner);
+      if (owner) {
+        if (owner.stats.lifesteal > 0) owner.heal(dmg * owner.stats.lifesteal);
+        var hh = owner.healForHit();
+        if (hh > 0) owner.heal(hh);
+        owner.damageDealt += dmg;
+        if (dead) {
+          var kh = owner.healForKill();
+          if (kh > 0) owner.heal(kh);
+        }
+      }
+      if (dead) e.die(state);
+    }
+  };
+
   S.updateProjectiles = function (state, dt) {
     var ps = state.projectiles;
     var player = state.player;
     for (var i = ps.length - 1; i >= 0; i--) {
       var p = ps[i];
       p.update(dt);
-      if (p.dead) { ps.splice(i, 1); continue; }
+      // 寿命到 / 飞出地图 —— 溅射武器在这里炸在落点（没打在谁身上，killedBy 仍是 null）
+      if (p.dead) {
+        if (p.splash) S.explode(state, p);
+        ps.splice(i, 1); continue;
+      }
 
       if (p.fromPlayer) {
         // 打敌人
@@ -368,7 +410,13 @@
             if (dead) e.die(state);
             // 穿透
             if (p.pierce > 0) { p.pierce--; }
-            else { p.dead = true; break; }
+            else {
+              // 命中耗尽穿透：先记下凶手再炸，S.explode 用它跳过主目标
+              p.killedBy = e.uid;
+              if (p.splash) S.explode(state, p);
+              p.dead = true;
+              break;
+            }
           }
         }
       } else {

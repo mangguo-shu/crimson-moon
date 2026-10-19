@@ -16,7 +16,7 @@
     // 跑的其实是 9/21 的 assets（`npx cap sync android` 从没跑过），7 条修复一条都没
     // 上去，看起来像「一个都没修好」。有这个号以后不用猜包里到底是什么版本。
     // 每次改完 www/ 要同步进 android 工程：npm run build:web && npm run sync:android
-    BUILD: 'v261009.1',
+    BUILD: 'v261016.1',
     LOGICAL_W: 1280,      // 参考逻辑宽
     LOGICAL_H: 720,       // 固定逻辑高（横屏基准），实际可见宽度随屏幕比例扩展
     WORLD_W: 2400,        // 地图世界宽（大于屏幕，相机跟随）
@@ -83,6 +83,11 @@
     HEAL_ITEM_WEIGHT: 0.08, // 回血道具在商店/升级池里的相对权重（续航流角色不降权）。
                             // 0.28 → 0.15 → 0.08：两轮真机反馈「回血太容易」，
                             // 0.08 时同波出现 4 张卡的概率约 1/5（4 张都是回血约 1/6000）。
+    // —— 溅射衰减（Phase 3 焚天火珠，2026-10-16）——
+    // 弹体本身命中的一只吃全额（走普通命中路径），溅射圈里**其余**敌人吃这个比例。
+    // 走系数不进 WEAPONS 表：衰减是机制常数不是武器参数，将来第二把溅射武器
+    // 共享同一口径（溅射半径才归武器自己管）。击退同样乘这个系数。
+    SPLASH_FALLOFF: 0.5,
   };
 
   /* ---------------- 国风调色板 ---------------- */
@@ -624,6 +629,31 @@
       pierce: 1, projectileSpeed: 0, knockback: 120,
       color: '#d0453a', desc: '赤月浸过的巨镰，横扫之处血成线。',
     },
+    // —— Phase 3 新增（2026-10-16）：首个范围伤害 archetype + 专属慢重击 ——
+    // 焚天火珠是全游戏第一把会炸的武器：之前近战是整圈横扫、远程全是直线单体。
+    // splashRadius / projectileLife 是这张表里唯二的新字段，只有它用；旧武器不填，
+    // weapons.js 里对两者都有默认值回落（life 2.5），行为不变。
+    // cd 1.40 是手枪 0.55 的 2.5 倍 —— 溅射不是白送的，代价付在节奏上。
+    // 有效 DPS = 24/1.4 × RANGED_DMG_SCALE(0.5) = 8.57，在手枪标尺 9.09 的一档以内。
+    // 颜色取红橙：金色弹光是被点名去掉的（子弹黄光），橙红能读出「这是会炸的」。
+    fire_orb: {
+      id: 'fire_orb', name: '焚天火珠', type: 'ranged', star: 1,
+      cooldown: 1.40, damage: 24, range: 0, arc: 0,
+      pierce: 0, projectileSpeed: 460, knockback: 40,
+      splashRadius: 84, projectileLife: 1.2,
+      color: '#e0512f', desc: '掷出玉珠，落点炸开一圈，专治成堆的杂兵。',
+    },
+    // 血月重锤：第三把专属近战，补「慢重击」这一档。之前三把专属（赤月斩 / 青玉连弩 /
+    // 血月镰）全是快节奏，Boss 奖励里没有「一下锤穿一群、把人砸飞」的选择。
+    // 3 星专属允许越级：DPS 45/1.5 × 0.8 = 24.0，超过 1 星龙胆枪 18.8，这是刻意的 ——
+    // 越级强度本来就留给专属（见 DATA_REFERENCE 第 3 章）。
+    // arc 只为表格可读性填着：这个字段已作废，横扫宽度走 CONST.WEAPON_ARC。
+    blood_hammer: {
+      id: 'blood_hammer', name: '血月重锤', type: 'melee', star: 3, exclusive: true,
+      cooldown: 1.50, damage: 45, range: 58, arc: Math.PI * 0.85,
+      pierce: 1, projectileSpeed: 0, knockback: 260,
+      color: '#c2362f', desc: '赤月凝成的巨锤，一锤震开一圈，把人砸飞出丈许。',
+    },
   };
 
   // Boss 战奖励里出现专属武器的概率
@@ -780,6 +810,13 @@
     shadow_cloak:   { id: 'shadow_cloak',    name: '疾影披风', rarity: 'epic',   desc: '移动速度 +12%，暴击率 +5%',         stat: { speed: 0.12, critChance: 0.05 } },
     bulwark_core:   { id: 'bulwark_core',    name: '玄武核心', rarity: 'epic',   desc: '最大生命 +30，护甲 +3',            stat: { maxHp: 30, armor: 3 } },
     greedy_fang:    { id: 'greedy_fang',     name: '贪狼之牙', rarity: 'epic',   desc: '每次命中回复最大生命 0.4%，造成伤害的 0.8% 化为生命', stat: { lifeOnHitPct: 0.004, lifesteal: 0.008 }, healing: true },
+    // —— Phase 3 新增（2026-10-16）：第二件 legend 道具 + 三件补空档的普通件 ——
+    // desc 是写死文案，改 stat 必须同步改 desc。healing:true 的两件照常吃
+    // HEAL_ITEM_WEIGHT 降权（除非角色是 healBuild）—— 这是「回血被砍两轮」的护栏。
+    iron_vigor:     { id: 'iron_vigor',      name: '精铁体魄', rarity: 'common', desc: '最大生命 +10，移动速度 +4%', stat: { maxHp: 10, speed: 0.04 } },
+    jade_shield:    { id: 'jade_shield',     name: '青玉神盾', rarity: 'rare',   desc: '护盾上限 +20，护甲 +1',      stat: { shieldMax: 20, armor: 1 } },
+    storm_core:     { id: 'storm_core',      name: '惊雷核心', rarity: 'epic',   desc: '攻击速度 +15%，伤害 +5%',    stat: { attackSpeed: 0.15, damage: 0.05 } },
+    blood_pact:     { id: 'blood_pact',      name: '血誓之环', rarity: 'legend', desc: '每次击杀回复最大生命 1.0%，造成伤害的 2% 化为生命', stat: { lifeOnKillPct: 0.01, lifesteal: 0.02 }, healing: true },
   };
 
   /* ---------------- 升级属性选项池 ---------------- */
@@ -799,6 +836,23 @@
     { type: 'stat', rarity: 'epic',   label: '狂暴之刃',   desc: '伤害 +18%',               apply: { damage: 0.18 } },
     { type: 'stat', rarity: 'epic',   label: '疾风连击',   desc: '攻击速度 +18%',           apply: { attackSpeed: 0.18 } },
     { type: 'stat', rarity: 'epic',   label: '战神之躯',   desc: '护甲 +4',                 apply: { armor: 4 } },
+    // —— Phase 3 新增（2026-10-16）：把 6 个「只有道具入口、没有卡入口」的属性轴补上，
+    // 并开出第一张 legend 卡。此前 UPGRADES 只覆盖 maxHp / speed / damage / attackSpeed /
+    // critChance / armor 六轴，critMult / healingPower / lifesteal / shieldMax /
+    // lifeOnHitPct / lifeOnKillPct 全部只能从道具拿 —— 属性强化卡等于半个属性表都买不到。
+    // 键全在 Player._applyStatDelta 白名单里，不加新键。label 同时是图鉴 key，改名字等于新增一条。
+    // ⚠ 三张回血卡（春晖诀 / 汲血之刺 / 噬命钟摆）进三选一池不降权：healing:true 只在
+    // ITEMS 上有，UPGRADES 没有这个开关。数值压在对应道具档附近（1.2% vs 噬魂之牙 1%）。
+    { type: 'stat', rarity: 'rare',   label: '玄铁盾纹',   desc: '护盾上限 +30',            apply: { shieldMax: 30 } },
+    { type: 'stat', rarity: 'rare',   label: '破空一击',   desc: '暴击伤害 +10%',           apply: { critMult: 0.10 } },
+    { type: 'stat', rarity: 'rare',   label: '春晖诀',     desc: '治疗效果 +12%',           apply: { healingPower: 0.12 } },
+    { type: 'stat', rarity: 'epic',   label: '汲血之刺',   desc: '造成伤害的 1.2% 化为生命', apply: { lifesteal: 0.012 } },
+    { type: 'stat', rarity: 'epic',   label: '噬命钟摆',   desc: '每次击杀回复最大生命 0.6%', apply: { lifeOnKillPct: 0.006 } },
+    // 赤月战意：全游戏第一张 legend 卡。
+    // ⚠ rollLevelUpChoices 对 UPGRADES 不做稀有度过滤（每张 w:1 等权），
+    // 所以它也会从**普通**升级三选一里出 —— 数值只比最强 epic（狂暴之刃 伤害 +18%）
+    // 高一档，不是白送的强度。稀有度过滤唯一的定义处是 bossRewardChoices（epic/legend）。
+    { type: 'stat', rarity: 'legend', label: '赤月战意',   desc: '伤害 +20%，攻击速度 +12%', apply: { damage: 0.20, attackSpeed: 0.12 } },
   ];
   // 即时回血卡（急救 / 大急救包）已于 2026-09-24 下线：治疗只来自角色被动与吸血，
   // 不该由一张卡瞬间补齐。商店里那张「急救包」也一并移除（见 systems.js rollShopItem）。

@@ -620,6 +620,14 @@
     this.type = opts.type || 'bullet';
     this.knockback = opts.knockback || 0;
     this.owner = opts.owner || null;
+    // —— 溅射（Phase 3 焚天火珠）—— splash > 0 的弹体消亡时在落点炸开一圈。
+    // killedBy：让它毙命的那只怪的 uid。溅射结算要跳过它 —— 它已经在普通命中路径
+    // 里吃过全额伤害，再算一次就是双倍。落空（寿命到 / 飞出地图）时仍是 null。
+    // exploded：防重入。updateProjectiles 里有两个消亡点都会调 S.explode，
+    // 多一道保险比在调用方记得住两件事更稳。
+    this.splash = opts.splash || 0;
+    this.killedBy = null;
+    this.exploded = false;
     this.dead = false;
     this.angle = Math.atan2(this.vy, this.vx);
   }

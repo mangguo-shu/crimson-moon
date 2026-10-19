@@ -1891,9 +1891,10 @@ try {
 
   // —— 道具 17 件，且每件声明的属性键都真实生效（此前有 6 个属性键根本没入口）——
   var ids61 = Object.keys(Game.ITEMS);
-  assert(ids61.length === 17, '道具总数 17（实 ' + ids61.length + '）');
+  assert(ids61.length === 21, '道具总数 21（实 ' + ids61.length + '）');
   var newIds61 = ['herbal', 'vampiric', 'shieldcharm', 'lifeluck', 'critemerald', 'deathbell',
-                  'bloodmoon_heart', 'war_god_bracer', 'shadow_cloak', 'bulwark_core', 'greedy_fang'];
+                  'bloodmoon_heart', 'war_god_bracer', 'shadow_cloak', 'bulwark_core', 'greedy_fang',
+                  'iron_vigor', 'jade_shield', 'storm_core', 'blood_pact'];
   var missing61 = newIds61.filter(function (n) { return !Game.ITEMS[n]; });
   assert(missing61.length === 0, '新增 11 件道具齐全（缺: ' + missing61.join(',') + '）');
   var dead61 = [];
@@ -1915,7 +1916,7 @@ try {
     if (!moved61) dead61.push(iid61 + '(应用后无变化)');
   }
   assert(dead61.length === 0,
-         '17 件道具的属性键全部真实生效（坏: ' + JSON.stringify(dead61) + '）');
+         '21 件道具的属性键全部真实生效（坏: ' + JSON.stringify(dead61) + '）');
 
   // 此前买不到的数值现在都有入口了
   var used61 = {};
@@ -1981,11 +1982,11 @@ try {
   var epicUp61 = Game.UPGRADES.filter(function (u) {
     return u.rarity === 'epic' || u.rarity === 'legend';
   }).length;
-  assert(epicUp61 === 5, 'epic/legend 属性卡 5 张（' + epicUp61 + '）');
+  assert(epicUp61 === 8, 'epic/legend 属性卡 8 张（' + epicUp61 + '）');
   var epicIt61 = Object.keys(Game.ITEMS).filter(function (k) {
     return Game.ITEMS[k].rarity === 'epic' || Game.ITEMS[k].rarity === 'legend';
   }).length;
-  assert(epicIt61 === 8, 'epic/legend 道具 8 件（' + epicIt61 + '）');
+  assert(epicIt61 === 10, 'epic/legend 道具 10 件（' + epicIt61 + '）');
   assert(epicUp61 + epicIt61 >= 3, 'Boss 奖励池凑得出三选一');
 
   // —— 2026-09-27 Phase 2：5 把新武器 + 角色起始武器按身份重配 ——
@@ -2018,8 +2019,8 @@ try {
   }
   assert(badPh2.length === 0,
          'Phase 2 新增 5 把武器的字段与数值一致（坏: ' + badPh2.join(',') + '）');
-  assert(Object.keys(Game.WEAPONS).length === 10,
-         '武器总数 10（' + Object.keys(Game.WEAPONS).length + '）');
+  assert(Object.keys(Game.WEAPONS).length === 12,
+         '武器总数 12（' + Object.keys(Game.WEAPONS).length + '）');
 
   // 1 星新武器不越级：不高于现有最强 1 星（同类型）的一档。上限留 30% ——
   // 贯石弩比手枪 DPS 高，是用穿透 4 换的，不算越级。
@@ -2054,6 +2055,301 @@ try {
            id + ' 是横扫，pierce 填 1（不填 1 就是死数据）');
   });
   assert(Game.WEAPONS.blood_scythe.exclusive, '血月镰是专属（3 星 Boss 战利品）');
+
+  // —— 2026-10-16 Phase 3：首个范围伤害 archetype + 专属慢重击 + 6 属性卡 + 4 道具 ——
+  // 焚天火珠是全游戏第一把会炸的武器：之前近战整圈横扫、远程全是直线单体。
+  // 溅射字段是这张表里唯二的新字段（splashRadius / projectileLife），只有它填 ——
+  // 其余 10 把武器不填，武器侧回落 2.5 秒默认寿命，旧路径一字不变。
+  var specPh3 = [
+    // id, type, star, exclusive, cooldown, damage, range, pierce, projSpeed, knockback
+    ['fire_orb',     'ranged', 1, false, 1.40, 24, 0,  0, 460, 40],
+    ['blood_hammer', 'melee',  3, true,  1.50, 45, 58, 1, 0,   260]
+  ];
+  var badPh3 = [];
+  for (var qPh3 = 0; qPh3 < specPh3.length; qPh3++) {
+    var rowPh3 = specPh3[qPh3];
+    var wPh3 = Game.WEAPONS[rowPh3[0]];
+    if (!wPh3) { badPh3.push(rowPh3[0] + '(缺)'); continue; }
+    if (wPh3.type !== rowPh3[1]) badPh3.push(rowPh3[0] + '.type');
+    if (wPh3.star !== rowPh3[2]) badPh3.push(rowPh3[0] + '.star');
+    if (!!wPh3.exclusive !== rowPh3[3]) badPh3.push(rowPh3[0] + '.exclusive');
+    if (wPh3.cooldown !== rowPh3[4]) badPh3.push(rowPh3[0] + '.cd=' + wPh3.cooldown);
+    if (wPh3.damage !== rowPh3[5]) badPh3.push(rowPh3[0] + '.dmg=' + wPh3.damage);
+    if (wPh3.range !== rowPh3[6]) badPh3.push(rowPh3[0] + '.range=' + wPh3.range);
+    if (wPh3.pierce !== rowPh3[7]) badPh3.push(rowPh3[0] + '.pierce=' + wPh3.pierce);
+    if (wPh3.projectileSpeed !== rowPh3[8]) badPh3.push(rowPh3[0] + '.spd=' + wPh3.projectileSpeed);
+    if (wPh3.knockback !== rowPh3[9]) badPh3.push(rowPh3[0] + '.kb=' + wPh3.knockback);
+    if (typeof wPh3.color !== 'string' || wPh3.color.charAt(0) !== '#') badPh3.push(rowPh3[0] + '.color');
+    if (!wPh3.desc) badPh3.push(rowPh3[0] + '.desc');
+  }
+  assert(badPh3.length === 0,
+         'Phase 3 新增 2 把武器的字段与数值一致（坏: ' + badPh3.join(',') + '）');
+
+  // 溅射是唯一的新机制，三个字段级守卫
+  assert(Game.WEAPONS.fire_orb.splashRadius === 84 && Game.WEAPONS.fire_orb.projectileLife === 1.2,
+         '焚天火珠溅射半径 84 / 弹体寿命 1.2（落点 = 抛掷落点，不飞穿整张图）');
+  assert(Object.keys(Game.WEAPONS).filter(function (k) {
+          return Game.WEAPONS[k].splashRadius > 0;
+        }).join(',') === 'fire_orb',
+         '只有焚天火珠有溅射（其余武器 splash=0，S.explode 直接不触发）');
+  assert(Game.WEAPONS.pistol.projectileLife === undefined &&
+         Game.WEAPONS.pistol.splashRadius === undefined,
+         '没填溅射字段的旧武器不产生新字段（默认 2.5 秒寿命一字不变）');
+  assert(Game.CONST.SPLASH_FALLOFF === 0.5,
+         '溅射衰减 0.5（机制常数，走系数不进 WEAPONS 表）');
+  assert(Game.WEAPONS.fire_orb.cooldown >= 2 * Game.WEAPONS.pistol.cooldown,
+         '焚天火珠 CD 1.40 是手枪 0.55 的两倍以上：范围伤害用节奏换，不是白送');
+  assert(Game.WEAPONS.blood_hammer.pierce === 1,
+         '血月重锤是横扫，pierce 填 1（_meleeAttack 不读 pierce，填别的就是死数据）');
+  var orbDpsPh3 = effDps('fire_orb');
+  assert(orbDpsPh3 <= pistolDpsPh2 * 1.3,
+         '焚天火珠 DPS ' + orbDpsPh3.toFixed(2) + ' 没越出手枪 ' + pistolDpsPh2.toFixed(2) +
+         ' 的一档（上限 ' + (pistolDpsPh2 * 1.3).toFixed(2) + '）');
+  assert(!Game.WEAPONS.fire_orb.exclusive && Game.WEAPONS.blood_hammer.exclusive,
+         '焚天火珠进普通池（非专属），血月重锤只从 Boss 奖励出（3 星专属）');
+
+  // 属性卡：6 个只有道具入口的属性轴补上入口，并开出第一张 legend 卡
+  var specUpPh3 = [
+    // label, rarity, key, value   （多键卡拆成两行，照 spec61 的写法）
+    ['玄铁盾纹', 'rare', 'shieldMax', 30],
+    ['破空一击', 'rare', 'critMult', 0.10],
+    ['春晖诀', 'rare', 'healingPower', 0.12],
+    ['汲血之刺', 'epic', 'lifesteal', 0.012],
+    ['噬命钟摆', 'epic', 'lifeOnKillPct', 0.006],
+    ['赤月战意', 'legend', 'damage', 0.20],
+    ['赤月战意', 'legend', 'attackSpeed', 0.12]
+  ];
+  var badUpPh3 = [];
+  for (var qUpPh3 = 0; qUpPh3 < specUpPh3.length; qUpPh3++) {
+    var rowUpPh3 = specUpPh3[qUpPh3];
+    var uPh3 = null;
+    for (var iUpPh3 = 0; iUpPh3 < Game.UPGRADES.length; iUpPh3++) {
+      if (Game.UPGRADES[iUpPh3].label === rowUpPh3[0]) uPh3 = Game.UPGRADES[iUpPh3];
+    }
+    if (!uPh3) { badUpPh3.push(rowUpPh3[0] + '(缺)'); continue; }
+    if (uPh3.rarity !== rowUpPh3[1]) badUpPh3.push(uPh3.label + '.rarity=' + uPh3.rarity);
+    if (uPh3.apply[rowUpPh3[2]] !== rowUpPh3[3])
+      badUpPh3.push(uPh3.label + '.' + rowUpPh3[2] + '=' + uPh3.apply[rowUpPh3[2]]);
+    if (!uPh3.desc) badUpPh3.push(uPh3.label + '.desc');
+  }
+  assert(badUpPh3.length === 0,
+         'Phase 3 新增 6 张属性卡的稀有度与数值一致（坏: ' + badUpPh3.join(',') + '）');
+
+  // 这 5 个轴此前只能从道具拿（暴击伤害/治疗强度/吸血/护盾/击杀回血）
+  var upUsedPh3 = {};
+  for (var iUpPh4 = 0; iUpPh4 < Game.UPGRADES.length; iUpPh4++) {
+    var apPh3 = Game.UPGRADES[iUpPh4].apply;
+    for (var kUpPh3 in apPh3) upUsedPh3[kUpPh3] = true;
+  }
+  var noUpEntryPh3 = ['critMult', 'healingPower', 'lifesteal', 'shieldMax', 'lifeOnKillPct']
+    .filter(function (k) { return !upUsedPh3[k]; });
+  assert(noUpEntryPh3.length === 0,
+         '暴击伤害/治疗强度/吸血/护盾/击杀回血都有属性卡入口了（缺: ' + noUpEntryPh3.join(',') + '）');
+
+  // legend 卡只有一张，且确实是那张；label 同时是图鉴 key，改名字等于新增一条
+  var legUpPh3 = Game.UPGRADES.filter(function (u) { return u.rarity === 'legend'; });
+  assert(legUpPh3.length === 1 && legUpPh3[0].label === '赤月战意',
+         '全游戏只有 1 张 legend 卡（实 ' + legUpPh3.length + '：' +
+         legUpPh3.map(function (u) { return u.label; }).join(',') + '）');
+  // ⚠ rollLevelUpChoices 对 UPGRADES 不做稀有度过滤（每张 w:1 等权），所以 legend 卡
+  // 也会从**普通**升级三选一里出。稀有度过滤唯一的定义处是 bossRewardChoices。
+  // 这条把现状钉死：想给普通池加稀有度门槛时它会先红。
+  var bossPoolPh3 = Game.UPGRADES.filter(function (u) {
+    return u.rarity === 'epic' || u.rarity === 'legend';
+  });
+  assert(bossPoolPh3.length === epicUp61 && bossPoolPh3.length >= 3,
+         'Boss 奖励池的属性卡候选 ' + bossPoolPh3.length + ' 张（含 legend），凑得出三选一');
+
+  // 道具：4 件新件 + 第二件 legend 道具（healing 标记守住「回血被砍两轮」的护栏）
+  var specItPh3 = [
+    ['iron_vigor', 'common', 'maxHp', 10],
+    ['iron_vigor', 'common', 'speed', 0.04],
+    ['jade_shield', 'rare', 'shieldMax', 20],
+    ['jade_shield', 'rare', 'armor', 1],
+    ['storm_core', 'epic', 'attackSpeed', 0.15],
+    ['storm_core', 'epic', 'damage', 0.05],
+    ['blood_pact', 'legend', 'lifeOnKillPct', 0.01],
+    ['blood_pact', 'legend', 'lifesteal', 0.02]
+  ];
+  var badItPh3 = [];
+  for (var qItPh3 = 0; qItPh3 < specItPh3.length; qItPh3++) {
+    var rowItPh3 = specItPh3[qItPh3];
+    var itPh3 = Game.ITEMS[rowItPh3[0]];
+    if (!itPh3) { badItPh3.push(rowItPh3[0] + '(缺)'); continue; }
+    if (itPh3.rarity !== rowItPh3[1]) badItPh3.push(rowItPh3[0] + '.rarity=' + itPh3.rarity);
+    if (itPh3.stat[rowItPh3[2]] !== rowItPh3[3])
+      badItPh3.push(rowItPh3[0] + '.' + rowItPh3[2] + '=' + itPh3.stat[rowItPh3[2]]);
+    if (!itPh3.desc) badItPh3.push(rowItPh3[0] + '.desc');
+  }
+  assert(badItPh3.length === 0,
+         'Phase 3 新增 4 件道具的稀有度与 stat 与文案一致（坏: ' + badItPh3.join(',') + '）');
+  assert(Game.ITEMS.blood_pact.healing === true,
+         '血誓之环标了 healing（会吃 HEAL_ITEM_WEIGHT 降权，不标就绕开回血削权）');
+  // desc 是写死文案，stat 与文案必须同步
+  assert(Game.ITEMS.blood_pact.desc.indexOf('1.0%') > -1 &&
+         Game.ITEMS.blood_pact.desc.indexOf('2%') > -1,
+         '血誓之环文案与 stat 同步（1.0% 击杀回血 / 2% 吸血）');
+
+  /* ㉗ 溅射行为 —— 焚天火珠的范围伤害结算 */
+
+  // ① 接线：def.splashRadius → 弹体 splash。这条断了，武器表里填的半径是死数据
+  var pPh3 = new Game.Player('archer');
+  pPh3.weapons = [Game.createWeapon('fire_orb', 1)];
+  pPh3.stats.critChance = 0;                 // 去掉暴击方差，伤害可精确断言
+  var stPh3 = Game.Systems.createState('campaign', 'archer', 888001);
+  Game.state = stPh3; stPh3.player = pPh3; stPh3.enemies = []; stPh3.projectiles = [];
+  var ePh3 = new Game.Enemy('zombie', 0, 100, 1);
+  ePh3.hp = 1e9; stPh3.enemies.push(ePh3);
+  pPh3.weapons[0].cooldownRemaining = 0;
+  pPh3.weapons[0].update(0.016, pPh3, stPh3);
+  var orbPh3 = stPh3.projectiles[0];
+  assert(orbPh3 && orbPh3.splash === 84 && orbPh3.life === 1.2 &&
+         orbPh3.type === 'orb' && orbPh3.knockback === 40,
+         '焚天火珠的弹体带上 splash=84 / life=1.2 / type=orb / 击退 40（溅射链路接通）');
+  // 伤害走普通口径：表值 × 远程系数 × 角色系数，与手枪同一套
+  var orbExpPh3 = Game.WEAPONS.fire_orb.damage * Game.CONST.RANGED_DMG_SCALE * pPh3.stats.damage;
+  assert(Math.abs(orbPh3.damage - orbExpPh3) < 1e-6,
+         '焚天火珠弹体伤害 = 表值 24 × 远程系数 × 角色系数（' + orbPh3.damage.toFixed(2) +
+         ' = ' + orbExpPh3.toFixed(2) + '），没走单独口径');
+
+  // ② 判定：主目标全额、圈内其余按 0.5 衰减、圈外不碰
+  var stSp = Game.Systems.createState('campaign', 'archer', 888002);
+  Game.state = stSp;
+  var pSp = new Game.Player('archer');
+  pSp.stats.critChance = 0;
+  stSp.player = pSp;
+  stSp.enemies = [];
+  stSp.projectiles = [];
+  var BASE = 100, R = 84, HP0 = 1e9;      // HP0 是「不死血」；算掉血用它减，不是用 BASE
+  var mkSp = function (dx) {
+    var e = new Game.Enemy('zombie', dx, 0, 1);
+    e.hp = HP0; e.knockbackX = 0; e.knockbackY = 0;
+    stSp.enemies.push(e);
+    return e;
+  };
+  // 三只怪摆成一条线：正中 = 主目标，60px 处 = 圈内邻居，300px 处 = 圈外
+  var midSp = mkSp(0), inSp = mkSp(60), outSp = mkSp(300);
+  stSp.projectiles.push(new Game.Projectile({
+    x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: BASE, crit: false, fromPlayer: true,
+    life: 0.5, pierce: 0, knockback: 200, splash: R, color: '#e0512f', owner: pSp, type: 'orb'
+  }));
+  // dt 不用等到寿命到：正中那只就在弹体上，pierce 0 → 命中即耗尽 → 当场炸在落点。
+  // 寿命到 / 飞出地图那个消亡点单独测，见 ⑤。
+  Game.Systems.updateProjectiles(stSp, 0.01);
+  var gotSp = { mid: HP0 - midSp.hp, in: HP0 - inSp.hp, out: HP0 - outSp.hp };
+  assert(Math.abs(gotSp.mid - BASE) < 1e-6,
+         '溅射主目标吃全额（' + gotSp.mid.toFixed(2) + '），不叠一次衰减份');
+  assert(Math.abs(gotSp.in - BASE * Game.CONST.SPLASH_FALLOFF) < 1e-6,
+         '圈内其余敌人吃 damage × SPLASH_FALLOFF（' + gotSp.in.toFixed(2) + '）');
+  assert(gotSp.out === 0, '圈外敌人不吃溅射（' + gotSp.out.toFixed(2) + '）');
+  // 溅射击退同样乘衰减系数，沿落点→敌人方向推开
+  assert(Math.abs(inSp.knockbackX - 200 * Game.CONST.SPLASH_FALLOFF) < 1e-6 &&
+         Math.abs(inSp.knockbackY) < 1e-6,
+         '溅射击退乘同一衰减系数并按方向推开（' + inSp.knockbackX.toFixed(1) + '）');
+
+  // ③ 溅射伤害吃吸血 + 计入伤害统计（否则会「打了一群只回一口血」）
+  var stLf = Game.Systems.createState('campaign', 'archer', 888003);
+  Game.state = stLf;
+  var pLf = new Game.Player('archer');
+  pLf.stats.critChance = 0;
+  pLf.stats.lifesteal = 0.5;
+  pLf.stats.hp = 10;
+  pLf.stats.maxHp = 100;
+  stLf.player = pLf;
+  stLf.enemies = [];
+  stLf.projectiles = [];
+  var fLf = new Game.Enemy('zombie', 40, 0, 1);
+  fLf.hp = 1e9; stLf.enemies.push(fLf);
+  stLf.projectiles.push(new Game.Projectile({
+    x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: 100, crit: false, fromPlayer: true,
+    life: 0.5, pierce: 0, knockback: 0, splash: 84, color: '#e0512f', owner: pLf, type: 'orb'
+  }));
+  var dd0Lf = pLf.damageDealt;
+  // dt 1.0 远超 life 0.5：让弹体落空、在落点炸 —— 这条测的是「没打在谁身上」的
+  // 那半条路径（命中即炸见 ② / ④）。怪的 40px 在溅射半径 84 内、但不在弹体判定点上。
+  Game.Systems.updateProjectiles(stLf, 1.0);
+  assert(Math.abs(pLf.damageDealt - (dd0Lf + 50)) < 1e-6,
+         '溅射伤害计入伤害统计 +' + (pLf.damageDealt - dd0Lf).toFixed(2));
+  assert(Math.abs(pLf.stats.hp - 35) < 1e-6,
+         '溅射伤害吃吸血（+50×0.5 = 25，实 ' + (pLf.stats.hp - 10).toFixed(2) + '）');
+
+  // ④ 命中耗尽穿透时 explode 被调一次；p.exploded 防重入（同一个消亡点被调两次不能结算两遍）
+  var stDp = Game.Systems.createState('campaign', 'archer', 888004);
+  Game.state = stDp;
+  var pDp = new Game.Player('archer');
+  pDp.stats.critChance = 0;
+  stDp.player = pDp;
+  stDp.enemies = [];
+  stDp.projectiles = [];
+  var tDp = new Game.Enemy('zombie', 0, 0, 1);      // 就在弹体上 → 命中耗尽穿透
+  tDp.hp = 1e9;
+  var nDp = new Game.Enemy('zombie', 0, 30, 1);     // 圈内邻居 → 只该吃溅射份
+  nDp.hp = 1e9;
+  stDp.enemies.push(tDp, nDp);
+  var pdp = new Game.Projectile({
+    x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: 100, crit: false, fromPlayer: true,
+    life: 0.5, pierce: 0, knockback: 0, splash: 84, color: '#e0512f', owner: pDp, type: 'orb'
+  });
+  stDp.projectiles.push(pdp);
+  Game.Systems.updateProjectiles(stDp, 0.01);
+  assert(pdp.exploded === true && pdp.killedBy === tDp.uid,
+         '命中耗尽穿透时 explode 置位并记下凶手 uid（跳过它靠这个，不是靠 e.dead）');
+  assert(Math.abs((1e9 - tDp.hp) - 100) < 1e-6,
+         '主目标只吃一次全额（' + (1e9 - tDp.hp).toFixed(2) + '），溅射没再补一刀半');
+  assert(Math.abs((1e9 - nDp.hp) - 50) < 1e-6,
+         '圈内邻居吃溅射份（' + (1e9 - nDp.hp).toFixed(2) + '）');
+  var hpDp1 = nDp.hp;
+  Game.Systems.explode(stDp, pdp);            // 同一个消亡点被调第二次
+  assert(nDp.hp === hpDp1, 'p.exploded 防重入：第二次调用不再结算');
+
+  // ⑤ 落空也会炸：寿命到 / 飞出地图 → 落点爆轰，killedBy 仍是 null
+  var stLo = Game.Systems.createState('campaign', 'archer', 888005);
+  Game.state = stLo;
+  var pLo = new Game.Player('archer');
+  pLo.stats.critChance = 0;
+  stLo.player = pLo;
+  stLo.enemies = [];
+  stLo.projectiles = [];
+  var eLo = new Game.Enemy('zombie', 40, 0, 1);
+  eLo.hp = 1e9; stLo.enemies.push(eLo);
+  var plo = new Game.Projectile({
+    x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: 100, crit: false, fromPlayer: true,
+    life: 0.5, pierce: 0, knockback: 0, splash: 84, color: '#e0512f', owner: pLo, type: 'orb'
+  });
+  stLo.projectiles.push(plo);
+  Game.Systems.updateProjectiles(stLo, 1.0);   // 远超 life 0.5
+  assert(stLo.projectiles.length === 0, '寿命到后弹体被清除');
+  assert(plo.exploded === true && plo.killedBy === null,
+         '落空也炸：exploded 置位且 killedBy 仍为 null（没打在谁身上）');
+  assert(Math.abs((1e9 - eLo.hp) - 50) < 1e-6,
+         '落点爆轰照样结算圈内伤害（' + (1e9 - eLo.hp).toFixed(2) + '）');
+
+  // ⑥ boom 特效进数组、绘制不抛错（该分支必须先切回 source-over）
+  Game.Renderer.effects.length = 0;
+  Game.FX.boom(100, 100, 84, '#e0512f');
+  var boomsPh3 = Game.Renderer.effects.filter(function (f) { return f.type === 'boom'; });
+  assert(boomsPh3.length === 1, 'FX.boom 生成一个 boom 特效');
+  assert(boomsPh3[0].range === 84 && boomsPh3[0].color === '#e0512f',
+         'boom 特效带半径与颜色（半径 = 判定圈，画面与命中范围一致）');
+  Game.Renderer.render(stLo, 0.016);           // 完整渲染一遍，boom 分支必须能画
+
+  // ⑦ 旧武器不吃这条链路：无溅射的弹体消亡不产生爆轰
+  Game.Renderer.effects.length = 0;
+  var pNo = new Game.Player('archer');
+  pNo.weapons = [Game.createWeapon('pistol', 1)];
+  pNo.stats.critChance = 0;
+  var stNo = Game.Systems.createState('campaign', 'archer', 888006);
+  Game.state = stNo; stNo.player = pNo; stNo.enemies = []; stNo.projectiles = [];
+  var eNo = new Game.Enemy('zombie', 0, 300, 1);
+  eNo.hp = 1e9; stNo.enemies.push(eNo);
+  pNo.weapons[0].cooldownRemaining = 0;
+  pNo.weapons[0].update(0.016, pNo, stNo);
+  var oldProj = stNo.projectiles[0];
+  assert(oldProj.splash === 0 && oldProj.life === 2.5 && oldProj.type === 'bullet',
+         '旧武器弹体走原路径（splash=0 / life=2.5 / bullet）');
+  Game.Systems.updateProjectiles(stNo, 3.0);   // 寿命到 + 飞出地图，两个消亡点都过一遍
+  assert(Game.Renderer.effects.filter(function (f) { return f.type === 'boom'; }).length === 0,
+         '旧武器弹体消亡不产生爆轰');
 
   // 角色起始武器按身份重配 —— 2026-09-27 用户点名「目前全是剑和枪不符合人物身份」：
   // 之前 11 个角色只有铁剑 / 手枪两种开局武器。
@@ -2090,7 +2386,7 @@ try {
   var commonPh2 = Object.keys(Game.WEAPONS).filter(function (k) {
     return !Game.WEAPONS[k].exclusive;
   });
-  assert(commonPh2.length === 7, '非专属武器 7 把（' + commonPh2.length + '）');
+  assert(commonPh2.length === 8, '非专属武器 8 把（' + commonPh2.length + '）');
   assert(commonPh2.indexOf('blood_scythe') < 0, '血月镰是专属，不进普通池与商店');
 
   // PROJ_SHAPE / MELEE_STYLE 都是模块私有表，只能测效果：射出什么弹、发不发 FX.slash。
@@ -2618,7 +2914,7 @@ try {
   assert(Game.CONST.HEAL_ITEM_WEIGHT === 0.08, '回血卡权重系数集中在 CONST');
   var healIds95 = [];
   for (var i95 in Game.ITEMS) if (Game.ITEMS[i95].healing) healIds95.push(i95);
-  assert(healIds95.length === 6, '6 件回血道具被标记（' + healIds95.length + '）');
+  assert(healIds95.length === 7, '7 件回血道具被标记（' + healIds95.length + '）');
   // 带吸血 / 回血的件必须标 healing，否则绕开 HEAL_ITEM_WEIGHT 降权，
   // 「回血被砍两轮」的调参结果就会被新道具悄悄绕过。
   var leak95 = [];
@@ -3487,7 +3783,7 @@ try {
     iron_sword: '_drawSword', spear: '_drawSpear', moon_sword: '_drawGreatsword',
     pistol: '_drawPistol', jade_crossbow: '_drawCrossbow',
     wood_bow: '_drawBow', warhammer: '_drawHammer', temple_staff: '_drawStaff',
-    blood_scythe: '_drawScythe',
+    blood_scythe: '_drawScythe', fire_orb: '_drawOrb', blood_hammer: '_drawMaul',
     // 贯石弩直接复用弩的造型（只靠颜色分）—— 它本来就是弩，换个造型就是假的。
     heavy_crossbow: '_drawCrossbow'
   };
@@ -3497,7 +3793,8 @@ try {
 
   var hits21d = {}, origIcon21d = {};
   var iconFns21d = ['_drawSword', '_drawGreatsword', '_drawSpear', '_drawPistol', '_drawCrossbow',
-                    '_drawBow', '_drawHammer', '_drawStaff', '_drawScythe'];
+                    '_drawBow', '_drawHammer', '_drawStaff', '_drawScythe',
+                    '_drawOrb', '_drawMaul'];
   iconFns21d.forEach(function (fn) {
     hits21d[fn] = 0;
     origIcon21d[fn] = Game.Renderer[fn];
@@ -5106,10 +5403,10 @@ try {
   assert(heroIds5.length === 11, '英雄栏 11 位（' + heroIds5.length + '）');
   assert(monIds5.length === 6 && bosIds5.length === 4,
          '怪物栏 6 / BOSS 栏 4（' + monIds5.length + '/' + bosIds5.length + '）');
-  assert(wpnIds5.length === 10, '装备栏 10 把（' + wpnIds5.length + '）');
-  assert(cardIds5.length === 29,
-         '卡组图鉴 29 张：11 属性 + 1 通用强化 + 17 道具（' + cardIds5.length + '）');
-  assert(CX.total().total === 60, '全部条目 60（' + CX.total().total + '）');
+  assert(wpnIds5.length === 12, '装备栏 12 把（' + wpnIds5.length + '）');
+  assert(cardIds5.length === 39,
+         '卡组图鉴 39 张：17 属性 + 1 通用强化 + 21 道具（' + cardIds5.length + '）');
+  assert(CX.total().total === 72, '全部条目 72（' + CX.total().total + '）');
 
   var missHero = Game.CHARACTERS.filter(function (c) { return heroIds5.indexOf(c.id) < 0; });
   var missWpn = Object.keys(Game.WEAPONS).filter(function (k) { return wpnIds5.indexOf(k) < 0; });
@@ -5166,8 +5463,8 @@ try {
     CX.mark('card', e.key) || unmarked5++;
   });
   assert(unmarked5 === 0, '卡组图鉴的条目 key 与登记 key 完全对齐');
-  assert(CX.progress('card').got === 29,
-         '逐张登记后收满 29 张（28 张登记 + 1 张通用强化天生收录）');
+  assert(CX.progress('card').got === 39,
+         '逐张登记后收满 39 张（38 张登记 + 1 张通用强化天生收录）');
 
   var gen5 = CX.all('card').filter(function (e) { return e.key === 'weaponUpgrade'; })[0];
   assert(!!gen5 && gen5.always === true, '武器强化卡没有 id，标记为天生已收录');
@@ -5225,7 +5522,7 @@ try {
   assert(cxHtml.indexOf('<button class="cx-tab on"') > 0, '当前页签高亮');
   assert(cxHtml.indexOf('BOSS图鉴') > 0, '内容区标题用的是完整名字');
   assert(cxHtml.indexOf('收录 0 / 4') > 0, '显示本页收录进度');
-  assert(cxHtml.indexOf('全部收录 1 / 60') > 0,
+  assert(cxHtml.indexOf('全部收录 1 / 72') > 0,
          '底部整体进度：清空后那张通用强化卡仍算已收录');
 
   // 未收录：名字盖成 ??，不泄露是什么
@@ -5254,7 +5551,7 @@ try {
   assert(fullHtml.indexOf('赤月年兽') > 0 && fullHtml.indexOf('★ 已击败') > 0,
          '已收录显示真名，打过的那只亮星');
   assert(fullHtml.indexOf('收录 4 / 4') > 0, '本页进度收满');
-  assert(fullHtml.indexOf('全部收录 16 / 60') > 0,
+  assert(fullHtml.indexOf('全部收录 16 / 72') > 0,
          '整体进度 = 11 英雄 + 4 BOSS + 1 张通用强化卡');
   assert(fullHtml.indexOf('★ 已击败') < fullHtml.indexOf('赤月年兽') + 200, '打星只加在打过的那只身上');
 

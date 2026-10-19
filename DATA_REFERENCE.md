@@ -1,7 +1,7 @@
 # 赤月猎场 · 数据字典
 
 全部静态数据集中在 [js/config.js](js/config.js)（唯一配置源）。本文件按表分类列出所有条目与字段，
-加新角色 / 武器 / 怪 / 道具 / 卡时对着改即可。数值截至 BUILD `v260926.9`。
+加新角色 / 武器 / 怪 / 道具 / 卡时对着改即可。数值截至 BUILD `v261016.1`。
 
 ---
 
@@ -11,13 +11,13 @@
 |---|---|---|---|
 | [1](#1-角色) | 角色 + 字段说明 | 11 | config.js:88 |
 | [2](#2-角色被动) | 被动技能 + 5 个挂点 | 11 | config.js:363 |
-| [3](#3-武器) | 武器 | 10 | config.js:516 |
+| [3](#3-武器) | 武器 | 12 | config.js:516 |
 | [4](#4-敌人) | 小怪 + Boss | 10 | config.js:551 |
 | [5](#5-稀有度) | 稀有度 | 4 | config.js:78 |
-| [6](#6-道具) | 被动道具 | 17 | config.js:669 |
-| [7](#7-属性卡) | 属性强化卡 | 11 | config.js:694 |
+| [6](#6-道具) | 被动道具 | 21 | config.js:669 |
+| [7](#7-属性卡) | 属性强化卡 | 17 | config.js:694 |
 | [8](#8-卡三选一--商店卡) | 卡的四种 kind + 三个出货口 | — | systems.js |
-| [9](#9-全局常量与调参系数) | CONST | 20 | config.js:14 |
+| [9](#9-全局常量与调参系数) | CONST | 21 | config.js:14 |
 | [10](#10-掉落调参) | DROP | 9 | config.js:654 |
 | [11](#11-公式表) | 波次 / 成长 / 定价 / 伤害算式 | — | 各处 |
 | [12](#12-属性键) | 可写进 stat 的属性键 | 12 | entities.js:109 |
@@ -114,36 +114,49 @@ arc,              // 挥砍弧度（★ 已作废，只留数据；横扫宽度�
 pierce,           // 穿透数
 projectileSpeed,  // 远程弹速，近战填 0
 knockback, color, desc,
-exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与商店自动跳过
+exclusive: true,  // 可选。Boss 专属：只从 Boss 奖励出，普通池与商店自动跳过
+splashRadius,     // 可选。> 0 = 弹体消亡时在落点炸一圈（唯一新机制，只有焚天火珠用）
+projectileLife    // 可选。弹体寿命秒数，默认 2.5（没填的武器行为一字不变）
 ```
 
-| id | 名称 | 类型 | 星 | CD | 伤害 | 射程 | 穿透 | 弹速 | 击退 | 专属 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| iron_sword | 铁剑 | melee | 1 | 0.70 | 14 | 66 | 1 | — | 60 | |
-| spear | 龙胆枪 | melee | 1 | 0.85 | 20 | 130 | 4 | — | 90 | |
-| pistol | 手枪 | ranged | 1 | 0.55 | 10 | — | 0 | 620 | 20 | |
-| wood_bow | 青木弓 | ranged | 1 | 0.62 | 11 | — | 0 | 580 | 20 | |
-| heavy_crossbow | 贯石弩 | ranged | 1 | 0.95 | 22 | — | 4 | 520 | 10 | |
-| warhammer | 碎岩战斧 | melee | 1 | 1.10 | 26 | 50 | 1 | — | 170 | |
-| temple_staff | 玄铁锡杖 | melee | 1 | 0.82 | 16 | 86 | 1 | — | 90 | |
-| moon_sword | 赤月斩 | melee | 3 | 0.50 | 30 | 86 | 3 | — | 140 | ✓ |
-| jade_crossbow | 青玉连弩 | ranged | 3 | 0.34 | 9 | — | 2 | 780 | 10 | ✓ |
-| blood_scythe | 血月镰 | melee | 3 | 0.58 | 28 | 100 | 1 | — | 120 | ✓ |
+| id | 名称 | 类型 | 星 | CD | 伤害 | 射程 | 穿透 | 弹速 | 击退 | 专属 | 溅射 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| iron_sword | 铁剑 | melee | 1 | 0.70 | 14 | 66 | 1 | — | 60 | | |
+| spear | 龙胆枪 | melee | 1 | 0.85 | 20 | 130 | 4 | — | 90 | | |
+| pistol | 手枪 | ranged | 1 | 0.55 | 10 | — | 0 | 620 | 20 | | |
+| wood_bow | 青木弓 | ranged | 1 | 0.62 | 11 | — | 0 | 580 | 20 | | |
+| heavy_crossbow | 贯石弩 | ranged | 1 | 0.95 | 22 | — | 4 | 520 | 10 | | |
+| warhammer | 碎岩战斧 | melee | 1 | 1.10 | 26 | 50 | 1 | — | 170 | | |
+| temple_staff | 玄铁锡杖 | melee | 1 | 0.82 | 16 | 86 | 1 | — | 90 | | |
+| moon_sword | 赤月斩 | melee | 3 | 0.50 | 30 | 86 | 3 | — | 140 | ✓ | |
+| jade_crossbow | 青玉连弩 | ranged | 3 | 0.34 | 9 | — | 2 | 780 | 10 | ✓ | |
+| blood_scythe | 血月镰 | melee | 3 | 0.58 | 28 | 100 | 1 | — | 120 | ✓ | |
+| fire_orb | 焚天火珠 | ranged | 1 | 1.40 | 24 | — | 0 | 460 | 40 | | **84** |
+| blood_hammer | 血月重锤 | melee | 3 | 1.50 | 45 | 58 | 1 | — | 260 | ✓ | |
+
+- **溅射（2026-10-16 新增，只有焚天火珠用）**：`splashRadius` 是弹体消亡时炸开的半径，
+  `S.explode` 让圈内**其余**敌人吃 `弹体伤害 × CONST.SPLASH_FALLOFF`（0.5），击退同乘。
+  主目标已在普通命中路径吃过全额，靠 `p.killedBy` 记下凶手 uid 跳过它，否则会白补一刀半。
+  命中耗尽穿透与寿命到 / 飞出地图两个消亡点都会炸，`p.exploded` 防重入。
+  溅射半径**归武器自己管**，衰减是机制常数走 CONST —— 将来第二把溅射武器共享同一口径。
+  `projectileLife = 1.2` 让玉珠在中程就炸（落点 = 抛掷落点），不飞穿整张图。
+  CD 1.40 是手枪 0.55 的 2.5 倍：范围伤害的代价付在节奏上，不是白送。
 
 - `Game.BOSS_EXCLUSIVE_CHANCE = 0.45`：Boss 奖励里出现专属武器的概率。
 - 武器等级倍率 `def.damage × (1 + 0.5 × (level - 1))`，上限 `MAX_WEAPON_LEVEL = 4`。
   **`star` 只用于图鉴标签显示**（`Codex` 的 `★★★`），开局武器一律 `createWeapon(id, 1, 0)`
   从 1 级起 —— 3 星专属的强度来自 `damage` 本体，不是星级。
-- **DPS 标尺**（`damage / cooldown`，远程已含 ×`RANGED_DMG_SCALE`）：
-  1 星近战对标龙胆枪 23.5、1 星远程对标手枪 10.9。新 1 星武器不超过对标值的 1.3 倍
-  （`test/smoke.js` 有断言守着），越级的强度留给 3 星专属。
+- **DPS 标尺（有效，含类型系数）**：龙胆枪 18.8、手枪 9.1。新 1 星武器不超过对标值的
+  1.3 倍（`test/smoke.js` 先断言标尺本身，再断言新武器，两个都红才算漏），
+  越级的强度留给 3 星专属。焚天火珠有效 DPS 8.57（24/1.4 × 0.5），在手枪标尺一档以内；
+  血月重锤 24.0 超过龙胆枪，是 3 星专属的刻意越级。
 - **横扫武器的 `pierce` 不作数**：`_meleeAttack` 循环整圈敌人、没有贯穿上限，
   只有 `_thrustAttack` 和远程弹体读 `pierce`。所以横扫武器一律填 `1`（铁剑的口径），
   填别的值就是又造一条「表里躺着但不生效」。
   ⚠ **遗留**：`moon_sword.pierce = 3` 是这条规则确立前留下的值，**不生效**，别按它算。
 - 弹体造型**不在表里**，按武器 id 派生：`weapons.js PROJ_SHAPE`。
-  `pistol → bullet`，`jade_crossbow` / `wood_bow` / `heavy_crossbow` → `arrow`。
-  没登记的远程武器回落 `bullet`。
+  `pistol → bullet`，`jade_crossbow` / `wood_bow` / `heavy_crossbow` → `arrow`，
+  `fire_orb → orb`。没登记的远程武器回落 `bullet`。
 - 近战**出手方式也不在表里**，按武器 id 派生：`weapons.js MELEE_STYLE`。
   `spear → _thrustAttack`（突刺走廊），没登记 = `_meleeAttack` 横扫扇形。
   走廊半宽 = 有效射程 × `THRUST_HALF`（0.12），是模块本地常量，同样不进表。
@@ -152,7 +165,8 @@ exclusive: true   // 可选。Boss 专属：只从 Boss 奖励出，普通池与
 - 环绕卫星的**图标造型也不在表里**，按武器 id 派生：`renderer.js ORBIT_ICON`。每把武器一套：
   `iron_sword → _drawSword`、`spear → _drawSpear`、`moon_sword → _drawGreatsword`、
   `pistol → _drawPistol`、`wood_bow → _drawBow`、`warhammer → _drawHammer`、
-  `temple_staff → _drawStaff`、`blood_scythe → _drawScythe`。
+  `temple_staff → _drawStaff`、`blood_scythe → _drawScythe`、`fire_orb → _drawOrb`、
+  `blood_hammer → _drawMaul`。
   **`jade_crossbow` 和 `heavy_crossbow` 共用 `_drawCrossbow`**，只靠 `color` 分 —— 它本来就是弩，
   换个造型就是假的。漏登记**不报错**，静默回落到 type 默认（近战画剑 / 远程画弩）——
   龙胆枪就这样顶着剑的造型出场过一整个阶段。
@@ -239,10 +253,10 @@ counter: 0.15      // 反伤比例（坦克），被命中时反弹该次伤害
 
 | key | 名称 | 主色 | 定价基线 | 在用条目数 |
 |---|---|---|---|---|
-| common | 普通 | `#d8d8d8` | 15 | 道具 3 · 卡 3 |
-| rare | 稀有 | `#4fa3ff` | 35 | 道具 6 · 卡 3 |
-| epic | 史诗 | `#b06bff` | 55 | 道具 7 · 卡 5 |
-| legend | 传奇 | `#ffcf5e` | 85 | 道具 1 · 卡 0 |
+| common | 普通 | `#d8d8d8` | 15 | 道具 4 · 卡 3 |
+| rare | 稀有 | `#4fa3ff` | 35 | 道具 7 · 卡 6 |
+| epic | 史诗 | `#b06bff` | 55 | 道具 8 · 卡 7 |
+| legend | 传奇 | `#ffcf5e` | 85 | 道具 2 · 卡 1 |
 
 商店里的武器和「武器强化」卡固定按 `rare` 定价。
 
@@ -278,6 +292,10 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | shadow_cloak | 疾影披风 | epic | 移动速度 +12%，暴击率 +5% | `speed: 0.12, critChance: 0.05` | |
 | bulwark_core | 玄武核心 | epic | 最大生命 +30，护甲 +3 | `maxHp: 30, armor: 3` | |
 | greedy_fang | 贪狼之牙 | epic | 命中回最大生命 0.4%，伤害的 0.8% 化生命 | `lifeOnHitPct: 0.004, lifesteal: 0.008` | ✓ |
+| iron_vigor | 精铁体魄 | common | 最大生命 +10，移动速度 +4% | `maxHp: 10, speed: 0.04` | |
+| jade_shield | 青玉神盾 | rare | 护盾上限 +20，护甲 +1 | `shieldMax: 20, armor: 1` | |
+| storm_core | 惊雷核心 | epic | 攻击速度 +15%，伤害 +5% | `attackSpeed: 0.15, damage: 0.05` | |
+| blood_pact | 血誓之环 | **legend** | 击杀回最大生命 1.0%，伤害的 2% 化生命 | `lifeOnKillPct: 0.01, lifesteal: 0.02` | ✓ |
 
 **`desc` 是写死文案** —— 改 `stat` 必须同步改 `desc`，否则面板写的和实际不一样。
 回血四项被砍过两轮（2026-09-26），基线是「每次事件回复最大生命的 0.x%」。
@@ -301,8 +319,24 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | 狂暴之刃 | epic | 伤害 +18% | `damage: 0.18` |
 | 疾风连击 | epic | 攻击速度 +18% | `attackSpeed: 0.18` |
 | 战神之躯 | epic | 护甲 +4 | `armor: 4` |
+| 玄铁盾纹 | rare | 护盾上限 +30 | `shieldMax: 30` |
+| 破空一击 | rare | 暴击伤害 +10% | `critMult: 0.10` |
+| 春晖诀 | rare | 治疗效果 +12% | `healingPower: 0.12` |
+| 汲血之刺 | epic | 造成伤害的 1.2% 化为生命 | `lifesteal: 0.012` |
+| 噬命钟摆 | epic | 每次击杀回复最大生命 0.6% | `lifeOnKillPct: 0.006` |
+| 赤月战意 | **legend** | 伤害 +20%，攻击速度 +12% | `damage: 0.20, attackSpeed: 0.12` |
 
 即时回血卡（急救包）**已下线** —— 治疗只来自角色被动与吸血，不由一张卡瞬间补齐。
+
+- `label` 同时是图鉴条目 key（`'upgrade:' + label`），**改名字等于新增一条**。
+- **UPGRADES 没有 `healing: true` 开关**，所以三张续航卡（春晖诀 / 汲血之刺 / 噬命钟摆）
+  进三选一池**不降权**。数值压在对应道具档附近（1.2% vs 噬魂之牙 1%），
+  比道具档更强一档，靠稀有度而不是降权控制出现率。
+- ⚠ **`rollLevelUpChoices` 对 UPGRADES 不做稀有度过滤**（每张 `w:1` 等权），
+  所以 `legend` 的赤月战意也会从**普通**升级三选一里出。
+  稀有度过滤唯一的定义处是 `bossRewardChoices`（只收 epic/legend）。
+  数值只比最强 epic（狂暴之刃 伤害 +18%）高一档，不是白送的强度；
+  `test/smoke.js` 有断言把这条现状钉死，想加门槛它会先红。
 
 ---
 
@@ -321,7 +355,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 | 出货口 | 位置 | 构成 |
 |---|---|---|
-| 升级三选一 | `systems.js:466 rollLevelUpChoices` | 全部属性卡（现 11）+ 全部道具（现 17）+（槽位未满）全部非专属武器（现 7）/（满）武器强化 |
+| 升级三选一 | `systems.js:466 rollLevelUpChoices` | 全部属性卡（现 17，**不按稀有度过滤**）+ 全部道具（现 21）+（槽位未满）全部非专属武器（现 8）/（满）武器强化 |
 | Boss 战利品 | `systems.js:500 bossRewardChoices` | **只收 epic/legend** + 武器强化 + 普通武器 + 按 45% 概率塞 1 把专属武器 |
 | 商店（固定 4 格） | `systems.js:636 rollShopItem` | 道具 50% / 武器 50%，道具按件均分、武器按把均分 |
 
@@ -361,6 +395,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | `PARTICLE_LOW / MID / HIGH` | 200 / 500 / 800 | 分档粒子上限 |
 | `LOW_HP_RATIO` | 0.3 | 濒死阈值 |
 | `HEAL_ITEM_WEIGHT` | 0.08 | 回血道具相对权重（0.28 → 0.15 → 0.08） |
+| `SPLASH_FALLOFF` | 0.5 | 溅射衰减：主目标之外的圈内敌人吃这个比例，击退同乘。**机制常数不是武器参数** —— 溅射半径才归武器自己管，衰减统一口径，将来第二把溅射武器共享 |
 
 国风调色板 `Game.PALETTE`（config.js:60）：outline / stone / stone2 / mortar / moss / moss2 / wood / woodDark / tile / lantern / gold / paper / jade / sky。
 
@@ -439,7 +474,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | `codex_v1` | 图鉴收录（lifetime 进度，`deleteSave` **不动它**） | storage.js:42 |
 
 - 游戏模式：`campaign`（20 波）/ `endless`（无尽），`Game.pendingMode` 在角色选择后写入。
-- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **60 条**（11 角色 + 6 怪 + 4 Boss + 10 武器 + 29 张卡）。总数是 `Codex.total()` 运行时从 config 表累加的，**没有写死在 codex.js 里**；写死的是 `test/smoke.js` 的断言（装备栏条目数 + 总数 + 两处 UI 进度文案 `全部收录 x / 60`）。记「见过」不记「拥有」。
+- 图鉴 `js/codex.js`：5 栏（英雄 / 怪物 / BOSS / 装备 / 卡组），共 **72 条**（11 角色 + 6 怪 + 4 Boss + 12 武器 + 39 张卡 = 17 属性卡 + 21 道具 + 1 武器强化）。总数是 `Codex.total()` 运行时从 config 表累加的，**没有写死在 codex.js 里**；写死的是 `test/smoke.js` 的断言（装备栏条目数 + 卡组条目数 + 总数 + 两处 UI 进度文案 `全部收录 x / 72`）。记「见过」不记「拥有」。
 - 纪录榜 `js/records.js`：`TOP_N = 10`。
 - **随机数一律走 `state.rng`**（`Game.mulberry32`，config.js:708）。刷新计划用 `hashSeed(seed + ':' + wave)` 绑定的独立 RNG，保证读档一致。用裸 `Math.random()` 会让存档不可复现。`pickBossType` 是纯查表，不消耗随机流。
 
@@ -457,7 +492,18 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | systems.js:62/68 | `isBossWave` / `pickBossType` | Boss 波与轮换 |
 | entities.js:432 | `BOSS_ATK_METHOD` | Boss 套路 → 方法名映射，**新套路必须登记**（缺省回落 `fan`） |
 | entities.js:460 起 | `_bossAtkFan/Charge/Ring/Spiral` | 各套路实现 |
-| weapons.js `PROJ_SHAPE` | 弹体造型按武器 id 派生，**漏登记回落 `bullet`**（弓/弩必须登记成 `arrow`） |
+| weapons.js `PROJ_SHAPE` | 弹体造型按武器 id 派生，**漏登记回落 `bullet`**（弓/弩必须登记成 `arrow`，`fire_orb` 是 `orb`） |
+| entities.js `Projectile` | `splash` / `killedBy` / `exploded` 三个字段。`splash > 0` 才有爆轰，其余弹体一字不变 |
+| weapons.js `_rangedAttack` | 弹体 `splash` 取 `def.splashRadius`（缺省 0）、`life` 取 `def.projectileLife`（缺省 2.5）。**默认值必须留在代码侧**，没填的武器行为不变 |
+| systems.js `S.explode` | 溅射结算本体：主目标靠 `p.killedBy` 跳过（已在普通命中路径吃过全额），其余圈内吃 `×SPLASH_FALLOFF`，
+  吸血 / 命中回血 / 击杀回血 / 伤害统计全走普通命中同一口径 —— 漏补任一项就是「打了一群只回一口血」 |
+| systems.js `updateProjectiles` | **两个消亡点都要调 `S.explode`**：寿命到 / 飞出地图（`killedBy` 仍是 null，落点爆轰）、
+  命中耗尽穿透（先记 `p.killedBy` 再炸）。`p.exploded` 防重入是保险，不是靠调用方记得住两件事 |
+| renderer.js `_drawOrbBody` | `fire_orb` 弹体画法（`type === 'orb'` 分支），不用 `lighter`、不用金色 |
+| renderer.js `boom` 分支 | `_drawEffects` 里的 `f.type === 'boom'`，**必须先 `ctx.globalCompositeOperation = 'source-over'`**
+  —— 该函数开头统一设了 `lighter`，不切回去橙红会被洗成白斑（talisman 分支是现成写法） |
+| renderer.js `Game.FX.boom` | 加 `boom(x, y, range, color)`。`range` 必须是武器的 `splashRadius` —— 画面里的圈要等于判定圈；
+  粒子走 `dust` 的土灰口径而不是 `spark` 的鎏金（金色火花是玩家特效专用） |
 | weapons.js `MELEE_STYLE` | 近战出手方式按武器 id 派生，**漏登记 = 走横扫**（想要突刺/回旋必须登记） |
 | weapons.js `THRUST_HALF` | 突刺走廊半宽比例（模块本地常量，不在表里） |
 | renderer.js `ORBIT_ICON` | 环绕卫星图标按武器 id 派生（**漏登记静默回落剑/弩**）。
@@ -542,14 +588,26 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 `commonWeaponIds()` 只排除 `exclusive`，非专属武器自动进升级池 + 商店 + Boss 奖励。
 商店武器权重是 `0.5 / 武器数` —— **多一把非专属武器会摊薄所有武器在商店的出现率**，
-加武器等于在调这个隐性的期望值。现非专属 7 把 → 每把 7.1%，2026-09-26 之前是 3 把 → 16.7%。
+加武器等于在调这个隐性的期望值。现非专属 8 把 → 每把 6.25%，之前是 7 把 → 7.1%，2026-09-26 之前是 3 把 → 16.7%。
 专属武器不摊薄（走 Boss 奖励的 45% 位），所以**想加武器又不想稀释普通池，就标 `exclusive`**。
 
+**加范围伤害武器**（第 2 把开始）
+在「加武器」之上还要补：
+1. `WEAPONS` 填 `splashRadius`（判定半径）与 `projectileLife`（落点距离，不填会飞穿整张图）
+2. `weapons.js PROJ_SHAPE` 登记弹体造型（复用 `orb` 即可，不用新写一个 `type`）
+3. **衰减系数不用改** —— 走 `CONST.SPLASH_FALLOFF`，是机制常数。想改衰减只动这一个数
+4. `systems.js S.explode` **不要复制一份** —— 已经通用，只读 `p.splash` / `p.killedBy` / `p.owner`
+5. 冷却要付代价：范围伤害不靠 CD 卡位就会白送（焚天火珠 CD 1.40 = 手枪的 2.5 倍）
+6. `test/smoke.js` 有一条「只有 X 把武器有溅射」的断言，加完要更新那个 id 串
+
 **加道具**：`ITEMS` 加一条即可，三个出货口自动收录。**`desc` 与 `stat` 同步改**。
+回血类记得标 `healing: true`，否则绕开 `HEAL_ITEM_WEIGHT` 降权。
 
-**加属性卡**：`UPGRADES` 加一条即可。注意 `bossRewardChoices` 只收 `epic/legend`。
+**加属性卡**：`UPGRADES` 加一条即可，键必须在 `Player._applyStatDelta` 白名单里。
+注意 **`rollLevelUpChoices` 不做稀有度过滤**，legend 卡也会从普通三选一里出（见第 7 章）。
+稀有度过滤只在 `bossRewardChoices`。
 
-**改完跑 `npm test`** —— 基线 1025 + 10 全绿。哪张表漏了登记点会立刻红。
+**改完跑 `npm test`** —— `smoke.js` 1066 条 + `preview-check.js` 10 条全绿。哪张表漏了登记点会立刻红。
 
 ---
 
