@@ -157,6 +157,9 @@ html, body {
 .ws-lv2 { border-color: rgba(79,163,255,0.75); box-shadow: 0 0 6px rgba(79,163,255,0.35); }
 .ws-lv3 { border-color: rgba(176,107,255,0.85); box-shadow: 0 0 8px rgba(176,107,255,0.45); }
 .ws-lv4 { border-color: var(--color-gold); box-shadow: 0 0 10px rgba(255,207,94,0.55); }
+/* lv5 才补的：ui.js 用 Math.min(level, MAX) 拼类名，没有这条 5★ 会静默落回
+   .ws 的默认灰边框 —— 满星反而看不出。用赤月红而不是更亮的金：金色已经是 lv4 的。 */
+.ws-lv5 { border-color: #ff5a4a; box-shadow: 0 0 12px rgba(255,90,74,0.7); }
 
 /* ===== 面板通用 ===== */
 .panel {
@@ -274,6 +277,17 @@ html, body {
   font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 1px;
 }
 .stats-wlvl { font-size: 11px; color: var(--color-gold); font-weight: 400; }
+/* 等级 + 出售按钮挤在右侧同一组里，不然 space-between 会把它们拉开 */
+.stats-wmeta { display: flex; align-items: center; gap: 6px; }
+/* 出售按钮复用 .btn.ghost 的透明风，但去掉 min-width:200px ——
+   侧栏只有 262px 宽，大号按钮放不下 */
+.stats-sell {
+  min-width: 0; padding: 2px 7px; font-size: 10px; font-weight: 600;
+  background: transparent; color: #ffb3a0;
+  border: 1px solid rgba(255,90,74,0.55); border-radius: 4px;
+  cursor: pointer; letter-spacing: 0.3px;
+}
+.stats-sell:hover { background: rgba(255,90,74,0.18); color: #ff5a4a; }
 .stats-wstat {
   display: flex; justify-content: space-between;
   gap: 6px;

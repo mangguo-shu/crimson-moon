@@ -246,12 +246,27 @@
     if (Game.state.levelUpsPending > 0) {
       // 连续升级：再roll
       S.rollLevelUpChoices(Game.state);
-      Game.UI.renderLevelUp(Game.state.levelUpChoices);
+      Game.UI.renderLevelUp(Game.state.levelUpChoices, null, Game.state);
     } else {
-      Game.state.screen = 'PLAYING';
-      Game.UI.showScreen('PLAYING');
-      G.saveGame(); // 升级选择完成自动存档
+      // choiceReturn：出售武器后选卡要回商店，不回战斗。用完即清，别污染下一次升级。
+      var back = Game.state.choiceReturn || 'PLAYING';
+      Game.state.choiceReturn = null;
+      Game.state.screen = back;
+      Game.UI.showScreen(back);
+      if (back === 'SHOP') Game.UI.renderShop(Game.state);
+      G.saveGame(); // 选择完成自动存档
     }
+  };
+
+  /** 商店出售：卖掉后立刻给 3 张武器卡选 1。侧栏的出售按钮只在 SHOP 屏渲染
+   *  （renderStats 每帧重算，进商店自动出现），这里再判一次屏防误触。 */
+  G.sellWeapon = function (index) {
+    if (!Game.state || Game.state.screen !== 'SHOP') return;
+    if (!S.sellWeapon(Game.state, index)) return;
+    Game.state.choiceReturn = 'SHOP';
+    S.rollSellChoices(Game.state);
+    Game.UI.renderLevelUp(Game.state.levelUpChoices, '🔪 出售成功！选一把新武器', Game.state);
+    Game.UI.showScreen('LEVEL_UP');
   };
 
   G.buyShop = function (idx) {
@@ -499,7 +514,7 @@
     if (!state || state.screen !== 'PLAYING') return;
     S.rollLevelUpChoices(state);
     state.screen = 'LEVEL_UP';
-    Game.UI.renderLevelUp(state.levelUpChoices);
+    Game.UI.renderLevelUp(state.levelUpChoices, null, state);
     Game.UI.showScreen('LEVEL_UP');
     if (Game.FX) {
       Game.FX.flash('#ffcf5e', 0.25);
@@ -516,7 +531,7 @@
     state.bossRewardPending = false;
     S.bossRewardChoices(state);
     state.screen = 'LEVEL_UP';
-    Game.UI.renderLevelUp(state.levelUpChoices, '🔥 赤月年兽已阵亡！选择一份战利品');
+    Game.UI.renderLevelUp(state.levelUpChoices, '🔥 赤月年兽已阵亡！选择一份战利品', state);
     Game.UI.showScreen('LEVEL_UP');
     if (Game.FX) {
       Game.FX.flash('#ff7a5c', 0.5);

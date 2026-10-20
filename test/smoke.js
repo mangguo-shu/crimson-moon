@@ -2633,7 +2633,7 @@ try {
      原来等级只挂在 title 上，触屏没有悬浮，等于看不到。 */
 
   var MAXLVL80 = Game.CONST.MAX_WEAPON_LEVEL;
-  assert(MAXLVL80 === 4, '武器等级上限提到常量（' + MAXLVL80 + '，与旧字面量一致）');
+  assert(MAXLVL80 === 5, '武器等级上限是常量（' + MAXLVL80 + '，2026-10-19 4→5）');
 
   // —— 升级逻辑收敛到一处（升级卡与商店强化共用），且封顶不越界
   var st80 = Game.Systems.createState('campaign', 'swordsman', 61);
@@ -2655,11 +2655,17 @@ try {
 
   // —— HUD 武器槽：等级画在槽上，并按星级着色
   var st82 = Game.Systems.createState('campaign', 'archer', 63);
-  st82.player.weapons = [Game.createWeapon('pistol', 3), Game.createWeapon('iron_sword', 1)];
+  st82.player.weapons = [Game.createWeapon('pistol', 3), Game.createWeapon('iron_sword', 1),
+                         Game.createWeapon('spear', MAXLVL80)];
   Game.UI.updateHUD(st82);
   var slots82 = document.getElementById('weapon-slots').innerHTML;
   assert(slots82.indexOf('class="ws ws-lv3"') >= 0, '3 级武器槽按星级着色（ws-lv3）');
   assert(slots82.indexOf('class="ws ws-lv1"') >= 0, '1 级武器槽基础色（ws-lv1）');
+  // lv5 有样式：ui.js 用 Math.min(level, MAX) 拼类名，CSS 里没有 .ws-lv5 的话
+  // 满星武器会静默落回 .ws 的默认灰边框 —— 满星反而看不出。
+  assert(slots82.indexOf('class="ws ws-lv' + MAXLVL80 + '"') >= 0,
+         '满级武器槽有专门的星级样式（ws-lv' + MAXLVL80 + '）');
+  assert(slots82.indexOf('>Lv' + MAXLVL80 + '</span>') >= 0, '满级武器同样显示等级（Lv' + MAXLVL80 + '）');
   assert(slots82.indexOf('>Lv3</span>') >= 0, '武器等级直接画在槽上（Lv3）');
   assert(slots82.indexOf('>Lv1</span>') >= 0, '第二把武器同样显示等级（Lv1）');
   assert(slots82.indexOf('🔫') >= 0 && slots82.indexOf('🗡') >= 0, '槽上区分近战/远程图标');
@@ -2678,8 +2684,8 @@ try {
   assert(st83html.indexOf('手枪') >= 0, '面板列出武器名');
   assert(st83html.indexOf('Lv.3/' + MAXLVL80) >= 0,
          '面板显示武器等级（Lv.3/' + MAXLVL80 + '）');
-  assert(st83html.indexOf('<span class="stats-wlvl">Lv.3/' + MAXLVL80 + ' ★★★☆</span>') >= 0,
-         '面板用星级显示武器等级（Lv.3/4 ★★★☆）');
+  assert(st83html.indexOf('<span class="stats-wlvl">Lv.3/' + MAXLVL80 + ' ★★★☆☆</span>') >= 0,
+         '面板用星级显示武器等级（Lv.3/' + MAXLVL80 + ' = 3 实 2 空）');
   assert(st83html.indexOf('单次暴击') >= 0, '面板显示单次暴击');
   assert(st83html.indexOf('回春药草 ×2') >= 0, '面板列出道具与堆叠数');
   assert(st83html.indexOf('夺命金铃 ×1') >= 0, '面板列出第二件道具');
@@ -2697,11 +2703,11 @@ try {
   assert(st83html.indexOf('DPS ' + (real83 / cd83).toFixed(2) + '</span>') >= 0,
          '面板 DPS = 伤害 / 冷却（' + (real83 / cd83).toFixed(2) + '）');
 
-  // 等级成长是面板要解释清楚的事：Lv.1 → Lv.4 本体伤害 ×2.5
+  // 等级成长是面板要解释清楚的事：Lv.1 → Lv.5 本体伤害 ×3.0
   var lo83 = new Game.WeaponInstance('pistol', 1).damage(p83);
   var hi83 = new Game.WeaponInstance('pistol', MAXLVL80).damage(p83);
-  assert(Math.abs(hi83 / lo83 - 2.5) < 1e-9,
-         'Lv.1→Lv.' + MAXLVL80 + ' 本体伤害 ×2.5（' + lo83.toFixed(1) + ' → ' + hi83.toFixed(1) + '）');
+  assert(Math.abs(hi83 / lo83 - 3.0) < 1e-9,
+         'Lv.1→Lv.' + MAXLVL80 + ' 本体伤害 ×3.0（' + lo83.toFixed(1) + ' → ' + hi83.toFixed(1) + '）');
 
   var st84 = Game.Systems.createState('campaign', 'swordsman', 65);
   assert(Game.UI.renderStatsHTML(st84).indexOf('还没有道具') >= 0, '无道具时显示占位文案');
@@ -4823,8 +4829,8 @@ try {
   s4a.player.weapons = [Game.createWeapon('iron_sword', 1, 0)];
   var ups2 = [];
   for (var u2 = 0; u2 < 5; u2++) ups2.push(S.upgradeRandomWeapon(s4a.player, s4a.rng));
-  assert(ups2[0] && ups2[1] && ups2[2] && ups2[3] === false && ups2[4] === false,
-         '1 星升到 ' + K.MAX_WEAPON_LEVEL + ' 星要 3 次，之后返回 false（' + JSON.stringify(ups2) + '）');
+  assert(ups2[0] && ups2[1] && ups2[2] && ups2[3] && ups2[4] === false,
+         '1 星升到 ' + K.MAX_WEAPON_LEVEL + ' 星要 4 次，之后返回 false（' + JSON.stringify(ups2) + '）');
   assert(s4a.player.weapons[0].level === K.MAX_WEAPON_LEVEL,
          '实际升到 Lv.' + s4a.player.weapons[0].level);
   // 用 state.rng 而不是 Math.random：同种子两次跑要一致，存档才复现得了
@@ -4854,18 +4860,25 @@ try {
   assert(dead2 === 0 && offered2 > 100,
          '全部满星时三条出货口都不再给强化卡（' + offered2 + ' 张候选里 ' + dead2 + ' 张）');
 
-  // 守卫不能把卡池切断：槽满但未满星时仍要给
-  var upNow2 = 0, tot2 = 0;
+  // 守卫不能把卡池切断：槽满但未满星时，强化卡和合星卡都得照出。
+  // 2026-10-19 起 6/6 的武器半区不再只有通用强化一张：合星卡分走了另一半，
+  // 强化的期望占比从 0.5/1.5 ≈ 33% 降到 0.5/2.0 ≈ 27%。两个都断 —— 只断一个
+  // 会漏掉另一半，任一张被静默切断都发现不了。
+  var upNow2 = 0, mergeNow2 = 0, tot2 = 0;
   for (var c2 = 0; c2 < 150; c2++) {
     var t3 = S.createState('campaign', 'swordsman', 3500 + c2);
     for (var k2 = 0; k2 < K.MAX_WEAPONS - 1; k2++) {
       t3.player.weapons.push(Game.createWeapon('pistol', 1, k2 + 1));
     }
     tot2++;
-    if (S.rollShopItem(t3, t3.rng).type === 'weaponUpgrade') upNow2++;
+    var rShop2 = S.rollShopItem(t3, t3.rng);
+    if (rShop2.type === 'weaponUpgrade') upNow2++;
+    else if (rShop2.type === 'weapon') mergeNow2++;
   }
-  assert(upNow2 > tot2 * 0.3,
-         '槽满但未满星时商店仍给强化卡（' + upNow2 + '/' + tot2 + '，武器半区权重 0.5）');
+  assert(upNow2 > tot2 * 0.2,
+         '槽满但未满星时商店仍给强化卡（' + upNow2 + '/' + tot2 + '）');
+  assert(mergeNow2 > tot2 * 0.2,
+         '槽满但未满星时商店也给出合星卡（' + mergeNow2 + '/' + tot2 + '）');
 
   // 老存档残留的强化卡：退钱、不标记 sold
   var t4 = allMaxed(3901);
@@ -5761,20 +5774,397 @@ try {
   }
   assert(shopHits13 === 0, '满星时商店 120 次滚动 0 张武器卡（死卡会扣钱却什么都没发生）');
 
-  // 对照：槽满但还没满星，武器卡照常给 —— 上面的拦截不能连正常情况一起误伤
+  // 对照：槽满但还没满星，强化卡和合星卡照常给 —— 上面的拦截不能连正常情况一起误伤
   var st13f = allMaxed13(616);
   st13f.player.weapons[0].level = 1;
-  var shopUp13 = 0, tot13 = 0;
+  var shopUp13 = 0, shopMerge13 = 0, tot13 = 0;
   for (var i13c = 0; i13c < 120; i13c++) {
     var s13g = allMaxed13(6400 + i13c);
     s13g.player.weapons[0].level = 1;
     tot13++;
-    if (S13.rollShopItem(s13g, s13g.rng).type === 'weaponUpgrade') shopUp13++;
+    var r13 = S13.rollShopItem(s13g, s13g.rng);
+    if (r13.type === 'weaponUpgrade') shopUp13++;
+    else if (r13.type === 'weapon') shopMerge13++;
   }
-  assert(shopUp13 > tot13 * 0.3,
-         '槽满但未满星时商店仍正常给强化卡（' + shopUp13 + '/' + tot13 + '，武器半区权重 0.5）');
+  assert(shopUp13 > tot13 * 0.2,
+         '槽满但未满星时商店仍正常给强化卡（' + shopUp13 + '/' + tot13 + '）');
+  assert(shopMerge13 > tot13 * 0.2,
+         '槽满但未满星时商店也给出合星卡（' + shopMerge13 + '/' + tot13 + '）');
 } catch (e) {
   assert(false, '㉛ 异常: ' + e.stack);
+}
+
+/* ============================================================
+ * ㉜ 武器合星 + 商店出售 + 5★ 封顶（2026-10-19）
+ * 用户口径：槽位未满允许重复持有；6 槽全满时再选同一把才合星；满了合不了
+ * 回退成随机强化；商店能卖武器，卖出立刻给 3 张武器卡选 1。
+ * ============================================================ */
+console.log('\n== ㉜ 武器合星 + 商店出售 + 5★ 封顶 ==');
+try {
+  var S14 = Game.Systems, K14 = Game.CONST;
+
+  // —— 成长系数都提到 CONST 里了（合法调参层，WEAPONS 表本体没动）——
+  assert(K14.MAX_WEAPON_LEVEL === 5, '武器封顶 5 星（' + K14.MAX_WEAPON_LEVEL + '）');
+  assert(K14.WEAPON_DMG_PER_LEVEL === 0.5,
+         '伤害成长系数提到常量（' + K14.WEAPON_DMG_PER_LEVEL + '，原 weapons.js 字面量）');
+  assert(K14.WEAPON_CD_PER_LEVEL > 0, '攻速成长系数存在（' + K14.WEAPON_CD_PER_LEVEL + '）');
+  assert(K14.WEAPON_SELL_REFUND > 0 && K14.WEAPON_SELL_REFUND < 1,
+         '出售退款比例 0 < 折扣 < 1（' + K14.WEAPON_SELL_REFUND + '）—— 按满价退就是刷钱');
+
+  // —— 分解式自洽：面板要显示的系数必须等于真实结算值 ——
+  var p14 = S14.createState('campaign', 'archer', 9001).player;
+  for (var lv14 = 1; lv14 <= K14.MAX_WEAPON_LEVEL; lv14++) {
+    var w14 = new Game.WeaponInstance('pistol', lv14);
+    assert(Math.abs(w14.dmgLevelUp() - (1 + K14.WEAPON_DMG_PER_LEVEL * (lv14 - 1))) < 1e-12,
+           'Lv.' + lv14 + ' 伤害成长 = 1 + 系数×(★-1)（' + w14.dmgLevelUp().toFixed(3) + '）');
+    assert(Math.abs(w14.cdLevelUp() - (1 + K14.WEAPON_CD_PER_LEVEL * (lv14 - 1))) < 1e-12,
+           'Lv.' + lv14 + ' 攻速成长 = 1 + 系数×(★-1)（' + w14.cdLevelUp().toFixed(3) + '）');
+    var decomp14 = Game.WEAPONS.pistol.damage * K14.RANGED_DMG_SCALE *
+                   w14.dmgLevelUp() * p14.stats.damage;
+    assert(Math.abs(decomp14 - w14.damage(p14)) < 1e-9,
+           'Lv.' + lv14 + ' 分解式 = damage()（' + decomp14.toFixed(3) + '）');
+  }
+
+  // —— 攻速真的随等级涨：5★ 冷却严格小于 1★，玩家自带攻速仍是独立乘法因子 ——
+  var lo14 = new Game.WeaponInstance('pistol', 1).cooldown(p14);
+  var hi14 = new Game.WeaponInstance('pistol', K14.MAX_WEAPON_LEVEL).cooldown(p14);
+  assert(hi14 < lo14, '满星冷却小于 1 星（' + hi14.toFixed(3) + ' < ' + lo14.toFixed(3) + '）');
+  assert(Math.abs(hi14 / lo14 - 1 / (1 + K14.WEAPON_CD_PER_LEVEL * (K14.MAX_WEAPON_LEVEL - 1))) < 1e-12,
+         '冷却比 = 1/(1+系数×(★-1))');
+  var cdFast14 = new Game.WeaponInstance('pistol', 3).cooldown({ stats: { attackSpeed: 2 } });
+  var cdSlow14 = new Game.WeaponInstance('pistol', 3).cooldown({ stats: { attackSpeed: 1 } });
+  assert(Math.abs(cdFast14 - cdSlow14 / 2) < 1e-12, '玩家攻速仍作为独立乘法因子参与冷却');
+  var dpsLo14 = new Game.WeaponInstance('pistol', 1).damage(p14) / lo14;
+  var dpsHi14 = new Game.WeaponInstance('pistol', K14.MAX_WEAPON_LEVEL).damage(p14) / hi14;
+  assert(dpsHi14 / dpsLo14 > 3 && dpsHi14 / dpsLo14 < 5,
+         '满星 DPS 是 1★ 的 ' + (dpsHi14 / dpsLo14).toFixed(2) + ' 倍（伤害 ×3、冷却 ×0.833）');
+
+  // —— 面板：系数为 1 时不印，大于 1 时才印等级攻速因子 ——
+  var st14a = S14.createState('campaign', 'archer', 9002);
+  st14a.player.weapons = [new Game.WeaponInstance('pistol', 1)];
+  var html14a = Game.UI.renderStatsHTML(st14a);
+  assert(html14a.indexOf('次/秒 × 等级') === -1,
+         '1 星不印等级攻速系数（系数为 1 不占版面）');
+  var st14b = S14.createState('campaign', 'archer', 9003);
+  st14b.player.weapons = [new Game.WeaponInstance('pistol', 3)];
+  var html14b = Game.UI.renderStatsHTML(st14b);
+  assert(html14b.indexOf('次/秒 × 等级 ' + (1 + K14.WEAPON_CD_PER_LEVEL * 2).toFixed(2)) >= 0,
+         '3 星面板印出等级攻速系数（× ' + (1 + K14.WEAPON_CD_PER_LEVEL * 2).toFixed(2) + '）');
+  assert(html14b.indexOf('× 等级 ' + (1 + K14.WEAPON_DMG_PER_LEVEL * 2).toFixed(2)) >= 0,
+         '3 星面板伤害分解式里的等级系数同样取常量');
+
+  // —— 合星要的是「同一把武器等级最高的那把」—— 合到低的那把上等于白送一次强化
+  var dup14 = S14.createState('campaign', 'archer', 9004).player;
+  dup14.weapons = [Game.createWeapon('pistol', 2, 0), Game.createWeapon('pistol', 1, 1),
+                   Game.createWeapon('iron_sword', 1, 2), Game.createWeapon('spear', 1, 3)];
+  assert(S14.bestOwnedIndex(dup14, 'pistol') === 0,
+         '同 defId 多把时取等级最高的那把（Lv.2 在第 0 槽，不是 Lv.1 的第 1 槽）');
+  assert(S14.bestOwnedIndex(dup14, 'heavy_crossbow') === -1, '没这把武器返回 -1');
+
+  // —— mergeableIds：只收「已拥有且未满级」，并且重复持有去重 ——
+  assert(S14.mergeableIds(dup14).indexOf('pistol') >= 0, '已拥有且未满级的武器进合星集');
+  assert(S14.mergeableIds(dup14).filter(function (id) { return id === 'pistol'; }).length === 1,
+         '合星集里 pistol 只出现一次（两把重复持有的只出 1 张卡）');
+  assert(S14.mergeableIds(dup14).length === 3,
+         '4 把武器去重成 3 种合星卡（2 把 pistol 只算 1 种，实际 ' +
+         S14.mergeableIds(dup14).length + '）');
+  // 满 6 槽：2 把已满级 + 4 把没满级 → 合星集里只剩那 4 把
+  var full14 = S14.createState('campaign', 'archer', 9005);
+  full14.player.weapons = [Game.createWeapon('pistol', K14.MAX_WEAPON_LEVEL, 0),
+                           Game.createWeapon('iron_sword', K14.MAX_WEAPON_LEVEL, 1),
+                           Game.createWeapon('spear', 2, 2),
+                           Game.createWeapon('wood_bow', 1, 3),
+                           Game.createWeapon('warhammer', 4, 4),
+                           Game.createWeapon('heavy_crossbow', 1, 5)];
+  var mid14 = S14.mergeableIds(full14.player);
+  assert(mid14.indexOf('pistol') === -1 && mid14.indexOf('iron_sword') === -1,
+         '已满级的武器不进合星集（合它等于什么都不发生）');
+  assert(mid14.indexOf('spear') >= 0, '同一局面里没满级的那把照旧在');
+  assert(mid14.length === 4, '4 种可合星武器全部被收进来（实际 ' + mid14.length + '）');
+
+  // —— 槽位状态决定出哪批武器卡 ——
+  var empt14 = S14.createState('campaign', 'archer', 9006);
+  assert(S14.weaponCardIds(empt14.player).length === 8,
+         '槽位未满时出全部 8 把非专属武器（实际 ' + S14.weaponCardIds(empt14.player).length + '）');
+  var common14 = S14.weaponCardIds(empt14.player);
+  assert(common14.every(function (id) { return !Game.WEAPONS[id].exclusive; }),
+         '槽位未满时也不给专属武器（那是 Boss 战奖励的专属产出）');
+  var widsFull14 = S14.weaponCardIds(full14.player).sort();
+  assert(widsFull14.join(',') === 'heavy_crossbow,spear,warhammer,wood_bow',
+         '槽位满时只出能合星的那批（4 把，实际 ' + widsFull14.join(',') + '）');
+  assert(widsFull14.indexOf('pistol') === -1,
+         '已满级的 pistol 不出卡（合它等于什么都不发生）');
+
+  // ============================================================
+  // applyWeaponCard 的四条落点
+  // ============================================================
+  // ① 槽位未满 → 加一把新的，允许重复持有
+  var c1 = S14.createState('campaign', 'archer', 9010);
+  var pc1 = c1.player;
+  pc1.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('pistol', 1, 1)];
+  assert(S14.applyWeaponCard(pc1, 'pistol', c1.rng) === 'added', '槽位未满选已有武器 → 加重复');
+  assert(pc1.weapons.length === 3, '重复持有成立（2 → ' + pc1.weapons.length + '）');
+  assert(pc1.weapons.filter(function (w) { return w.defId === 'pistol'; }).length === 3,
+         '三把都是 pistol（重复持有不是换掉）');
+  assert(pc1.weapons.every(function (w) { return w.level === 1; }),
+         '加的是一把新的 Lv1，不是把已有的升级（合星只发生在满槽）');
+
+  // ② 满槽 + 已拥有 + 未满级 → 合星，合成等级最高的那把
+  var c2 = S14.createState('campaign', 'archer', 9011);
+  var pc2 = c2.player;
+  pc2.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('pistol', 2, 1),
+                 Game.createWeapon('iron_sword', 1, 2), Game.createWeapon('spear', 1, 3),
+                 Game.createWeapon('wood_bow', 1, 4), Game.createWeapon('warhammer', 1, 5)];
+  assert(pc2.weapons.length === K14.MAX_WEAPONS, '前置：6/6 满槽');
+  var lvls2 = pc2.weapons.map(function (w) { return w.level; }).join(',');
+  assert(S14.applyWeaponCard(pc2, 'pistol', c2.rng) === 'merged', '满槽选已拥有的武器 → 合星');
+  assert(pc2.weapons.length === K14.MAX_WEAPONS, '合星不占新槽位（仍是 ' + pc2.weapons.length + ' 把）');
+  assert(pc2.weapons[1].level === 3 && pc2.weapons[0].level === 1,
+         '合成等级最高的那把（Lv.2 → Lv.3），低的那把不动（' + lvls2 + ' → ' +
+         pc2.weapons.map(function (w) { return w.level; }).join(',') + '）');
+  assert(pc2.weapons.filter(function (w) { return w.defId === 'pistol'; }).length === 2,
+         '两把 pistol 都还在（合星不是替换）');
+
+  // ③ 满槽 + 没这把 + 有可升级的 → 回退成随机武器强化，不加新武器
+  var c3 = S14.createState('campaign', 'archer', 9012);
+  var pc3 = c3.player;
+  pc3.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('iron_sword', 1, 1),
+                 Game.createWeapon('spear', 1, 2), Game.createWeapon('wood_bow', 1, 3),
+                 Game.createWeapon('warhammer', 1, 4), Game.createWeapon('heavy_crossbow', 1, 5)];
+  var ids3 = pc3.weapons.map(function (w) { return w.defId; });
+  var lvSum3 = pc3.weapons.reduce(function (a, w) { return a + w.level; }, 0);
+  assert(S14.applyWeaponCard(pc3, 'fire_orb', c3.rng) === 'upgraded',
+         '满槽且没有这把武器 → 回退成随机武器强化');
+  assert(pc3.weapons.length === K14.MAX_WEAPONS, '强化不占新槽位');
+  assert(pc3.weapons.map(function (w) { return w.defId; }).join(',') === ids3.join(','),
+         '强化不改武器构成（没有偷偷塞进 fire_orb：' + ids3.join(',') + ' → ' +
+         pc3.weapons.map(function (w) { return w.defId; }).join(',') + '）');
+  var lvSum3b = pc3.weapons.reduce(function (a, w) { return a + w.level; }, 0);
+  assert(lvSum3b === lvSum3 + 1, '恰好一把 +1★（总等级 ' + lvSum3 + ' → ' + lvSum3b + '）');
+
+  // ④ 满槽 + 全都满级 + 普通武器 → 挤掉最早那把（唯一还能给玩家东西的落点）
+  var c4 = S14.createState('campaign', 'archer', 9013);
+  var pc4 = c4.player;
+  pc4.weapons = [];
+  for (var i4a = 0; i4a < K14.MAX_WEAPONS; i4a++) {
+    pc4.weapons.push(Game.createWeapon('pistol', K14.MAX_WEAPON_LEVEL, i4a));
+  }
+  var oldest4 = pc4.weapons[0].slot;
+  assert(S14.applyWeaponCard(pc4, 'wood_bow', c4.rng) === 'replaced',
+         '全满级 + 满槽 → 挤掉最早那把');
+  assert(pc4.weapons.length === K14.MAX_WEAPONS, '挤一新一，槽数不变');
+  assert(pc4.weapons[pc4.weapons.length - 1].defId === 'wood_bow' &&
+         pc4.weapons[pc4.weapons.length - 1].level === 1, '新卡进最后一槽，仍是 Lv1');
+  assert(pc4.weapons.every(function (w) { return w.slot === pc4.weapons.indexOf(w); }),
+         '挤掉后槽位重排成 0..n-1（环绕轨道不会歪）');
+  assert(oldest4 === 0, '挤掉的是最早加入的那把（原 0 号槽）');
+
+  // ⑤ 满槽 + 已拥有的武器已满级 → 走强化而不是空转
+  var c5 = S14.createState('campaign', 'archer', 9014);
+  var pc5 = c5.player;
+  pc5.weapons = [Game.createWeapon('pistol', K14.MAX_WEAPON_LEVEL, 0),
+                 Game.createWeapon('iron_sword', K14.MAX_WEAPON_LEVEL, 1),
+                 Game.createWeapon('spear', K14.MAX_WEAPON_LEVEL, 2),
+                 Game.createWeapon('wood_bow', K14.MAX_WEAPON_LEVEL, 3),
+                 Game.createWeapon('warhammer', 1, 4), Game.createWeapon('heavy_crossbow', 1, 5)];
+  assert(S14.applyWeaponCard(pc5, 'pistol', c5.rng) === 'upgraded',
+         '手里那把 pistol 已满级 → 不硬合，回退成随机强化');
+  assert(pc5.weapons[0].level === K14.MAX_WEAPON_LEVEL, '满级的 pistol 没被继续加星');
+  assert(pc5.weapons.length === K14.MAX_WEAPONS, '强化不占新槽位');
+
+  // ⑥ Boss 专属武器保留挤掉语义 —— 合星规则会把它吞成一次随机强化，等于废掉 Boss 战
+  var c6 = S14.createState('campaign', 'archer', 9015);
+  var pc6 = c6.player;
+  pc6.weapons = [Game.createWeapon('pistol', K14.MAX_WEAPON_LEVEL, 0),
+                 Game.createWeapon('iron_sword', 1, 1),
+                 Game.createWeapon('spear', 1, 2), Game.createWeapon('wood_bow', 1, 3),
+                 Game.createWeapon('warhammer', 1, 4), Game.createWeapon('heavy_crossbow', 1, 5)];
+  assert(S14.applyWeaponCard(pc6, 'moon_sword', c6.rng, { evict: true }) === 'replaced',
+         '专属武器在满槽时挤掉最早那把，而不是被吞成随机强化');
+  assert(pc6.weapons[pc6.weapons.length - 1].defId === 'moon_sword',
+         '专属武器真的进来了（' + pc6.weapons[pc6.weapons.length - 1].defId + '）');
+  var c6b = S14.createState('campaign', 'archer', 9016);
+  c6b.player.weapons = pc6.weapons = [Game.createWeapon('pistol', K14.MAX_WEAPON_LEVEL, 0),
+                Game.createWeapon('iron_sword', 1, 1), Game.createWeapon('spear', 1, 2),
+                Game.createWeapon('wood_bow', 1, 3), Game.createWeapon('warhammer', 1, 4),
+                Game.createWeapon('heavy_crossbow', 1, 5)];
+  S14.applyChoice(c6b, { kind: 'weapon', data: { weaponId: 'moon_sword' } });
+  assert(c6b.player.weapons[c6b.player.weapons.length - 1].defId === 'moon_sword',
+         'applyChoice 按 exclusive 标志自动走 evict，不走合星');
+  assert(c6b.player.weapons.length === K14.MAX_WEAPONS, 'evict 仍保持槽数不变');
+
+  // ============================================================
+  // 三个出货口：满槽时武器卡必须还在（这是「满槽才合」能触发的前提）
+  // ============================================================
+  function fullSix14(seed) {
+    var s = S14.createState('campaign', 'archer', seed);
+    s.player.weapons = [];
+    var ids14 = ['pistol', 'iron_sword', 'spear', 'wood_bow', 'warhammer', 'heavy_crossbow'];
+    for (var k14 = 0; k14 < 6; k14++) s.player.weapons.push(Game.createWeapon(ids14[k14], 1, k14));
+    return s;
+  }
+  var kinds14 = function (arr) { return (arr || []).map(function (c) { return c.kind; }); };
+  var upHits14 = 0, bossHits14 = 0, shopHits14 = 0;
+  for (var r14 = 0; r14 < 400; r14++) {
+    if (kinds14(S14.rollLevelUpChoices(fullSix14(71000 + r14))).indexOf('weapon') >= 0) upHits14++;
+    if (kinds14(S14.bossRewardChoices(fullSix14(72000 + r14))).indexOf('weapon') >= 0) bossHits14++;
+    if (S14.rollShopItem(fullSix14(73000 + r14), fullSix14(74000 + r14).rng).type === 'weapon') shopHits14++;
+  }
+  assert(upHits14 > 100, '满槽 6 把不同武器时升级三选一照旧给武器卡（' + upHits14 + '/400）');
+  assert(bossHits14 > 100, '满槽时 Boss 奖励照旧给武器卡（' + bossHits14 + '/400）');
+  assert(shopHits14 > 100, '满槽时商店照旧给武器卡（' + shopHits14 + '/400）');
+  // 重复持有时合星卡照样出（这是「满槽才合」能覆盖重复持有的关键）
+  function fullDup14(seed) {
+    var s = S14.createState('campaign', 'archer', seed);
+    s.player.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('iron_sword', 1, 1),
+                        Game.createWeapon('spear', 1, 2), Game.createWeapon('wood_bow', 1, 3),
+                        Game.createWeapon('pistol', 1, 4), Game.createWeapon('pistol', 2, 5)];
+    return s;
+  }
+  assert(S14.mergeableIds(fullDup14(75001).player).join(',').split(',').length === 4,
+         '重复持有 3 把 pistol 只算 1 种合星卡');
+  var dupHits14 = 0, dupPistolCard14 = false;
+  for (var r14b = 0; r14b < 300; r14b++) {
+    var arr14 = S14.rollLevelUpChoices(fullDup14(76000 + r14b));
+    for (var j14 = 0; j14 < arr14.length; j14++) {
+      if (arr14[j14].kind === 'weapon') {
+        dupHits14++;
+        if (arr14[j14].data.weaponId === 'pistol') dupPistolCard14 = true;
+      }
+    }
+  }
+  assert(dupHits14 > 60, '重复持有时武器卡仍会出现（' + dupHits14 + '/300 轮）');
+  assert(dupPistolCard14, '重复持有的 pistol 在合星卡里出现（否则永远合不了星）');
+
+  // ============================================================
+  // 商店购买在满槽时走合星，而不是塞进第 7 把
+  // ============================================================
+  var st14s = fullSix14(77000);
+  st14s.screen = 'SHOP';
+  st14s.player.materials = 1000;
+  st14s.shop = { items: [{ type: 'weapon', weaponId: 'pistol', name: '手枪', desc: '', rarity: 'rare', price: 40 }],
+                 locked: [false, false, false, false], refreshCost: 5, refreshCount: 0 };
+  assert(S14.buyShopItem(st14s, 0) === true, '满槽时买武器卡能成交');
+  assert(st14s.player.weapons.length === K14.MAX_WEAPONS,
+         '满槽买入不产生第 7 把武器（' + st14s.player.weapons.length + ' 把）');
+  assert(st14s.player.weapons.filter(function (w) { return w.defId === 'pistol'; })
+         .some(function (w) { return w.level === 2; }), '满槽买入 = 手枪合到 Lv.2');
+  assert(st14s.player.weapons[5].slot === 5, '槽位序号没有被改写');
+
+  // ============================================================
+  // 出售：退款、槽位重排、三条守卫
+  // ============================================================
+  var st14d = S14.createState('campaign', 'archer', 78000);
+  st14d.screen = 'PLAYING';
+  st14d.player.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('iron_sword', 1, 1),
+                          Game.createWeapon('spear', 1, 2)];
+  assert(S14.sellWeapon(st14d, 1) === 0, '非商店屏不能出售');
+  assert(st14d.player.weapons.length === 3, '被拒的出售没动武器列表');
+  st14d.screen = 'SHOP';
+  assert(S14.sellWeapon(st14d, 9) === 0, '越界下标不能出售');
+  assert(S14.sellWeapon(st14d, -1) === 0, '负下标不能出售');
+  var m014 = st14d.player.materials;
+  var wantRefund14 = Math.floor(S14.priceFor('rare', st14d.wave) * K14.WEAPON_SELL_REFUND);
+  var gotRefund14 = S14.sellWeapon(st14d, 1);
+  assert(gotRefund14 === wantRefund14,
+         '出售退款 = rare 武器价 × 折扣（' + gotRefund14 + ' = ' + wantRefund14 + '）');
+  assert(st14d.player.materials === m014 + wantRefund14, '材料真的到账');
+  assert(st14d.player.weapons.length === 2, '武器被移除（3 → ' + st14d.player.weapons.length + '）');
+  assert(st14d.player.weapons.every(function (w, i) { return w.slot === i; }),
+         '卖出后槽位重排成 0..n-1');
+  assert(st14d.player.weapons.map(function (w) { return w.defId; }).join(',') === 'pistol,spear',
+         '卖的是第 1 把，顺序对（' + st14d.player.weapons.map(function (w) { return w.defId; }).join(',') + '）');
+
+  // 不能卖到 0 把 —— 没武器 = 无法攻击 = 软锁
+  var st14o = S14.createState('campaign', 'archer', 78001);
+  st14o.screen = 'SHOP';
+  assert(S14.sellWeapon(st14o, 0) === 0, '只剩 1 把武器时不能出售');
+  assert(st14o.player.weapons.length === 1, '守卫没误删唯一的武器');
+
+  // —— 出售后的三张武器卡 ——
+  var st14r = fullSix14(78002);
+  var ch14 = S14.rollSellChoices(st14r);
+  assert(ch14.length === 3, '出售后给 3 张卡（' + ch14.length + '）');
+  assert(ch14.every(function (c) { return c.kind === 'weapon'; }), '3 张全是武器卡');
+  var picked14 = ch14.map(function (c) { return c.data.weaponId; });
+  assert(picked14.length === new Set(picked14).size, '3 张互不相同');
+  assert(ch14.every(function (c) { return !Game.WEAPONS[c.data.weaponId].exclusive; }),
+         '出售后不给 Boss 专属武器');
+  assert(st14r.levelUpChoices === ch14, '结果写进 state.levelUpChoices（复用三选一界面）');
+
+  // 300 次滚动里没有一把专属武器进来
+  var exLeak14 = 0;
+  for (var r14c = 0; r14c < 300; r14c++) {
+    var st14e = fullSix14(79000 + r14c);
+    S14.rollSellChoices(st14e).forEach(function (c) {
+      if (Game.WEAPONS[c.data.weaponId].exclusive) exLeak14++;
+    });
+  }
+  assert(exLeak14 === 0, '300 次出售选卡 0 张专属武器（实际 ' + exLeak14 + '）');
+
+  // —— 卡片文案：满槽时说明这次买到的是合星 ——
+  assert(S14.weaponCardOutcome(empt14.player, 'pistol') === '', '槽位未满 → 没有合星提示');
+  assert(S14.weaponCardOutcome(fullSix14(79500).player, 'pistol') === '｜已拥有 Lv.1，选中合星 Lv.2',
+         '满槽 + 已拥有 → 卡片写明合星目标（' +
+         S14.weaponCardOutcome(fullSix14(79501).player, 'pistol') + '）');
+  assert(S14.weaponCardOutcome(fullSix14(79502).player, 'fire_orb') === '',
+         '满槽但没这把武器 → 不谎称合星');
+
+  // ============================================================
+  // 存档：5★ 往返 + 读档夹住超上限的值
+  // ============================================================
+  var st14v = S14.createState('campaign', 'archer', 79600);
+  st14v.player.weapons = [new Game.WeaponInstance('pistol', K14.MAX_WEAPON_LEVEL, 0),
+                          new Game.WeaponInstance('iron_sword', 3, 1)];
+  var back14 = S14.deserialize(S14.serialize(st14v));
+  assert(back14.player.weapons.map(function (w) { return w.level; }).join(',') === '5,3',
+         '5★ 与 3★ 存档往返不变（实际 ' +
+         back14.player.weapons.map(function (w) { return w.level; }).join(',') + '）');
+  var obj14 = S14.serialize(st14v);
+  obj14.player.weapons[0].level = 99;
+  var clamped14 = S14.deserialize(obj14);
+  assert(clamped14.player.weapons[0].level === K14.MAX_WEAPON_LEVEL,
+         '读档夹住超出当前封顶的等级（99 → ' + clamped14.player.weapons[0].level + '）');
+  assert(clamped14.player.weapons[0].level <= K14.MAX_WEAPON_LEVEL,
+         '渲染器的强化圈不会超过面板画的星数');
+
+  // —— 出售按钮只在商店屏出现 ——
+  var st14ui = fullSix14(79700);
+  st14ui.screen = 'PLAYING';
+  assert(Game.UI.renderStatsHTML(st14ui).indexOf('stats-sell') === -1,
+         '战斗中侧栏没有出售按钮');
+  st14ui.screen = 'SHOP';
+  var html14s = Game.UI.renderStatsHTML(st14ui);
+  assert(html14s.indexOf('Game.Game.sellWeapon(0)') >= 0, '商店屏第一把武器有出售按钮');
+  assert(html14s.indexOf('stats-sell') >= 0, '出售按钮用专门的样式类');
+  assert((html14s.match(/stats-sell/g) || []).length === K14.MAX_WEAPONS,
+         '6 把武器各一个出售按钮（' + (html14s.match(/stats-sell/g) || []).length + ' 个）');
+
+  // —— CSS：ws-lv5 必须存在，否则满星武器静默落回默认灰边框 ——
+  var css14 = fs.readFileSync(path.join(__dirname, '..', 'css', 'style.css'), 'utf8');
+  var lvCls14 = [];
+  for (var v14 = 1; v14 <= K14.MAX_WEAPON_LEVEL; v14++) {
+    lvCls14.push(new RegExp('\\.ws-lv' + v14 + '\\s*\\{').test(css14));
+  }
+  assert(lvCls14.every(function (ok) { return ok; }),
+         'ws-lv1..lv' + K14.MAX_WEAPON_LEVEL + ' 全部有样式（' + lvCls14.join(',') + '）');
+  assert(/\.ws-lv5\s*\{[^}]*#ff5a4a/.test(css14), '满星槽用赤月红而不是复用 lv4 的金色');
+  assert(/\.stats-sell\s*\{[^}]*min-width:\s*0/.test(css14),
+         '出售按钮去掉了 .btn 的 200px 最小宽（侧栏只有 262px）');
+
+  // —— 合星不改图鉴构成：没有新增武器卡种 ——
+  assert(Object.keys(Game.WEAPONS).length === 12, '武器表仍是 12 把（合星不新增条目）');
+  assert(Game.Codex.total().total === 72, '图鉴总数仍是 72（' + Game.Codex.total().total + '）');
+  var sold14 = S14.createState('campaign', 'archer', 79800);
+  sold14.screen = 'SHOP';
+  sold14.player.weapons = [Game.createWeapon('pistol', 1, 0), Game.createWeapon('iron_sword', 1, 1)];
+  Game.Codex.mark('weapon', 'pistol');
+  assert(S14.sellWeapon(sold14, 0) > 0, '出售成立');
+  assert(sold14.player.weapons.length === 1, '武器真的卖了');
+  assert(Game.Codex.isUnlocked('weapon', 'pistol'),
+         '出售不回收图鉴 —— 图鉴记「见过」不记「拥有」');
+} catch (e) {
+  assert(false, '㉜ 异常: ' + e.stack);
 }
 
 /* ---------------- 汇总 ---------------- */

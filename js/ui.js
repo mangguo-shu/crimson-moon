@@ -202,15 +202,26 @@
     },
 
     /* ---------------- 升级三选一 ---------------- */
-    renderLevelUp: function (choices, title) {
+    renderLevelUp: function (choices, title, state) {
       // title 可选：Boss 战利品复用同一面板但用不同标题。
+      // state 可选：只用来算武器卡的合星落点提示，传不进来自测调用也没关系。
       // 人物面板常驻在右侧，选卡时不用点开，所以这里不再放「查看角色面板」按钮。
+      var p = state ? state.player : null;
       var html = '<h2>' + (title || '升级！选择一项') + '</h2><div class="card-row">';
       for (var i = 0; i < choices.length; i++) {
         var c = choices[i];
         var rarity = 'common', name = '', desc = '';
         if (c.kind === 'upgrade') { rarity = c.data.rarity; name = c.data.label; desc = c.data.desc; }
-        else if (c.kind === 'weapon') { rarity = 'rare'; name = Game.WEAPONS[c.data.weaponId].name; desc = Game.WEAPONS[c.data.weaponId].desc; }
+        else if (c.kind === 'weapon') {
+          // 星级打在名字前：满槽时这张卡买到的是「合星」而不是新武器，
+          // 卡片上必须交代清楚，不然玩家看不出选它到底会得到什么。
+          var wdef = Game.WEAPONS[c.data.weaponId];
+          var starTxt = '';
+          for (var stI = 0; stI < (wdef.star || 1); stI++) starTxt += '★';
+          rarity = 'rare';
+          name = starTxt + ' ' + wdef.name;
+          desc = wdef.desc + (p ? Game.Systems.weaponCardOutcome(p, c.data.weaponId) : '');
+        }
         else if (c.kind === 'weaponUpgrade') {
           rarity = 'epic'; name = '武器强化';
           desc = '随机强化一把武器（最高 ' + Game.CONST.MAX_WEAPON_LEVEL + ' 星）';
@@ -289,21 +300,34 @@
         for (var i = 0; i < p.weapons.length; i++) {
           var w = p.weapons[i];
           var dmg = w.damage(p);              // 已含等级成长、远程系数与角色倍率
-          var cd = w.cooldown(p);             // 已除攻击速度
-          var lvlUp = 1 + 0.5 * (w.level - 1);
+          var cd = w.cooldown(p);             // 已除等级成长与玩家攻击速度
+          // 等级成长系数从 WeaponInstance 取，不要在这里重算字面量 ——
+          // 之前这一行自己写了一份 `1 + 0.5*(level-1)`，两份数字会漂。
+          var lvlUp = w.dmgLevelUp();
+          var cdUp = w.cdLevelUp();
           // 两类各有一个系数：分解式必须写全，否则右列的 dmg 对不上左列的连乘。
           // 近战系数是 2026-09-27 补的，漏了它面板就会写「14 × 1 × 1 = 14」而右边显示 11.2。
           var scale = w.def.type === 'ranged' ? Game.CONST.RANGED_DMG_SCALE : Game.CONST.MELEE_DMG_SCALE;
           var scaleName = w.def.type === 'ranged' ? '远程' : '近战';
           var rng = w.def.type === 'melee' ? w.range() : 0;
+          // 出售只在商店里给：不在商店屏渲按钮，避免其它屏多出一个会改状态的动作。
+          // 卖不到 0 把（没武器 = 无法攻击 = 软锁），所以只剩 1 把时不渲。
+          var sellBtn = '';
+          if (state.screen === 'SHOP' && p.weapons.length > 1) {
+            var sp = Math.floor(Game.Systems.priceFor('rare', state.wave) * Game.CONST.WEAPON_SELL_REFUND);
+            sellBtn = '<button class="stats-sell" onclick="event.stopPropagation();Game.Game.sellWeapon(' +
+                      i + ')" title="出售，回收 ◈' + sp + '，然后选一把新的">售 ◈' + sp + '</button>';
+          }
           html += '<div class="stats-weapon">' +
             '<div class="stats-wname">' +
             '<span>' + (w.def.type === 'melee' ? '🗡' : '🔫') + ' ' + w.def.name + '</span>' +
-            '<span class="stats-wlvl">Lv.' + w.level + '/' + MAXLVL + ' ' + stars(w.level) + '</span></div>' +
+            '<span class="stats-wmeta"><span class="stats-wlvl">Lv.' + w.level + '/' + MAXLVL +
+              ' ' + stars(w.level) + '</span>' + sellBtn + '</span></div>' +
             '<div class="stats-wstat"><span>本体 ' + w.def.damage +
               (scale !== 1 ? ' × ' + scaleName + ' ' + scale : '') + ' × 等级 ' +
               num(lvlUp) + ' × 角色 ' + num(s.damage) + '</span><span class="v">' + num(dmg) + '</span></div>' +
             '<div class="stats-wstat"><span>攻速 ' + num(1 / cd) + ' 次/秒' +
+              (w.level > 1 ? ' × 等级 ' + num(cdUp) : '') +
               (w.def.pierce ? ' · 穿透 ' + w.def.pierce : '') +
               (rng ? ' · 射程 ' + num(rng, 1) : '') + '</span>' +
               '<span class="v">DPS ' + num(dmg / cd) + '</span></div>' +

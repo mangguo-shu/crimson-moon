@@ -1,7 +1,7 @@
 # 赤月猎场 · 数据字典
 
 全部静态数据集中在 [js/config.js](js/config.js)（唯一配置源）。本文件按表分类列出所有条目与字段，
-加新角色 / 武器 / 怪 / 道具 / 卡时对着改即可。数值截至 BUILD `v261016.1`。
+加新角色 / 武器 / 怪 / 道具 / 卡时对着改即可。数值截至 BUILD `v261019.1`。
 
 ---
 
@@ -17,7 +17,7 @@
 | [6](#6-道具) | 被动道具 | 21 | config.js:669 |
 | [7](#7-属性卡) | 属性强化卡 | 17 | config.js:694 |
 | [8](#8-卡三选一--商店卡) | 卡的四种 kind + 三个出货口 | — | systems.js |
-| [9](#9-全局常量与调参系数) | CONST | 21 | config.js:14 |
+| [9](#9-全局常量与调参系数) | CONST | 24 | config.js:14 |
 | [10](#10-掉落调参) | DROP | 9 | config.js:654 |
 | [11](#11-公式表) | 波次 / 成长 / 定价 / 伤害算式 | — | 各处 |
 | [12](#12-属性键) | 可写进 stat 的属性键 | 12 | entities.js:109 |
@@ -143,9 +143,17 @@ projectileLife    // 可选。弹体寿命秒数，默认 2.5（没填的武器�
   CD 1.40 是手枪 0.55 的 2.5 倍：范围伤害的代价付在节奏上，不是白送。
 
 - `Game.BOSS_EXCLUSIVE_CHANCE = 0.45`：Boss 奖励里出现专属武器的概率。
-- 武器等级倍率 `def.damage × (1 + 0.5 × (level - 1))`，上限 `MAX_WEAPON_LEVEL = 4`。
-  **`star` 只用于图鉴标签显示**（`Codex` 的 `★★★`），开局武器一律 `createWeapon(id, 1, 0)`
-  从 1 级起 —— 3 星专属的强度来自 `damage` 本体，不是星级。
+- **武器等级（= 合星，2026-10-19）**：`MAX_WEAPON_LEVEL = 5`，两个成长系数都走 CONST、
+  WEAPONS 表本体一字未动：
+  - 伤害 `def.damage × (1 + WEAPON_DMG_PER_LEVEL × (level - 1))` —— 系数 0.5，是原来写在
+    weapons.js 的字面量提出来，数值不变。
+  - 冷却 `def.cooldown / (1 + WEAPON_CD_PER_LEVEL × (level - 1)) / stats.attackSpeed` ——
+    系数 0.05。5★ 终值 = 伤害 ×3.0 / 冷却 ×0.833 = **DPS ×3.6**（升满要 4 次选中同一把）。
+  - 面板显示的系数取 `WeaponInstance.dmgLevelUp()` / `cdLevelUp()`，武器和分解式共用同一算式，
+    不会再出现「伤害分解式漏了新增系数」那类漂移（那正是 14×1×1=14 的旧坑）。
+  - **`star` 只用于图鉴标签显示**（`Codex` 的 `★★★`），开局武器一律 `createWeapon(id, 1, 0)`
+    从 1 级起 —— 3 星专属的强度来自 `damage` 本体，不是星级。
+  - `weaponUpgrade` 卡与商店强化共用 `S.upgradeRandomWeapon`，同样受 5★ 封顶约束。
 - **DPS 标尺（有效，含类型系数）**：龙胆枪 18.8、手枪 9.1。新 1 星武器不超过对标值的
   1.3 倍（`test/smoke.js` 先断言标尺本身，再断言新武器，两个都红才算漏），
   越级的强度留给 3 星专属。焚天火珠有效 DPS 8.57（24/1.4 × 0.5），在手枪标尺一档以内；
@@ -348,23 +356,61 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 |---|---|---|---|
 | `upgrade` | `Game.UPGRADES` | `label` | 属性强化 |
 | `item` | `Game.ITEMS` | `name` | 被动道具 |
-| `weapon` | `Game.WEAPONS` | `name` | 新武器（槽位满时不出现） |
-| `weaponUpgrade` | — | 固定「武器强化」 | 通用卡，随机强化一把武器到最高 4 星；**没有自己的 id** |
+| `weapon` | `Game.WEAPONS` | `name` | 武器卡：**槽位未满 = 新武器（允许重复持有）；满槽 = 合星 +1★**（见下） |
+| `weaponUpgrade` | — | 固定「武器强化」 | 通用卡，随机强化一把武器到最高 5 星；**没有自己的 id** |
 
 ### 三个出货口
 
 | 出货口 | 位置 | 构成 |
 |---|---|---|
-| 升级三选一 | `systems.js:466 rollLevelUpChoices` | 全部属性卡（现 17，**不按稀有度过滤**）+ 全部道具（现 21）+（槽位未满）全部非专属武器（现 8）/（满）武器强化 |
-| Boss 战利品 | `systems.js:500 bossRewardChoices` | **只收 epic/legend** + 武器强化 + 普通武器 + 按 45% 概率塞 1 把专属武器 |
-| 商店（固定 4 格） | `systems.js:636 rollShopItem` | 道具 50% / 武器 50%，道具按件均分、武器按把均分 |
+| 升级三选一 | `systems.js:538 rollLevelUpChoices` | 全部属性卡（现 17，**不按稀有度过滤**）+ 全部道具（现 21）+ 武器卡（`S.weaponCardIds`）+（满槽且有可升）武器强化 |
+| Boss 战利品 | `systems.js:575 bossRewardChoices` | **只收 epic/legend** + 武器强化 + 武器卡（`S.weaponCardIds`）+ 按 45% 概率塞 1 把专属武器 |
+| 商店（固定 4 格） | `systems.js:783 rollShopItem` | 道具 50% / 武器 50%，道具按件均分、武器按把均分；武器卡走 `S.weaponCardIds` |
+
+### 武器卡的落点：`S.applyWeaponCard(p, defId, rng, opts)`
+
+三个出货口共用一张表决定出哪些武器卡（`S.weaponCardIds`），共用一个落点决定选中后的效果：
+
+| 局面 | 落点 | 说明 |
+|---|---|---|
+| 槽位未满 | `added` | 加一把新的 **Lv1**，**允许重复持有**同一把武器 |
+| 满槽 + `opts.evict` | `replaced` | 挤掉最早那把（**只给 Boss 专属武器**，`applyChoice` 按 `wdef.exclusive` 自动传） |
+| 满槽 + 已拥有 + 未满 5★ | `merged` | 同 defId 里**等级最高**的那把 +1★（合成 Lv1 上面等于白送一次强化） |
+| 合不了（没这把 / 已满 5★） | `upgraded` | 回退成随机武器强化 |
+| 连强化都没得给（全满 5★） | `replaced` | 挤掉最早那把 |
+
+- **「满槽才合」是 2026-10-19 用户定的口径**：槽位未满时重复选同一把武器会得到两把，
+  只有 6 槽全满时才会合成二星。
+- **满槽时出货口必须照旧给武器卡**：改前三个出货口都卡 `weapons.length < MAX_WEAPONS`，
+  「满槽才合」在那套门槛下永远不会触发。这是本轮唯一改动的旧逻辑。
+- `weaponUpgrade` 与合星卡**不互斥**（满槽时武器半区 = 合星卡 + 强化卡，强化期望占比从
+  0.33 降到 ≈0.275）。
+- **卡片文案会说明落点**：满槽 + 已持有时描述末尾追加
+  `｜已拥有 Lv.N，选中合星 Lv.N+1`（`S.weaponCardOutcome`），星数打在名字前。
+- Boss 专属武器**不走合星**：按合星规则它会被吞成一次随机强化，等于废掉整场 Boss 战。
+
+### 商店出售
+
+`S.sellWeapon(state, index)` + `S.rollSellChoices(state)`，入口在 `Game.Game.sellWeapon(i)`：
+
+- **只在 SHOP 屏可卖**，UI 是侧栏武器行尾的「售 ◈N」按钮（`state.screen === 'SHOP'` 才渲染，
+  `updateHUD` 每帧重算，进商店自动出现）。
+- 退款 `floor(priceFor('rare', wave) × WEAPON_SELL_REFUND)`，然后立刻弹 **3 张非专属武器卡**，
+  选完经 `state.choiceReturn = 'SHOP'` 回商店（`pickLevelUp` 读完即清）。
+- 守卫：不能卖到 **0 把**（没武器 = 无法攻击 = 软锁），所以只剩 1 把时不渲按钮、调用也返回 0。
+- 经济上没有刷钱空间：能卖的必须先买过，退 0.5 倍恒亏。
+- **图鉴不回收**：图鉴记「见过」不记「拥有」，卖出无需回收。
+- 出售列表放在侧栏而不是商店面板 —— `test/smoke.js` 断言整块商店 ≤ 335px（367−32），
+  6 把武器的出售列表塞进去必然超。
 
 **通用规则**：
 - 回血道具按 `HEAL_ITEM_WEIGHT = 0.08` 降权，`healBuild` 角色拿满权。
-- **每波去重**：`state.waveSeen` 记录本波出过的卡，抽干才放行。
+- **每波去重**：`state.waveSeen` 记录本波出过的卡，抽干才放行；武器卡 key 是 `'weapon:' + id`，
+  与等级无关，所以同一把武器一波只能被合成一次（天然限频）。
 - 商店卡可**锁定**（沿用上一波的卡，不再重抽）。
 - 商店武器固定 `rarity: 'rare'` 定价；`weaponUpgrade` 也是 `rare`。
-- **三个出货口都不给死卡**：全部武器满星时不出「武器强化」（扣钱没效果比今天没有这张卡糟）。
+- **三个出货口都不给死卡**：全部武器满星时不出「武器强化」也不出合星卡
+  （扣钱没效果比今天没有这张卡糟）。
 
 ---
 
@@ -374,11 +420,14 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 | 键 | 值 | 含义 |
 |---|---|---|
-| `BUILD` | `v260926.9` | 版本戳，画在画布右下角 |
+| `BUILD` | `v261019.1` | 版本戳，画在画布右下角 |
 | `LOGICAL_W / LOGICAL_H` | 1280 / 720 | 参考逻辑视口 |
 | `WORLD_W / WORLD_H` | 2400 / 1800 | 地图世界尺寸 |
 | `MAX_WEAPONS` | 6 | 武器槽上限 |
-| `MAX_WEAPON_LEVEL` | 4 | 武器最高星 |
+| `MAX_WEAPON_LEVEL` | 5 | 武器最高星（2026-10-19 4→5） |
+| `WEAPON_DMG_PER_LEVEL` | 0.5 | 每升 1★ 本体伤害 +50%（从 weapons.js 字面量提常，数值不变） |
+| `WEAPON_CD_PER_LEVEL` | 0.05 | 每升 1★ 攻速 +5%（冷却除以 `1 + 0.05×(★-1)`） |
+| `WEAPON_SELL_REFUND` | 0.5 | 商店出售按 rare 武器价的 5 折退材料 |
 | `WEAPON_ORBIT_R` | 62 | 武器环绕轨道半径 |
 | `WEAPON_ORBIT_SPEED` | 0.25 | 轨道转速 rad/s（整圈 25s） |
 | `WEAPON_ORBIT_OFFSET` | -π/2 | 第一把武器基准角 |
@@ -431,7 +480,9 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | 坦克权重 | `wave ≥ 21` 时 `min(0.14, 0.08 + (wave-21) × 0.002)` | systems.js:124 |
 | 敌人成长 | HP `×BASE × (1 + K1(w-1) + K2(w-1)²)`，伤害 `×(1 + K1'(w-1))`，移速 `×min(1.6, 1 + 0.02(w-1))`（BASE=1.5 / K1=0.18 / K2=0.010 / K1'=0.16）。`BASE` 是**常数**，第 1 波也吃 | entities.js 构造函数 |
 | 敌人血量参考 | 跳尸 w1 / w10 / w20 / w40 = 30 / 103 / 241 / 697（上一版 20/58/128/350）。**二次项是必须的**：玩家输出按乘法涨（等级×1.5/级、卡、暴击、多把武器），纯线性追不上。`BASE` 与斜率分两层：斜率只描述「每波多强」，「整体就该更强」靠常数基准 | entities.js 构造函数 |
-| 武器伤害 | `def.damage × (1 + 0.5 × (level - 1)) × 类型系数 × stats.damage`（类型系数：远程 `RANGED_DMG_SCALE`、其余 `MELEE_DMG_SCALE`） | weapons.js:77 `damage()` |
+| 武器伤害 | `def.damage × (1 + WEAPON_DMG_PER_LEVEL × (level - 1)) × 类型系数 × stats.damage`（类型系数：远程 `RANGED_DMG_SCALE`、其余 `MELEE_DMG_SCALE`） | weapons.js `damage()` |
+| 武器冷却 | `def.cooldown / (1 + WEAPON_CD_PER_LEVEL × (level - 1)) / stats.attackSpeed`（2026-10-19 起等级也管攻速；`stats.attackSpeed` 始终是独立的乘法因子） | weapons.js `cooldown()` |
+| 满星 DPS 倍数 | 伤害 ×3.0 ÷ 冷却 ×0.833 = **×3.6**（5★ = 4 次选中同一把） | 由上面两行算出 |
 | 商店定价 | `基线 + wave × 2`，下限 5；基线 common 15 / rare 35 / epic 55 / legend 85 | systems.js `priceFor` |
 | 反伤 | 被命中时反弹**该次伤害**的 `counter`，走 `Player.takeDamage`（吃护甲/护盾/无敌帧） | entities.js |
 | 挡伤 | `护甲 / (护甲 + 30)`，上限 80% | entities.js `takeDamage` |
@@ -525,20 +576,35 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 | renderer.js:1001 | `_drawEnemy` 的 `switch(e.type)` | **新怪不加 case 会画成跳尸** |
 | renderer.js | `FOOT_Y` | 各怪的脚底支点（缺省 `FOOT_Y_DEFAULT`） |
 | codex.js:36/37 | `BEHAVIOR` / `ATTACK` 中文标签 | 图鉴显示用，**故意不加进冻结的 ENEMIES 表** |
-| ui.js | `renderLevelUp` / `renderShop` | 卡片 `kind` 分流 |
-| ui.js:~289 | 伤害分解式（右列 dmg 必须等于左列连乘） | 近战走 `MELEE_DMG_SCALE`、远程走 `RANGED_DMG_SCALE`，
+| ui.js:205 | `renderLevelUp` / `renderShop` | 卡片 `kind` 分流；`renderLevelUp(choices, title, state)` 的 title/state 都可选，
+  state 只用来算武器卡的合星落点文案 |
+| ui.js:255 | 伤害分解式（右列 dmg 必须等于左列连乘） | 近战走 `MELEE_DMG_SCALE`、远程走 `RANGED_DMG_SCALE`，
   **两个系数都得写进分解式** —— 漏一个就会写出「14 × 1 × 1 = 14」而右边显示 11.2 |
 | weapons.js `damage()` | 伤害总系数：`type === 'ranged'` 走 `RANGED_DMG_SCALE`，否则 `MELEE_DMG_SCALE`。
   **新武器不填 `type` 就吃近战系数**（不是免削） |
 | ~~`state.uidBase`~~ / ~~`_hash01`~~ / ~~`retreatSurvivors`~~ | **已删除**（2026-09-27）。撤边把残怪移到世界外 24px：怪一只没少，但相机跟着玩家，
   全部落在视野外，实测 4.2 秒才有第一只走回来 —— 玩家看到的和清场没区别，那就是「怪物还是清理了」。
   `startWave` 里残怪**留在原地**，靠 `Player.takeDamage` 的 `invincibleTimer=0.35` 兜住开局围殴 |
-| systems.js:302 | `endWaveCleanup` | 波末清理：只留「活着的非 Boss 怪」，清死的、清 Boss、清敌人弹、保留玩家弹。
+| systems.js:269 | `endWaveCleanup` | 波末清理：只留「活着的非 Boss 怪」，清死的、清 Boss、清敌人弹、保留玩家弹。
   名字和语义相反（不是 clearEnemies），调用点 4 处 |
 | systems.js:234-244 | 刷怪循环里的 `MAX_ALIVE_ENEMIES` 上限 | 到上限就 `break` 停手、**不跳过也不丢弃**，
   `spawnIndex` 卡住，腾出空位接着刷 —— 所以一波的总预算没变，只是同屏封顶 |
-| systems.js:639 | `anyWeaponUpgradable` | 三个出货口（升级三选一 / Boss 奖励 / 商店）共用的「还有没有武器可升」判定。
+| systems.js:654 | `anyWeaponUpgradable` | 三个出货口（升级三选一 / Boss 奖励 / 商店）共用的「还有没有武器可升」判定。
   **满星时三个池子都不能再出任何武器卡**，否则选了等于空过一轮升级 |
+| systems.js `S.weaponCardIds` | **三个出货口共用的武器卡清单**（槽位未满 = 全部非专属；满槽 = `mergeableIds`）。
+  改这里的语义要同时验证三个池子，**只测一个出货口会漏掉另外两个** |
+| systems.js `S.mergeableIds` | 已拥有且**未满 5★** 的去重 defId。两个守卫都不能删：
+  去掉 `level < MAX` 就会给满级武器出卡（选了等于空转），去掉去重就同一把卡占两个权重名额 |
+| systems.js `S.bestOwnedIndex` | 同 defId 里**等级最高**的那把。合成等级最低的那把等于白送一次强化 |
+| systems.js `S.applyWeaponCard` | 武器卡唯一落点（`added` / `merged` / `upgraded` / `replaced` 四个返回值），
+  `applyChoice` 与 `buyShopItem` **都走它**。`evict` 只给 Boss 专属武器 —— 按合星规则专属武器会被吞成随机强化 |
+| systems.js `S.sellWeapon` / `S.rollSellChoices` | 商店出售与出售后选卡。`choiceReturn = 'SHOP'` 的回程在 `pickLevelUp` 读完即清 |
+| systems.js `S.deserialize` | 读档把 `level` **夹到 `MAX_WEAPON_LEVEL`**：不夹的话高封顶存档读到低封顶构建会穿出上限，
+  而且渲染器的强化圈数（无上界）会超过面板画的星数 |
+| ui.js `renderStatsHTML` | 出售按钮只在 `state.screen === 'SHOP'` 渲染。`updateHUD` 每帧无条件重算，
+  所以进商店 / 回商店**不需要手动调渲染** —— 加别的商店屏动作按钮时别忘这条前提 |
+| css `style.css` `.ws-lv5` | `ui.js` 用 `Math.min(level, MAX)` 拼类名，**没有 `.ws-lv5` 满星武器会静默落回默认灰边框**
+  —— 升满反而看不出。封顶再涨一格必须同步补类 |
 
 ---
 
@@ -607,7 +673,29 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 注意 **`rollLevelUpChoices` 不做稀有度过滤**，legend 卡也会从普通三选一里出（见第 7 章）。
 稀有度过滤只在 `bossRewardChoices`。
 
-**改完跑 `npm test`** —— `smoke.js` 1066 条 + `preview-check.js` 10 条全绿。哪张表漏了登记点会立刻红。
+**加武器卡 / 改合星规则**（第 8 章）
+1. **改出货口 = 改三个池子**：升级三选一 / Boss 奖励 / 商店都走 `S.weaponCardIds`，
+   断言要各测一个（`smoke.js` ㉜ 每个池子 400 次滚动），只测一个会漏另外两个。
+2. **改落点 = 只动 `S.applyWeaponCard`**：`applyChoice` 与 `buyShopItem` 都必须走它，
+   不要在调用方直接 `push` —— 满槽时会塞出第 7 把武器。
+3. 加一个返回落点类型就要补一条断言，落点是唯一能区分「合星 / 强化 / 挤掉」的观测口。
+4. **别给武器卡加 `level` 字段**：`pickThree` 的去重 key 是 `'weapon:' + id`（与等级无关），
+   加了就得重排整个 key 体系 + 新增图鉴条目。想显示等级就用 `S.weaponCardOutcome` 拼文案。
+5. 封顶再涨一格（5 → 6）要同时补：`MAX_WEAPON_LEVEL`、`style.css .ws-lv6`、
+   `smoke.js` 的 `ws-lv*` 循环断言。`stars()` 与渲染器的圈都无上限，不用改。
+6. 改 `WEAPON_DMG_PER_LEVEL` / `WEAPON_CD_PER_LEVEL` 就是改武器强度 —— 走的是系数层，
+   但**面板分解式读的是同一个系数**，不会漂移。
+
+**加商店出售类功能**
+1. 动作按钮只在对应屏渲染（`state.screen === 'X'`），`updateHUD` 每帧无条件重算，
+   所以**不需要**在进出屏时手动调渲染 —— 这条前提破了按钮会永远不出现。
+2. 别把长列表塞进商店面板：`smoke.js` 断言整块商店 ≤ 335px，侧栏不走这个预算。
+3. **不能卖到 0 把武器**：没武器 = 无法攻击 = 软锁。
+4. 经济守卫：退款必须 < 售价，否则先买后卖能刷钱。
+5. 回屏用 `state.choiceReturn`，读完即清 —— 不序列化，LEVEL_UP 屏上没有保存入口。
+6. 图鉴记「见过」不记「拥有」，**出售不回收图鉴**。
+
+**改完跑 `npm test`** —— `smoke.js` 1178 条 + `preview-check.js` 10 条全绿。哪张表漏了登记点会立刻红。
 
 ---
 
@@ -615,7 +703,7 @@ healing: true      // 可选。回血类：商店/升级池按 CONST.HEAL_ITEM_W
 
 `WEAPONS` / `ENEMIES` / `UPGRADES` 本体**冻结**，改前先确认。合法调参层：
 
-- `CONST` 具名系数（`RANGED_DMG_SCALE` / `MELEE_RANGE_SCALE` / `SHIELD_REGEN_SCALE` / `WEAPON_ARC` / `WEAPON_ORBIT_*` / `HEAL_ITEM_WEIGHT`）
+- `CONST` 具名系数（`RANGED_DMG_SCALE` / `MELEE_RANGE_SCALE` / `SHIELD_REGEN_SCALE` / `WEAPON_ARC` / `WEAPON_ORBIT_*` / `HEAL_ITEM_WEIGHT` / `WEAPON_DMG_PER_LEVEL` / `WEAPON_CD_PER_LEVEL` / `WEAPON_SELL_REFUND` / `MAX_WEAPON_LEVEL`）
 - `Game.DROP`
 - `systems.js` 的 `buildSpawnSchedule` / `pickEnemyType` / `priceFor`
 - `ITEMS` **不在冻结范围**

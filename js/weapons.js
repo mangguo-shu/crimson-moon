@@ -92,16 +92,29 @@
   };
 
   WeaponInstance.prototype.damage = function (owner) {
-    var d = this.def.damage * (1 + 0.5 * (this.level - 1));
+    var K = Game.CONST;
+    // 等级成长走 WEAPON_DMG_PER_LEVEL：面板的伤害分解式也要显示同一个系数，
+    // 之前 ui.js 自己重算了一份字面量，两份会漂。
+    var d = this.def.damage * (1 + K.WEAPON_DMG_PER_LEVEL * (this.level - 1));
     // 两类都压一档，乘的是各自的系数：环绕后近战能打到玩家身后，远程先让位
     // （用户 2026-09-25 点名）；后来「远程和近战伤害还要再削」（2026-09-27）
     // 就是给近战补上这一档 —— 近战一直全价在打，凭什么只有远程受罚。
-    var K = Game.CONST;
     d *= this.def.type === 'ranged' ? K.RANGED_DMG_SCALE : K.MELEE_DMG_SCALE;
     return d * owner.stats.damage;
   };
+  /** 冷却：本体 × 等级成长 × 玩家攻速。等级成长是 2026-10-19 合星加进来的
+   *  （之前 level 只影响伤害，攻速是玩家的，武器等级不碰它）。 */
   WeaponInstance.prototype.cooldown = function (owner) {
-    return this.def.cooldown / owner.stats.attackSpeed;
+    var K = Game.CONST;
+    return this.def.cooldown / (1 + K.WEAPON_CD_PER_LEVEL * (this.level - 1)) / owner.stats.attackSpeed;
+  };
+  /** 等级带来的攻速倍率，面板的分解式显示同一个数（level 1 时为 1）。 */
+  WeaponInstance.prototype.cdLevelUp = function () {
+    return 1 + Game.CONST.WEAPON_CD_PER_LEVEL * (this.level - 1);
+  };
+  /** 等级带来的本体伤害倍率，面板的分解式显示同一个数（level 1 时为 1）。 */
+  WeaponInstance.prototype.dmgLevelUp = function () {
+    return 1 + Game.CONST.WEAPON_DMG_PER_LEVEL * (this.level - 1);
   };
   /** 有效攻击距离。只近战用（远程靠子弹射程，range 字段无意义）。 */
   WeaponInstance.prototype.range = function () {

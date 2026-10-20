@@ -543,14 +543,16 @@
       entries.push({ key: 'upgrade:' + Game.UPGRADES[i].label, w: 1, entry: { kind: 'upgrade', data: Game.UPGRADES[i] } });
     }
 
-    // 新武器（槽位未满）；exclusive 武器只从 Boss 奖励产出
-    var wids = commonWeaponIds();
-    if (state.player.weapons.length < CONST.MAX_WEAPONS) {
-      for (i = 0; i < wids.length; i++) {
-        entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
-      }
-    } else if (S.anyWeaponUpgradable(state.player)) {
-      // 已有武器升级。全部满星时不给 —— 选了等于空过一轮升级，还不如拿属性卡
+    // 武器卡：槽位未满 → 全部非专属武器（允许重复持有）；满槽 → 只给你已经拥有、
+    // 还没满 5★ 的那些，选中即合星。这里不能再卡「槽位未满」—— 卡了的话满槽时
+    // 池里永远没有武器卡，合星就永远触发不了（2026-10-19 用户定的「满槽才合」）。
+    var wids = S.weaponCardIds(state.player);
+    for (i = 0; i < wids.length; i++) {
+      entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
+    }
+    if (state.player.weapons.length >= CONST.MAX_WEAPONS && S.anyWeaponUpgradable(state.player)) {
+      // 已有武器升级。和合星卡不互斥：满槽时两张都可能出，一个是定点一个是随机。
+      // 全部满星时不给 —— 那时候池里 0 张武器卡，选了等于空过一轮，不如拿属性卡。
       entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
     }
 
@@ -596,12 +598,10 @@
       entries.push({ key: 'weaponUpgrade', w: 1, entry: { kind: 'weaponUpgrade', data: {} } });
     }
 
-    // 普通武器（槽位未满时给）
-    var wids = commonWeaponIds();
-    if (p.weapons.length < CONST.MAX_WEAPONS) {
-      for (i = 0; i < wids.length; i++) {
-        entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
-      }
+    // 普通武器：槽位未满给全部非专属；满槽只给能合星的（见 weaponCardIds）
+    var wids = S.weaponCardIds(p);
+    for (i = 0; i < wids.length; i++) {
+      entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
     }
 
     // Boss 专属武器：按概率出现。掷点不放进条件里 —— 满星与否不能改变 rng 的
@@ -636,10 +636,10 @@
     if (choice.kind === 'upgrade') {
       p.applyUpgrade(choice.data.apply);
     } else if (choice.kind === 'weapon') {
-      p.weapons.push(Game.createWeapon(choice.data.weaponId, 1, p.weapons.length));
-      // 槽位已满时挤掉最早加入的那把 —— Boss 奖励的专属武器允许替换旧武器
-      if (p.weapons.length > CONST.MAX_WEAPONS) p.weapons.shift();
-      S.normalizeSlots(p);
+      // 满槽不再挤掉最早那把，改走合星规则；Boss 专属武器保留挤掉语义 ——
+      // Boss 奖励的意义就在「槽满也能拿」，按合星规则它会被吞成一次随机强化。
+      var wdef = Game.WEAPONS[choice.data.weaponId];
+      S.applyWeaponCard(p, choice.data.weaponId, null, { evict: !!(wdef && wdef.exclusive) });
     } else if (choice.kind === 'weaponUpgrade') {
       S.upgradeRandomWeapon(p);
     } else if (choice.kind === 'item') {
@@ -671,6 +671,79 @@
    *  否则挤掉一把武器后剩下的会各偏一段角度，整条轨道歪掉。 */
   S.normalizeSlots = function (p) {
     for (var i = 0; i < p.weapons.length; i++) p.weapons[i].slot = i;
+  };
+
+  /** 已拥有的同 defId 里等级最高的那把的下标（没有 = -1）。重复持有时合星要合成
+   *  等级最高的那把，合到 1★ 上面等于白送一次强化。 */
+  S.bestOwnedIndex = function (p, defId) {
+    var best = -1, i;
+    for (i = 0; i < p.weapons.length; i++) {
+      if (p.weapons[i].defId !== defId) continue;
+      if (best < 0 || p.weapons[i].level > p.weapons[best].level) best = i;
+    }
+    return best;
+  };
+
+  /** 满槽时还能合星的那批武器（已拥有且未满 5★）的去重 defId。
+   *  去重：手里两把 pistol 只该出 1 张卡，不然同一张卡占两个权重名额。
+   *  空 = 只能给通用强化（或什么都不给，看 anyWeaponUpgradable）。 */
+  S.mergeableIds = function (p) {
+    var ids = {}, i;
+    for (i = 0; i < p.weapons.length; i++) {
+      var w = p.weapons[i];
+      if (w.level < CONST.MAX_WEAPON_LEVEL) ids[w.defId] = true;
+    }
+    return Object.keys(ids);
+  };
+
+  /** 这个槽位状态下该出哪些武器卡。槽位未满 = 全部非专属武器（允许重复持有）；
+   *  满槽 = 只给能合星的。三个出货口（升级三选一 / Boss 奖励 / 商店）共用。 */
+  S.weaponCardIds = function (p) {
+    return p.weapons.length < CONST.MAX_WEAPONS ? commonWeaponIds() : S.mergeableIds(p);
+  };
+
+  /** 选中这张武器卡会发生什么，卡片文案要用 —— 不然玩家看不出选它到底得到什么。
+   *  返回接在武器描述后面的提示串；不用提示时返回空串。 */
+  S.weaponCardOutcome = function (p, defId) {
+    if (p.weapons.length < CONST.MAX_WEAPONS) return '';
+    var best = S.bestOwnedIndex(p, defId);
+    if (best >= 0 && p.weapons[best].level < CONST.MAX_WEAPON_LEVEL) {
+      var lv = p.weapons[best].level;
+      return '｜已拥有 Lv.' + lv + '，选中合星 Lv.' + (lv + 1);
+    }
+    return '';
+  };
+
+  /** 选中一张武器卡时的落点（2026-10-19 合星规则）：
+   *  槽位未满 → 加一把新的 Lv1，允许重复持有同武器；
+   *  满槽 → 合星：同 defId 里等级最高的那把 +1★；
+   *  合不了（没这把 / 已满 5★）→ 回退成随机武器强化；
+   *  连强化都没得给（全满 5★）→ 挤掉最早加入的那把，新卡照旧进来。
+   *  evict 只给 Boss 专属武器用。返回落点类型，测试按它断言。
+   *  rng 不传时随机强化走 Math.random —— 和 weaponUpgrade 分支保持同一个口径，
+   *  那是既有行为，改动会改变存档种子的确定性。 */
+  S.applyWeaponCard = function (p, defId, rng, opts) {
+    if (p.weapons.length < CONST.MAX_WEAPONS) {
+      p.weapons.push(Game.createWeapon(defId, 1, p.weapons.length));
+      S.normalizeSlots(p);
+      return 'added';
+    }
+    if (opts && opts.evict) {
+      p.weapons.shift();
+      p.weapons.push(Game.createWeapon(defId, 1, p.weapons.length));
+      S.normalizeSlots(p);
+      return 'replaced';
+    }
+    var best = S.bestOwnedIndex(p, defId);
+    if (best >= 0 && p.weapons[best].level < CONST.MAX_WEAPON_LEVEL) {
+      p.weapons[best].level++;
+      return 'merged';
+    }
+    if (S.upgradeRandomWeapon(p, rng)) return 'upgraded';
+    p.weapons.shift();
+    p.weapons.push(Game.createWeapon(defId, 1, p.weapons.length));
+    S.normalizeSlots(p);
+    return 'replaced';
   };
 
   /* ============================================================
@@ -719,14 +792,14 @@
       c = Game.ITEMS[iids[i]];
       entries.push({ key: 'item:' + iids[i], w: (c.healing ? down : 1) / iids.length, item: c });
     }
-    var wids = commonWeaponIds();   // 专属武器只在 Boss 奖励里出
-    if (p.weapons.length < CONST.MAX_WEAPONS) {
-      for (i = 0; i < wids.length; i++) {
-        entries.push({ key: 'weapon:' + wids[i], w: 0.5 / wids.length, weaponId: wids[i], weapon: Game.WEAPONS[wids[i]] });
-      }
-    } else if (S.anyWeaponUpgradable(p)) {
-      // 槽位满 → 强化卡。但所有武器都已满星时不给：那是张「扣钱没效果」的死卡。
-      // 此时武器半区为空，权重自然全落道具上，玩家的钱有地方花。
+    // 专属武器只在 Boss 奖励里出；满槽时这里给的是合星卡（见 weaponCardIds）
+    var wids = S.weaponCardIds(p);
+    for (i = 0; i < wids.length; i++) {
+      entries.push({ key: 'weapon:' + wids[i], w: 0.5 / wids.length, weaponId: wids[i], weapon: Game.WEAPONS[wids[i]] });
+    }
+    if (p.weapons.length >= CONST.MAX_WEAPONS && S.anyWeaponUpgradable(p)) {
+      // 槽位满 → 强化卡。和合星卡不互斥；但所有武器都已满星时不给，
+      // 那是张「扣钱没效果」的死卡。此时武器半区为空，权重自然全落道具上。
       entries.push({ key: 'weaponUpgrade', w: 0.5, weaponUpgrade: true });
     }
 
@@ -747,9 +820,10 @@
     }
     if (hit.weapon) {
       var wdef = hit.weapon;
+      // 满槽时这张卡买到的是「合星」而不是新武器，文案上必须说清楚
       return {
         type: 'weapon', weaponId: hit.weaponId,
-        name: wdef.name, desc: wdef.desc, rarity: 'rare',
+        name: wdef.name, desc: wdef.desc + S.weaponCardOutcome(p, hit.weaponId), rarity: 'rare',
         price: S.priceFor('rare', state.wave),
       };
     }
@@ -788,8 +862,8 @@
     shop.locked[index] = false; // 买掉了就不再需要锁定，避免残留标记污染下次商店
     if (item.type === 'item') p.applyItem(item.itemId, 1);
     else if (item.type === 'weapon') {
-      p.weapons.push(Game.createWeapon(item.weaponId, 1, p.weapons.length));
-      S.normalizeSlots(p);
+      // 走合星规则：槽位满时这张卡买到的是 +1★，不是第 7 把武器
+      S.applyWeaponCard(p, item.weaponId, state.rng);
     }
     else if (item.type === 'weaponUpgrade') {
       // 老存档可能残留「所有武器已满星」的强化卡。池子早已不再出这张，但读档回来的
@@ -805,6 +879,39 @@
     if (Game.Audio) Game.Audio.buy();
     console.log('[Shop] 购买:', item.name, '价格=', item.price);
     return true;
+  };
+
+  /** 商店出售：按 rare 武器价 × WEAPON_SELL_REFUND 退材料，槽位空出。
+   *  只认 SHOP 屏；不能卖到 0 把 —— 没有武器就无法攻击，等于软锁。
+   *  经济上没有刷钱空间：能卖的必须先买过，退 0.5 倍恒亏。
+   *  图鉴不回收 —— 图鉴记「见过」不记「拥有」，卖出无需回收。
+   *  返回回收的材料数（0 = 没卖掉）。 */
+  S.sellWeapon = function (state, index) {
+    if (state.screen !== 'SHOP') return 0;
+    var p = state.player;
+    if (!p.weapons[index]) return 0;
+    if (p.weapons.length <= 1) return 0;
+    var w = p.weapons[index];
+    var price = Math.floor(S.priceFor('rare', state.wave) * CONST.WEAPON_SELL_REFUND);
+    p.weapons.splice(index, 1);
+    S.normalizeSlots(p);
+    p.materials += price;
+    if (Game.Audio) Game.Audio.buy();
+    console.log('[Shop] 出售:', w.def.name, '回收=' + price);
+    return price;
+  };
+
+  /** 出售后的 3 张武器卡：全部非专属武器等权，槽位刚空出所以必定走「加新的」。
+   *  专属武器不进这个池 —— 那是 Boss 战奖励的专属产出，卖一次武器不该买到。
+   *  走 pickThree 会写 state.levelUpChoices 并登记 waveSeen，正好和「选完回商店」
+   *  的回程复用同一套界面。 */
+  S.rollSellChoices = function (state) {
+    var entries = [], i;
+    var wids = commonWeaponIds();
+    for (i = 0; i < wids.length; i++) {
+      entries.push({ key: 'weapon:' + wids[i], w: 1, entry: { kind: 'weapon', data: { weaponId: wids[i] } } });
+    }
+    return S.pickThree(state, entries);
   };
 
   S.refreshShop = function (state) {
@@ -915,8 +1022,10 @@
     p.items = obj.player.items || {};
     // 槽位序号直接取数组下标，不信任存档里的 slot —— 老存档没有这个字段，
     // 而且下标本来就是唯一可信来源。
+    // level 顺手夹到当前封顶：存档不夹的话，高封顶构建的档读到低封顶构建时
+    // 会穿出上限，而且渲染器的强化圈数会超过面板画的星数（两边都不设防）。
     p.weapons = (obj.player.weapons || []).map(function (w, i) {
-      var wi = Game.createWeapon(w.defId, w.level, i);
+      var wi = Game.createWeapon(w.defId, Math.min(w.level || 1, CONST.MAX_WEAPON_LEVEL), i);
       wi.cooldownRemaining = w.cd || 0;
       return wi;
     });
